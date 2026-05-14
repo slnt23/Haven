@@ -2,6 +2,8 @@
 
 基于 Python 3.14+、LangChain 与 deepagents 构建，提供一套可扩展的多 Agent 协作开发脚手架。
 
+代号：健健（灵感来自灵笼）
+
 ## 目录结构
 
 ```
