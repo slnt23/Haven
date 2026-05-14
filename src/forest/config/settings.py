@@ -25,6 +25,22 @@ class Settings(BaseSettings):
     web_search_api_key: str = Field(default="", alias="WEB_SEARCH_API_KEY")
     web_search_engine: str = Field(default="bing", alias="WEB_SEARCH_ENGINE")
 
+    # ==================== Email ====================
+    email_smtp_host: str = Field(default="smtp.qq.com", alias="EMAIL_SMTP_HOST")
+    email_smtp_port: int = Field(default=587, alias="EMAIL_SMTP_PORT")
+    email_smtp_username: str = Field(default="", alias="EMAIL_SMTP_USERNAME")
+    email_smtp_password: str = Field(default="", alias="EMAIL_SMTP_PASSWORD")
+    email_use_tls: bool = Field(default=True, alias="EMAIL_USE_TLS")
+
+    email_imap_host: str = Field(default="imap.qq.com", alias="EMAIL_IMAP_HOST")
+    email_imap_port: int = Field(default=993, alias="EMAIL_IMAP_PORT")
+    email_imap_username: str = Field(default="", alias="EMAIL_IMAP_USERNAME")
+    email_imap_password: str = Field(default="", alias="EMAIL_IMAP_PASSWORD")
+    email_poll_interval: int = Field(default=60, alias="EMAIL_POLL_INTERVAL")
+
+    email_user_whitelist: str = Field(default="", alias="EMAIL_USER_WHITELIST")
+    email_digest_time: str = Field(default="08:00", alias="EMAIL_DIGEST_TIME")
+
     # ==================== Project ====================
     project_root: Path = Path(__file__).resolve().parent.parent.parent.parent
 
