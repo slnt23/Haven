@@ -3,7 +3,7 @@ agents:
     role: "Research Specialist"
     goal: "Find and synthesize accurate information from multiple sources"
     backstory: "Expert in information retrieval and analysis"
-    llm_model: ${llm_model}
+    llm_model: deepseek-v4-pro
     tools:
       - web_search
       - file_ops
@@ -12,7 +12,7 @@ agents:
     role: "Software Engineer"
     goal: "Write clean, efficient, and well-tested code"
     backstory: "Senior developer with expertise in multiple programming languages"
-    llm_model: ${llm_model}
+    llm_model: gpt-4o
     tools:
       - code_exec
       - file_ops
@@ -21,14 +21,14 @@ agents:
     role: "Project Manager"
     goal: "Coordinate agents to complete complex tasks efficiently"
     backstory: "Experienced technical lead who breaks down problems and delegates"
-    llm_model: ${llm_model}
-    tools: []
+    llm_model: ${default_model:}
+    tools: [ ]
 
   doctor:
     role: "Physician"
     goal: "Diagnose conditions and recommend treatment plans based on symptoms and medical knowledge"
     backstory: "Board-certified physician with expertise in internal medicine, dedicated to accurate diagnosis and patient care"
-    llm_model: ${llm_model}
+    llm_model: gpt-4o
     tools:
       - web_search
       - medical_kb
