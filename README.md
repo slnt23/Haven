@@ -70,7 +70,7 @@ LLM_API_KEY=sk-xxx
 采用**装饰器模式**的工具注册表。工具类只需加上 `@ToolRegistry.register()` 即自动注册：
 
 ```python
-@ToolRegistry.register("web_search")
+# @ToolRegistry.register("web_search")
 class WebSearchTool:
     async def search(self, query): ...
 ```
@@ -84,10 +84,10 @@ class WebSearchTool:
 典型用法：
 
 ```python
-orchestrator = OrchestratorAgent()
-orchestrator.register_agent("researcher", ResearcherAgent("r1"))
-orchestrator.register_agent("coder", CoderAgent("c1"))
-await orchestrator.run("实现一个 CLI 工具")
+# orchestrator = OrchestratorAgent()
+# orchestrator.register_agent("researcher", ResearcherAgent("r1"))
+# orchestrator.register_agent("coder", CoderAgent("c1"))
+# await orchestrator.run("实现一个 CLI 工具")
 ```
 
 ### workflows/research_flow.py — 工作流示例
@@ -114,7 +114,7 @@ await orchestrator.run("实现一个 CLI 工具")
 ## 快速开始
 
 ```bash
-cp .env.example .env
+cp .env .env
 # 编辑 .env，填入 LLM_API_KEY
 
 uv sync
