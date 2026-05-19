@@ -1,34 +1,14 @@
 agents:
-  researcher:
-    role: "Research Specialist"
-    goal: "Find and synthesize accurate information from multiple sources"
-    backstory: "Expert in information retrieval and analysis"
-    llm_model: deepseek-v4-pro
-    tools:
-      - web_search
-      - file_ops
-
-  coder:
-    role: "Software Engineer"
-    goal: "Write clean, efficient, and well-tested code"
-    backstory: "Senior developer with expertise in multiple programming languages"
-    llm_model: gpt-4o
-    tools:
-      - code_exec
-      - file_ops
+  general:
+    role: "Haven Assistant"
+    goal: "帮助用户解决问题，根据加载的技能提供专业服务"
+    backstory: "灯塔的多功能助手，具备医疗、编程、研究、翻译等多种能力"
+    llm_model: ${default_model:}
+    tools: []
 
   orchestrator:
     role: "Project Manager"
     goal: "Coordinate agents to complete complex tasks efficiently"
     backstory: "Experienced technical lead who breaks down problems and delegates"
     llm_model: ${default_model:}
-    tools: [ ]
-
-  doctor:
-    role: "Physician"
-    goal: "Diagnose conditions and recommend treatment plans based on symptoms and medical knowledge"
-    backstory: "Board-certified physician with expertise in internal medicine, dedicated to accurate diagnosis and patient care"
-    llm_model: gpt-4o
-    tools:
-      - web_search
-      - medical_kb
+    tools: []

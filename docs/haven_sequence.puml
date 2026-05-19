@@ -1,0 +1,131 @@
+@startuml haven_sequence
+' ============================================================================
+' Haven Framework — Sequence: Chat Interaction Flow
+' ============================================================================
+
+skinparam backgroundColor #FEFEFE
+skinparam defaultFontSize 13
+skinparam ParticipantPadding 20
+skinparam BoxPadding 10
+
+title Haven — Interactive Chat Sequence
+
+actor "User" as user
+
+box "Haven CLI" #FCE4EC
+    participant "HavenApp" as app
+end box
+
+box "Agent" #E3F2FD
+    participant "GeneralAgent" as agent
+    participant "AgentMemory" as mem
+end box
+
+box "Skills" #FFF3E0
+    participant "SkillLoader" as loader
+    participant "BaseSkill\n(haven.md)" as haven
+    participant "BaseSkill\n(code_review.md)" as cr
+end box
+
+box "External" #ECEFF1
+    participant "LLM\n(DeepSeek/OpenAI)" as llm
+end box
+
+' --------------------------------------------------------------------------
+' Startup
+' --------------------------------------------------------------------------
+
+== Startup ==
+
+user -> app : $ haven
+app -> agent : new GeneralAgent()
+activate agent
+agent -> agent : _load_agent_config()\n(from agents.yaml)
+agent --> app : agent ready
+
+app -> loader : load_from_dir("skills/")
+activate loader
+loader -> loader : glob *.md\nparse YAML frontmatter
+loader --> app : [BaseSkill(haven), BaseSkill(code_review), ...]
+deactivate loader
+
+app -> agent : skills[skill.name] = skill
+note right of agent
+  haven.md → default=true → always in system prompt
+  code_review.md → default=false → on-demand only
+end note
+
+app -> app : _print_banner()
+user <-- app : Haven (健健) — 多智能体交互框架
+
+' --------------------------------------------------------------------------
+' Normal Chat Turn
+' --------------------------------------------------------------------------
+
+== Chat Turn (no keyword match) ==
+
+user -> app : "今天天气怎么样"
+app -> agent : _build_system_prompt()
+agent --> app : role + goal + backstory\n+ haven.md prompt (default)
+
+app -> agent : match_skills("今天天气怎么样")
+agent -> cr : matches("今天天气怎么样")
+cr --> agent : False
+agent --> app : [] (no match)
+
+app -> mem : get_history()
+mem --> app : [...]
+
+app -> llm : [SystemMessage (haven persona)]\n[HistoryMessage...]\n[HumanMessage("今天天气怎么样")]
+llm --> app : "您好！今天灯塔的天气..."
+app -> mem : add_message(HumanMsg)\nadd_message(AIMsg)
+user <-- app : "您好！今天灯塔的天气..."
+
+' --------------------------------------------------------------------------
+' Chat Turn with Keyword Match
+' --------------------------------------------------------------------------
+
+== Chat Turn (keyword match → on-demand skill) ==
+
+user -> app : "帮我审查这段代码\ndef foo(): pass"
+app -> agent : _build_system_prompt()
+agent --> app : role + goal + haven.md prompt
+
+app -> agent : match_skills("帮我审查这段代码...")
+agent -> cr : matches("帮我审查这段代码...")
+note right of cr
+  trigger_keywords:
+  - 审查, code review, ...
+end note
+cr --> agent : True
+agent --> app : [code_review]
+
+app -> app : system_prompt += code_review.prompt
+
+app -> mem : get_history()
+mem --> app : [...]
+
+app -> llm : [SystemMessage (haven + code_review)]\n[History...]\n[HumanMessage("帮我审查代码...")]
+llm --> app : "[Code Review Mode]\n发现以下问题: ..."
+app -> mem : add_message(HumanMsg)\nadd_message(AIMsg)
+user <-- app : "发现以下问题: ..."
+
+' --------------------------------------------------------------------------
+' Slash Command
+' --------------------------------------------------------------------------
+
+== Slash Command ==
+
+user -> app : "/skills"
+app -> app : _handle_command("/skills")
+user <-- app : 已加载 5 个 skill:\n[默认] haven\n[按需] code_review, ...
+
+user -> app : "/clear"
+app -> mem : clear()
+user <-- app : 对话历史已清空。
+
+user -> app : "/exit"
+app -> app : running = False
+user <-- app : 再见。
+
+@enduml

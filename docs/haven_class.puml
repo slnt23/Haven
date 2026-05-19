@@ -1,0 +1,197 @@
+@startuml haven_class
+' ============================================================================
+' Haven Framework — Class Diagram
+' ============================================================================
+
+skinparam classAttributeIconSize 0
+skinparam backgroundColor #FEFEFE
+skinparam classBorderColor #333333
+skinparam packageBorderColor #666666
+
+' --------------------------------------------------------------------------
+' Core Layer
+' --------------------------------------------------------------------------
+
+package "core" #E8F0FE {
+    abstract class BaseAgent <<abstract>> {
+        + name: str
+        + llm: BaseChatModel
+        + tools: dict
+        + skills: dict
+        + memory: AgentMemory
+        + rag: RAGEngine
+        + max_iterations: int
+        + max_execution_time: int
+        - _role: str
+        - _goal: str
+        - _backstory: str
+        --
+        + register_tool(name, tool)
+        + enable_skill(skill)
+        + load_skills_from_dir(dir) : int
+        + disable_skill(name)
+        + enable_rag(rag)
+        + match_skills(task) : list
+        + reset()
+        --
+        {abstract} + run(task) : str
+        {abstract} + step(messages) : BaseMessage
+        # _init_llm(model_name) : BaseChatModel
+        # _build_system_prompt() : str
+        # _invoke_llm(task, prompt, use_rag) : str
+        # _load_agent_config()
+    }
+
+    class AgentMemory {
+        - messages: deque[BaseMessage]
+        + metadata: dict
+        --
+        + add_message(msg)
+        + add_messages(msgs)
+        + get_history() : list
+        + clear()
+    }
+
+    class ToolRegistry <<registry>> {
+        - {static} _tools: dict
+        --
+        + {static} register(name) : decorator
+        + {static} get(name) : class
+        + {static} list_tools() : list
+        + {static} clear()
+    }
+
+    class RAGEngine {
+        - embeddings: OpenAIEmbeddings
+        - vectorstore: InMemoryVectorStore
+        --
+        + add_texts(texts, metadatas)
+        + add_files(paths)
+        + add_directory(dir, glob)
+        + retrieve(query, top_k) : list[Document]
+        + format_context(docs) : str
+        + doc_count : int
+        + clear()
+    }
+}
+
+' --------------------------------------------------------------------------
+' Agent Layer
+' --------------------------------------------------------------------------
+
+package "agents" #E8F5E9 {
+    class GeneralAgent {
+        --
+        + run(task, **kwargs) : str
+        + step(messages) : BaseMessage
+    }
+
+    class OrchestratorAgent {
+        + sub_agents: dict
+        --
+        + register_agent(name, agent)
+        + run(task) : str
+        + step(messages) : BaseMessage
+    }
+}
+
+' --------------------------------------------------------------------------
+' Skill Layer
+' --------------------------------------------------------------------------
+
+package "skills" #FFF3E0 {
+    class BaseSkill <<data>> {
+        + name: str
+        + description: str
+        + prompt: str
+        + trigger_keywords: list
+        + category: str
+        + source_file: Path
+        + default: bool
+        --
+        + prompt_extension : str
+        + matches(task) : bool
+    }
+
+    class SkillLoader <<utility>> {
+        --
+        + {static} load_from_dir(dir) : list[BaseSkill]
+        + {static} load_single(path) : BaseSkill
+        - {static} _parse_file(path) : BaseSkill
+        - {static} _split_frontmatter(raw) : tuple
+    }
+
+    class SkillRegistry <<registry>> {
+        - {static} _skills: dict
+        --
+        + {static} register(name) : decorator
+        + {static} get(name) : class
+        + {static} list_skills() : list
+        + {static} clear()
+    }
+
+    note right of BaseSkill
+        Each .md file in skills/
+        becomes one BaseSkill instance.
+        default=true → always active
+        default=false → on-demand (keyword match)
+    end note
+}
+
+' --------------------------------------------------------------------------
+' CLI Layer
+' --------------------------------------------------------------------------
+
+package "cli" #FCE4EC {
+    class HavenApp {
+        + agent: BaseAgent
+        + running: bool
+        --
+        + start(greeting_task)
+        - _init_agent()
+        - _load_skills()
+        - _chat(user_input)
+        - _handle_command(text) : bool
+        - _prompt() : str
+        - _print_banner()
+    }
+}
+
+' --------------------------------------------------------------------------
+' Config Layer
+' --------------------------------------------------------------------------
+
+package "config" #F3E5F5 {
+    class Settings <<singleton>> {
+        + deepseek_api_key: str
+        + openai_api_key: str
+        + agent_default_model: str
+        + skill_directory: str
+        + project_root: Path
+        + ...email, RAG, tools settings
+    }
+}
+
+' --------------------------------------------------------------------------
+' Relationships
+' --------------------------------------------------------------------------
+
+BaseAgent <|-- GeneralAgent
+BaseAgent <|-- OrchestratorAgent
+BaseAgent *-- AgentMemory
+BaseAgent --> ToolRegistry : uses
+BaseAgent --> RAGEngine : optional
+BaseAgent *-- BaseSkill : skills
+
+GeneralAgent ..> SkillLoader : loads
+HavenApp --> GeneralAgent : creates
+HavenApp --> SkillLoader : uses
+HavenApp --> Settings : reads
+
+SkillLoader ..> BaseSkill : creates
+SkillRegistry --> BaseSkill : registers
+BaseSkill ..> "skills/*.md" : from
+
+'OrchestratorAgent' *--> BaseAgent : sub_agents
+
+@enduml

@@ -1,13 +1,14 @@
 import asyncio
 import time
 
-from forest.agents import ResearcherAgent, CoderAgent, DoctorAgent
+from forest.agents import GeneralAgent
 from forest.tools import MedicalKnowledgeTool
 from forest.workflows import ResearchFlow, DiagnosisFlow
 
 
-async def evaluate():
-    agent = ResearcherAgent("eval_agent")
+async def evaluate() -> None:
+    agent = GeneralAgent("general")
+    agent.load_skills_from_dir()
     start = time.perf_counter()
     result = await agent.run("test task")
     elapsed = time.perf_counter() - start

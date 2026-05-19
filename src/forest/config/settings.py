@@ -41,6 +41,16 @@ class Settings(BaseSettings):
     email_user_whitelist: str = Field(default="", alias="EMAIL_USER_WHITELIST")
     email_digest_time: str = Field(default="08:00", alias="EMAIL_DIGEST_TIME")
 
+    # ==================== RAG ====================
+    rag_embedding_model: str = Field(default="text-embedding-3-small", alias="RAG_EMBEDDING_MODEL")
+    rag_embedding_api_base: str = Field(default="https://api.openai.com/v1", alias="RAG_EMBEDDING_API_BASE")
+    rag_chunk_size: int = Field(default=1000, alias="RAG_CHUNK_SIZE")
+    rag_chunk_overlap: int = Field(default=200, alias="RAG_CHUNK_OVERLAP")
+    rag_top_k: int = Field(default=5, alias="RAG_TOP_K")
+
+    # ==================== Skills ====================
+    skill_directory: str = Field(default="skills", alias="SKILL_DIRECTORY")
+
     # ==================== Project ====================
     project_root: Path = Path(__file__).resolve().parent.parent.parent.parent
 

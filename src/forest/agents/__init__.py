@@ -1,6 +1,4 @@
-from .researcher import ResearcherAgent
-from .coder import CoderAgent
+from .general import GeneralAgent
 from .orchestrator import OrchestratorAgent
-from .doctor import DoctorAgent
 
-__all__ = ["ResearcherAgent", "CoderAgent", "OrchestratorAgent", "DoctorAgent"]
+__all__ = ["GeneralAgent", "OrchestratorAgent"]

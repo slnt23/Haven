@@ -1,13 +1,17 @@
+from __future__ import annotations
+
 from typing import Any
 
-from forest.agents import OrchestratorAgent, ResearcherAgent, CoderAgent
+from forest.agents import GeneralAgent, OrchestratorAgent
 
 
 class DevFlow:
-    def __init__(self):
+    def __init__(self) -> None:
         self.orchestrator = OrchestratorAgent()
-        self.researcher = ResearcherAgent("researcher")
-        self.coder = CoderAgent("coder")
+        self.researcher = GeneralAgent("general")
+        self.coder = GeneralAgent("general")
+        self.researcher.load_skills_from_dir()
+        self.coder.load_skills_from_dir()
         self.orchestrator.register_agent("researcher", self.researcher)
         self.orchestrator.register_agent("coder", self.coder)
 

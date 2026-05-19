@@ -1,0 +1,152 @@
+@startuml haven_package
+' ============================================================================
+' Haven Framework — Package / Component Diagram
+' ============================================================================
+
+skinparam componentBorderColor #555555
+skinparam componentBackgroundColor #F5F5F5
+skinparam packageBorderColor #666666
+skinparam packageBackgroundColor #FAFAFA
+skinparam arrowColor #555555
+skinparam defaultFontSize 13
+
+title Haven Framework — Package Architecture
+
+' --------------------------------------------------------------------------
+' External
+' --------------------------------------------------------------------------
+
+package "User Space" #E8F5E9 {
+    folder "skills/" as skills_dir {
+        file "haven.md" as haven_md <<default>>
+        file "code_review.md" as cr_md
+        file "translation.md" as tr_md
+        file "*.md" as any_md <<on-demand>>
+    }
+    file ".env" as env_file
+}
+
+cloud "LLM APIs" #ECEFF1 {
+    component "DeepSeek" as ds
+    component "OpenAI" as oai
+}
+
+' --------------------------------------------------------------------------
+' Entry Points
+' --------------------------------------------------------------------------
+
+package "Entry Points" #FCE4EC {
+    component "haven\n(CLI)" as cli_cmd
+    component "run_agent.py" as run_agent
+    component "run_email_service.py" as email_svc
+    component "eval.py" as eval_script
+}
+
+' --------------------------------------------------------------------------
+' Application Layers
+' --------------------------------------------------------------------------
+
+package "CLI Layer\nsrc/forest/cli/" #FCE4EC {
+    component "HavenApp" as haven_app
+}
+
+package "Workflow Layer\nsrc/forest/workflows/" #E8F5E9 {
+    component "ResearchFlow" as rf
+    component "DevFlow" as df
+    component "DiagnosisFlow" as dgf
+}
+
+package "Agent Layer\nsrc/forest/agents/" #E3F2FD {
+    component "GeneralAgent" as ga
+    component "OrchestratorAgent" as oa
+}
+
+package "Skill Layer\nsrc/forest/skills/" #FFF3E0 {
+    component "SkillLoader" as sl
+    component "SkillRegistry" as sr
+    component "BaseSkill" as bs
+}
+
+package "Tool Layer\nsrc/forest/tools/" #F3E5F5 {
+    component "WebSearchTool" as wst
+    component "FileOpsTool" as fot
+    component "CodeExecTool" as cet
+    component "MedicalKnowledgeTool" as mkt
+    component "EmailSenderTool" as est
+    component "RAGSearchTool" as rst
+}
+
+package "Core Layer\nsrc/forest/core/" #E8F0FE {
+    component "BaseAgent" as ba
+    component "AgentMemory" as mem
+    component "ToolRegistry" as treg
+    component "RAGEngine" as rag
+}
+
+package "Config Layer\nsrc/forest/config/" #ECEFF1 {
+    component "Settings\n(singleton)" as settings
+    database "agents.yaml" as agents_y
+    database "models.yaml" as models_y
+}
+
+package "Service Layer\nsrc/forest/services/" #E8F5E9 {
+    component "EmailService" as es
+}
+
+' --------------------------------------------------------------------------
+' Dependencies
+' --------------------------------------------------------------------------
+
+' user space → config
+env_file --> settings : loads
+skills_dir --> sl : reads .md files
+
+' entry points → application
+cli_cmd --> haven_app
+run_agent --> oa
+email_svc --> es
+eval_script --> ga
+
+' cli → agents + skills
+haven_app --> ga : creates
+haven_app --> sl : loads skills
+
+' workflows → agents
+rf --> oa
+rf --> ga
+df --> oa
+df --> ga
+dgf --> ga
+
+' agents → core + skills
+ga -|> ba
+oa -|> ba
+ga --> sl : loads
+ga --> bs : holds
+ba --> mem : contains
+ba --> treg : uses
+ba --> rag : optional
+
+' orchestrator → agents
+oa --> ga : delegates to
+
+' services → agents
+es --> oa : agent_handler
+
+' tools → core
+wst --> treg : registers
+fot --> treg : registers
+cet --> treg : registers
+mkt --> treg : registers
+est --> treg : registers
+rst --> treg : registers
+
+' llm calls
+ba ..> ds : invoke
+ba ..> oai : invoke
+
+' config reads
+settings <-- agents_y : read by
+settings <-- models_y : read by
+
+@enduml
