@@ -1,0 +1,30 @@
+# ==================== Agent Configuration ====================
+agent:
+  max_iterations: 20
+  max_execution_time: 300
+
+# ==================== Web Search ====================
+web_search:
+  engine: bing
+
+# ==================== Email ====================
+email:
+  smtp_host: smtp.qq.com
+  smtp_port: 587
+  use_tls: true
+  imap_host: imap.qq.com
+  imap_port: 993
+  poll_interval: 60
+  digest_time: "08:00"
+
+# ==================== RAG ====================
+rag:
+  embedding_model: text-embedding-3-small
+  embedding_api_base: https://api.openai.com/v1
+  chunk_size: 1000
+  chunk_overlap: 200
+  top_k: 5
+
+# ==================== Skills ====================
+skill:
+  directory: skills
