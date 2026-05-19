@@ -12,7 +12,7 @@ def _load_config() -> DictConfig | None:
     global _config
     if _config is None:
         config_path = Path(__file__).parent / "models.yaml"
-        _config = OmegaConf.load(config_path) | None
+        _config = OmegaConf.load(config_path)
         OmegaConf.resolve(_config)
     return _config
 

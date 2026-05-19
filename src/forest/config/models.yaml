@@ -8,16 +8,17 @@ models:
     temperature: 0.5
     max_tokens: 4096
 
-#  gpt-4o:
-#    provider: openai
-#    api_key_env: OPENAI_API_KEY
-#    base_url: https://api.openai.com/v1
-#    temperature: 0.5
-#    max_tokens: 8192
-#
-#  gpt-4o-mini:
-#    provider: openai
-#    api_key_env: OPENAI_API_KEY
-#    base_url: https://api.openai.com/v1
-#    temperature: 0.5
-#    max_tokens: 4096
+# 这里下面的作为备选，同时也为国内其他的可以兼容 OpenAi 接口的模型提供示例，
+  gpt-4o:
+    provider: openai
+    api_key_env: OPENAI_API_KEY
+    base_url: https://api.openai.com/v1
+    temperature: 0.5
+    max_tokens: 8192
+
+  gpt-4o-mini:
+    provider: openai
+    api_key_env: OPENAI_API_KEY
+    base_url: https://api.openai.com/v1
+    temperature: 0.5
+    max_tokens: 4096

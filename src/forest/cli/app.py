@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import itertools
 import sys
 from pathlib import Path
 from typing import Any
@@ -14,6 +15,8 @@ from forest.skills.loader import SkillLoader
 
 class HavenApp:
     """Interactive REPL for the Haven multi-agent framework."""
+
+    _LOADING_WORDS = ["思考中", "分析中", "处理中", "生成中", "整理中"]
 
     def __init__(self, agent: BaseAgent | None = None) -> None:
         self.agent = agent
@@ -45,6 +48,7 @@ class HavenApp:
                 break
 
             if not user_input:
+                self._print("请先输入内容。")
                 continue
 
             if self._handle_command(user_input):
@@ -79,6 +83,22 @@ class HavenApp:
     # chat
     # ------------------------------------------------------------------
 
+    async def _show_loading(self, stop_event: asyncio.Event) -> None:
+        """Animated loading indicator: cycles through words + \"...\" on the left."""
+        words = itertools.cycle(self._LOADING_WORDS)
+        dots_seq = ["   ", ".  ", ".. ", "..."]
+        while not stop_event.is_set():
+            word = next(words)
+            for dots in dots_seq:
+                if stop_event.is_set():
+                    break
+                sys.stdout.write(f"\r  {word}{dots}")
+                sys.stdout.flush()
+                await asyncio.sleep(0.25)
+        # Clear the loading line
+        sys.stdout.write("\r" + " " * 24 + "\r")
+        sys.stdout.flush()
+
     async def _chat(self, user_input: str) -> None:
         """Send user input to the agent with full conversation context."""
         if self.agent.llm is None:
@@ -105,15 +125,27 @@ class HavenApp:
 
         self.agent.memory.add_message(HumanMessage(content=user_input))
 
-        self._print()  # blank line before response
+        # visual separator before response
+        self._print()
+        # self._print("=" * 60)
+        # self._print("  输出")
+        self._print("+" * 60)
+
+        stop_event = asyncio.Event()
+        loading_task = asyncio.create_task(self._show_loading(stop_event))
+
         try:
             response = await self.agent.llm.ainvoke(messages)
             content = response.content if hasattr(response, "content") else str(response)
         except Exception as exc:
             content = f"[错误] {exc}"
+        finally:
+            stop_event.set()
+            await loading_task
 
         self.agent.memory.add_message(AIMessage(content=content))
         self._print(content)
+        self._print("+" * 60)
 
     # ------------------------------------------------------------------
     # commands
@@ -129,7 +161,7 @@ class HavenApp:
 
         if cmd in ("/exit", "/quit", "/q"):
             self.running = False
-            self._print("再见。")
+            self._print("再见.")
 
         elif cmd == "/help":
             self._print(
@@ -178,19 +210,43 @@ class HavenApp:
 
     async def _prompt(self) -> str:
         try:
+            self._print()
+            # self._print("——" * 30)
+            # self._print("  输入")
+            self._print("——" * 30)
+            sys.stdout.write("》 ")
+            sys.stdout.flush()
             loop = asyncio.get_running_loop()
-            return await loop.run_in_executor(None, sys.stdin.readline)
+            line = await loop.run_in_executor(None, sys.stdin.readline)
+            self._print("——" * 30)
+            return line
         except (EOFError, KeyboardInterrupt):
             raise
 
     def _print_banner(self) -> None:
         skill_count = len(self.agent.skills)
         model = getattr(self.agent.llm, "model_name", None) or get_default_model()
-        self._print(
-            f"\n  Haven (健健) — 多智能体交互框架  v0.1.0\n"
-            f"  模型: {model}  |  已加载 {skill_count} 个 skill\n"
-            f"  输入 /help 查看命令  |  /exit 退出\n"
-        )
+
+        banner = f"""
+╭────────────────────────────── Haven v0.1.0 ────────────────────────────────╮
+│          _   _                                                             │
+│         | | | | __ ___   _____ _ __                                        │
+│         | |_| |/ _` \\ \\ / / _ \\ '_ \\                                   │
+│         |  _  | (_| |\\ V /  __/ | | |                                     │
+│         |_| |_|\\__,_| \\_/ \\___|_| |_|                                   │
+│                                                                            │
+│  Model:  {model}                                                           │
+│                                                                            │
+│  skills: {skill_count}                                                     │
+│                                                                            │
+│  /help        Commands                                                     │
+│  /exit /q     Exit                                                         │
+│                                                                            │
+│  Ready.  Haven · Multi-Agent Runtime                                       │
+│                                                                            │
+╰────────────────────────────────────────────────────────────────────────────╯
+"""  # noqa: E501
+        self._print(banner)
 
     @staticmethod
     def _print(*args: Any) -> None:
