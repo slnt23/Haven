@@ -5,28 +5,24 @@ from omegaconf import OmegaConf, DictConfig, ListConfig
 
 from .settings import settings
 
+_config: DictConfig | None = None
 
-def _init_resolvers() -> None:
-    OmegaConf.register_new_resolver(
-        "default_model",
-        lambda: settings.agent_default_model,
-        replace=True,
-    )
+
+def _load_config() -> DictConfig | None:
+    global _config
+    if _config is None:
+        config_path = Path(__file__).parent / "models.yaml"
+        _config = OmegaConf.load(config_path) | None
+        OmegaConf.resolve(_config)
+    return _config
+
+
+def get_default_model() -> str:
+    return str(_load_config().default_model)
 
 
 def load_models_config() -> DictConfig | ListConfig:
-    config_path = Path(__file__).parent / "models.yaml"
-    cfg = OmegaConf.load(config_path)
-    OmegaConf.resolve(cfg)
-    return cfg.models
-
-
-def load_agents_config() -> DictConfig | ListConfig:
-    _init_resolvers()
-    config_path = Path(__file__).parent / "agents.yaml"
-    cfg = OmegaConf.load(config_path)
-    OmegaConf.resolve(cfg)
-    return cfg.agents
+    return _load_config().models
 
 
 def get_model_config(model_name: str) -> dict[str, Any]:

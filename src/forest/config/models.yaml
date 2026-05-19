@@ -1,3 +1,5 @@
+default_model: deepseek-v4-pro
+
 models:
   deepseek-v4-pro:
     provider: deepseek
@@ -6,16 +8,16 @@ models:
     temperature: 0.5
     max_tokens: 4096
 
-  gpt-4o:
-    provider: openai
-    api_key_env: OPENAI_API_KEY
-    base_url: https://api.openai.com/v1
-    temperature: 0.5
-    max_tokens: 8192
-
-  gpt-4o-mini:
-    provider: openai
-    api_key_env: OPENAI_API_KEY
-    base_url: https://api.openai.com/v1
-    temperature: 0.5
-    max_tokens: 4096
+#  gpt-4o:
+#    provider: openai
+#    api_key_env: OPENAI_API_KEY
+#    base_url: https://api.openai.com/v1
+#    temperature: 0.5
+#    max_tokens: 8192
+#
+#  gpt-4o-mini:
+#    provider: openai
+#    api_key_env: OPENAI_API_KEY
+#    base_url: https://api.openai.com/v1
+#    temperature: 0.5
+#    max_tokens: 4096

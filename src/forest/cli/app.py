@@ -7,7 +7,7 @@ from typing import Any
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
-from forest.config import settings
+from forest.config import settings, get_default_model
 from forest.core.base_agent import BaseAgent
 from forest.skills.loader import SkillLoader
 
@@ -164,7 +164,7 @@ class HavenApp:
             self._print("对话历史已清空。")
 
         elif cmd == "/model":
-            model_name = getattr(self.agent.llm, "model_name", None) or settings.agent_default_model
+            model_name = getattr(self.agent.llm, "model_name", None) or get_default_model()
             self._print(f"当前模型: {model_name}")
 
         else:
@@ -185,7 +185,7 @@ class HavenApp:
 
     def _print_banner(self) -> None:
         skill_count = len(self.agent.skills)
-        model = getattr(self.agent.llm, "model_name", None) or settings.agent_default_model
+        model = getattr(self.agent.llm, "model_name", None) or get_default_model()
         self._print(
             f"\n  Haven (健健) — 多智能体交互框架  v0.1.0\n"
             f"  模型: {model}  |  已加载 {skill_count} 个 skill\n"

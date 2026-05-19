@@ -85,7 +85,6 @@ package "Core Layer\nsrc/forest/core/" #E8F0FE {
 
 package "Config Layer\nsrc/forest/config/" #ECEFF1 {
     component "Settings\n(singleton)" as settings
-    database "agents.yaml" as agents_y
     database "models.yaml" as models_y
 }
 
@@ -146,7 +145,6 @@ ba ..> ds : invoke
 ba ..> oai : invoke
 
 ' config reads
-settings <-- agents_y : read by
 settings <-- models_y : read by
 
 @enduml

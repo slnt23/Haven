@@ -19,8 +19,7 @@ haven/
 │   ├── config/                     # 配置层
 │   │   ├── settings.py             # Pydantic BaseSettings 单例
 │   │   ├── loader.py               # YAML 配置加载（OmegaConf）
-│   │   ├── models.yaml             # LLM 模型定义
-│   │   └── agents.yaml             # Agent 角色（general / orchestrator）
+│   │   └── models.yaml             # LLM 模型定义
 │   │
 │   ├── core/                       # 核心框架层
 │   │   ├── base_agent.py           # BaseAgent 抽象基类 + skill 集成
@@ -106,21 +105,7 @@ SKILL_DIRECTORY=skills          # .md skill 文件目录
 
 **`models.yaml`** — LLM 模型档：`deepseek-v4-pro`、`gpt-4o`、`gpt-4o-mini`。
 
-**`agents.yaml`** — 仅两个条目：
-
-```yaml
-agents:
-  general:        # 通用 agent — 能力由 skill 决定
-    role: "Haven Assistant"
-    goal: "帮助用户解决问题，根据加载的技能提供专业服务"
-    backstory: "灯塔的多功能助手，具备医疗、编程、研究、翻译等多种能力"
-
-  orchestrator:   # 编排 agent — 管理多个子 agent 协作
-    role: "Project Manager"
-    goal: "Coordinate agents to complete complex tasks efficiently"
-```
-
-**`loader.py`** — OmegaConf 加载 YAML，`get_model_config(name)` 将模型名解析为 `{provider, api_key, base_url, temperature, max_tokens}`。
+**`loader.py`** — OmegaConf 加载 `models.yaml`，`get_model_config(name)` 将模型名解析为 `{provider, api_key, base_url, temperature, max_tokens}`。
 
 ### 2. 核心框架层 `core/`
 
@@ -131,9 +116,8 @@ agents:
 | 方法 | 说明 |
 |------|------|
 | `_init_llm(model_name)` | 根据 provider 实例化 `ChatDeepSeek` 或 `ChatOpenAI` |
-| `_build_system_prompt()` | 组装 role + goal + backstory + **默认 skill 的 prompt** |
+| `_build_system_prompt()` | 组装默认 skill 的 prompt 为 system prompt |
 | `_invoke_llm(task, prompt, use_rag)` | 调用 LLM，可选 RAG 上下文注入 |
-| `_load_agent_config()` | 从 `agents.yaml` 加载角色定义 |
 | `enable_skill(skill)` | 加载一个 skill 实例 |
 | `load_skills_from_dir(dir)` | 扫描 `skills/*.md` 并自动注册 |
 | `match_skills(task)` | 返回匹配当前任务关键词的按需 skill |
@@ -188,7 +172,7 @@ match_skills(task)
 
 | Agent | 职责 |
 |-------|------|
-| `GeneralAgent` | 唯一通用 agent。角色从 `agents.yaml` 加载，人格由默认 skill 定义，领域能力由按需 skill 匹配 |
+| `GeneralAgent` | 唯一通用 agent。人格由默认 skill 定义，领域能力由按需 skill 匹配。无硬编码角色 |
 | `OrchestratorAgent` | 维护 `sub_agents` 字典，`run(task)` 广播给所有子 agent 并聚合结果 |
 
 ```python

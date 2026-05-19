@@ -40,7 +40,6 @@ end box
 user -> app : $ haven
 app -> agent : new GeneralAgent()
 activate agent
-agent -> agent : _load_agent_config()\n(from agents.yaml)
 agent --> app : agent ready
 
 app -> loader : load_from_dir("skills/")

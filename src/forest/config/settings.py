@@ -1,11 +1,15 @@
 from pathlib import Path
+
+from omegaconf import OmegaConf
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+_app_config = OmegaConf.to_container(OmegaConf.load(Path(__file__).parent / "app.yaml"), resolve=True)
+
+_env_file = Path(__file__).resolve().parent.parent.parent.parent / ".env"
+
 
 class Settings(BaseSettings):
-    _env_file = Path(__file__).resolve().parent.parent.parent.parent / ".env"
-
     model_config = SettingsConfigDict(
         env_file=str(_env_file),
         env_file_encoding="utf-8",
@@ -14,46 +18,46 @@ class Settings(BaseSettings):
 
     # ==================== API Keys ====================
     deepseek_api_key: str = Field(default="", alias="DEEPSEEK_API_KEY")
-    openai_api_key: str = Field(default="", alias="OPENAI_API_KEY")
+    # openai_api_key: str = Field(default="", alias="OPENAI_API_KEY")
 
-    # ==================== Agent Defaults ====================
-    agent_default_model: str = Field(default="deepseek-v4-pro", alias="AGENT_DEFAULT_MODEL")
-    agent_max_iterations: int = Field(default=20, alias="AGENT_MAX_ITERATIONS")
-    agent_max_execution_time: int = Field(default=300, alias="AGENT_MAX_EXECUTION_TIME")
+    # ==================== Agent ====================
+    agent_max_iterations: int = Field(default=_app_config["agent"]["max_iterations"], alias="AGENT_MAX_ITERATIONS")
+    agent_max_execution_time: int = Field(default=_app_config["agent"]["max_execution_time"],
+                                          alias="AGENT_MAX_EXECUTION_TIME")
 
-    # ==================== Tools - Web Search ====================
+    # ==================== Web Search ====================
     web_search_api_key: str = Field(default="", alias="WEB_SEARCH_API_KEY")
-    web_search_engine: str = Field(default="bing", alias="WEB_SEARCH_ENGINE")
+    web_search_engine: str = Field(default=_app_config["web_search"]["engine"], alias="WEB_SEARCH_ENGINE")
 
     # ==================== Email ====================
-    email_smtp_host: str = Field(default="smtp.qq.com", alias="EMAIL_SMTP_HOST")
-    email_smtp_port: int = Field(default=587, alias="EMAIL_SMTP_PORT")
+    email_smtp_host: str = Field(default=_app_config["email"]["smtp_host"], alias="EMAIL_SMTP_HOST")
+    email_smtp_port: int = Field(default=_app_config["email"]["smtp_port"], alias="EMAIL_SMTP_PORT")
     email_smtp_username: str = Field(default="", alias="EMAIL_SMTP_USERNAME")
     email_smtp_password: str = Field(default="", alias="EMAIL_SMTP_PASSWORD")
-    email_use_tls: bool = Field(default=True, alias="EMAIL_USE_TLS")
+    email_use_tls: bool = Field(default=_app_config["email"]["use_tls"], alias="EMAIL_USE_TLS")
 
-    email_imap_host: str = Field(default="imap.qq.com", alias="EMAIL_IMAP_HOST")
-    email_imap_port: int = Field(default=993, alias="EMAIL_IMAP_PORT")
+    email_imap_host: str = Field(default=_app_config["email"]["imap_host"], alias="EMAIL_IMAP_HOST")
+    email_imap_port: int = Field(default=_app_config["email"]["imap_port"], alias="EMAIL_IMAP_PORT")
     email_imap_username: str = Field(default="", alias="EMAIL_IMAP_USERNAME")
     email_imap_password: str = Field(default="", alias="EMAIL_IMAP_PASSWORD")
-    email_poll_interval: int = Field(default=60, alias="EMAIL_POLL_INTERVAL")
+    email_poll_interval: int = Field(default=_app_config["email"]["poll_interval"], alias="EMAIL_POLL_INTERVAL")
 
     email_user_whitelist: str = Field(default="", alias="EMAIL_USER_WHITELIST")
-    email_digest_time: str = Field(default="08:00", alias="EMAIL_DIGEST_TIME")
+    email_digest_time: str = Field(default=_app_config["email"]["digest_time"], alias="EMAIL_DIGEST_TIME")
 
     # ==================== RAG ====================
-    rag_embedding_model: str = Field(default="text-embedding-3-small", alias="RAG_EMBEDDING_MODEL")
-    rag_embedding_api_base: str = Field(default="https://api.openai.com/v1", alias="RAG_EMBEDDING_API_BASE")
-    rag_chunk_size: int = Field(default=1000, alias="RAG_CHUNK_SIZE")
-    rag_chunk_overlap: int = Field(default=200, alias="RAG_CHUNK_OVERLAP")
-    rag_top_k: int = Field(default=5, alias="RAG_TOP_K")
+    rag_embedding_model: str = Field(default=_app_config["rag"]["embedding_model"], alias="RAG_EMBEDDING_MODEL")
+    rag_embedding_api_base: str = Field(default=_app_config["rag"]["embedding_api_base"],
+                                        alias="RAG_EMBEDDING_API_BASE")
+    rag_chunk_size: int = Field(default=_app_config["rag"]["chunk_size"], alias="RAG_CHUNK_SIZE")
+    rag_chunk_overlap: int = Field(default=_app_config["rag"]["chunk_overlap"], alias="RAG_CHUNK_OVERLAP")
+    rag_top_k: int = Field(default=_app_config["rag"]["top_k"], alias="RAG_TOP_K")
 
     # ==================== Skills ====================
-    skill_directory: str = Field(default="skills", alias="SKILL_DIRECTORY")
+    skill_directory: str = Field(default=_app_config["skill"]["directory"], alias="SKILL_DIRECTORY")
 
     # ==================== Project ====================
     project_root: Path = Path(__file__).resolve().parent.parent.parent.parent
 
 
-# 实例化
 settings = Settings()

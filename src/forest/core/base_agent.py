@@ -4,8 +4,9 @@ from typing import Any, TYPE_CHECKING
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 
-from forest.config import settings, get_model_config
+from forest.config import settings, get_model_config, get_default_model
 from forest.core.memory import AgentMemory
+from forest.skills.loader import SkillLoader
 
 if TYPE_CHECKING:
     from forest.core.rag import RAGEngine
@@ -23,10 +24,6 @@ class BaseAgent(ABC):
         self.max_iterations = settings.agent_max_iterations
         self.max_execution_time = settings.agent_max_execution_time
 
-        self._role: str = ""
-        self._goal: str = ""
-        self._backstory: str = ""
-
     def register_tool(self, name: str, tool: Any) -> None:
         self.tools[name] = tool
 
@@ -42,7 +39,6 @@ class BaseAgent(ABC):
 
         Returns the number of skills loaded.
         """
-        from forest.skills.loader import SkillLoader
 
         if directory is None:
             directory = str(settings.project_root / settings.skill_directory)
@@ -62,7 +58,7 @@ class BaseAgent(ABC):
         if self.llm is not None:
             return self.llm
 
-        model_name = model_name or settings.agent_default_model
+        model_name = model_name or get_default_model()
         cfg = get_model_config(model_name)
         provider = cfg["provider"]
 
@@ -90,13 +86,8 @@ class BaseAgent(ABC):
         return self.llm
 
     def _build_system_prompt(self) -> str:
-        parts = []
-        if self._role:
-            parts.append(f"你是 {self._role}。")
-        if self._goal:
-            parts.append(f"你的目标是：{self._goal}")
-        if self._backstory:
-            parts.append(f"背景：{self._backstory}")
+        """Assemble system prompt from default skills only."""
+        parts: list[str] = []
         for skill in self.skills.values():
             if skill.default and skill.prompt_extension:
                 parts.append(skill.prompt_extension)
@@ -113,8 +104,11 @@ class BaseAgent(ABC):
         return matched
 
     async def _invoke_llm(
-        self, task: str, system_prompt: str = "", use_rag: bool = True
-    ) -> str:
+            self,
+            task: str,
+            system_prompt: str = "",
+            use_rag: bool = True) -> str:
+
         if self.llm is None:
             self._init_llm()
 
@@ -139,18 +133,6 @@ class BaseAgent(ABC):
         response = await self.llm.ainvoke(messages)
         content = response.content if hasattr(response, "content") else str(response)
         return content
-
-    def _load_agent_config(self) -> None:
-        from forest.config import load_agents_config
-        agents_cfg = load_agents_config()
-        if self.name in agents_cfg:
-            agent_cfg = agents_cfg[self.name]
-            self._role = str(agent_cfg.get("role", ""))
-            self._goal = str(agent_cfg.get("goal", ""))
-            self._backstory = str(agent_cfg.get("backstory", ""))
-            model_name = str(agent_cfg.get("llm_model", ""))
-            if model_name and self.llm is None:
-                self._init_llm(model_name)
 
     @abstractmethod
     async def run(self, task: str, **kwargs: Any) -> str:

@@ -16,7 +16,6 @@ class GeneralAgent(BaseAgent):
 
     def __init__(self, name: str = "general", **kwargs: Any) -> None:
         super().__init__(name, **kwargs)
-        self._load_agent_config()
 
     async def run(self, task: str, **kwargs: Any) -> str:
         return await self._invoke_llm(task, system_prompt=kwargs.get("system_prompt", ""))
