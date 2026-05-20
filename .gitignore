@@ -9,5 +9,6 @@ forest.egg-info
 .claude
 haven.egg-info
 .data
+dist
 
 CLAUDE.md
