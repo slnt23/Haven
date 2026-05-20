@@ -148,45 +148,47 @@ class BaseAgent(ABC):
                 matched.append(skill)
         return matched
 
-    async def _invoke_llm(
-            self,
-            task: str,
-            system_prompt: str = "",
-            use_rag: bool = True) -> str:
+    def _build_rag_context(self, task: str) -> str:
+        """Build RAG context string for prompt injection. Returns empty string if nothing retrieved."""
+        if self.rag is None or self.rag.doc_count == 0:
+            return ""
+        retrieved = self.rag.retrieve(task, top_k=settings.rag_top_k)
+        if not retrieved:
+            return ""
+        return self.rag.format_context(retrieved)
 
-        if self.llm is None:
-            self._init_llm()
-
-        messages: list[BaseMessage] = []
+    def _build_messages(
+        self, task: str, system_prompt: str = "", use_rag: bool = True,
+    ) -> list[BaseMessage]:
+        """Assemble the message list (system + human) for an LLM call."""
         full_system = self._build_system_prompt()
         if system_prompt:
             full_system = f"{full_system}\n{system_prompt}" if full_system else system_prompt
 
-        if use_rag and self.rag is not None and self.rag.doc_count > 0:
-            retrieved = self.rag.retrieve(task, top_k=settings.rag_top_k)
-            if retrieved:
-                rag_context = self.rag.format_context(retrieved)
+        if use_rag:
+            rag_context = self._build_rag_context(task)
+            if rag_context:
                 full_system = (
                     f"{full_system}\n\n"
                     f"[参考知识 — 请优先基于以下资料回答]\n{rag_context}"
                 )
 
+        messages: list[BaseMessage] = []
         if full_system:
             messages.append(SystemMessage(content=full_system))
         messages.append(HumanMessage(content=task))
+        return messages
 
+    async def _invoke_llm(self, messages: list[BaseMessage]) -> str:
+        if self.llm is None:
+            self._init_llm()
         response = await self.llm.ainvoke(messages)
-        content = response.content if hasattr(response, "content") else str(response)
-        return content
+        return response.content if hasattr(response, "content") else str(response)
 
-    async def _invoke_llm_with_tools(
-            self,
-            task: str,
-            system_prompt: str = "",
-            use_rag: bool = True) -> str:
+    async def _invoke_llm_with_tools(self, messages: list[BaseMessage]) -> str:
         """LLM invocation with a tool-calling loop.
 
-        1. Build messages, invoke LLM (which may return ``tool_calls``).
+        1. Invoke LLM (which may return ``tool_calls``).
         2. If ``tool_calls`` present: execute each, append ``ToolMessage``,
            loop back (respecting ``max_iterations``).
         3. Return the final text response.
@@ -194,32 +196,13 @@ class BaseAgent(ABC):
         if self.llm is None:
             self._init_llm()
 
-        messages: list[BaseMessage] = []
-        full_system = self._build_system_prompt()
-        if system_prompt:
-            full_system = f"{full_system}\n{system_prompt}" if full_system else system_prompt
-
-        if use_rag and self.rag is not None and self.rag.doc_count > 0:
-            retrieved = self.rag.retrieve(task, top_k=settings.rag_top_k)
-            if retrieved:
-                rag_context = self.rag.format_context(retrieved)
-                full_system = (
-                    f"{full_system}\n\n"
-                    f"[参考知识 — 请优先基于以下资料回答]\n{rag_context}"
-                )
-
-        if full_system:
-            messages.append(SystemMessage(content=full_system))
-        messages.append(HumanMessage(content=task))
-
         iteration = 0
         while iteration < self.max_iterations:
             response = await self.llm.ainvoke(messages)
 
             tool_calls = getattr(response, "tool_calls", None)
             if not tool_calls:
-                content = response.content if hasattr(response, "content") else str(response)
-                return content
+                return response.content if hasattr(response, "content") else str(response)
 
             messages.append(response)
 

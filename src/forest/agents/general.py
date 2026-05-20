@@ -20,11 +20,26 @@ class GeneralAgent(BaseAgent):
     async def run(self, task: str, **kwargs: Any) -> str:
         system_prompt = kwargs.get("system_prompt", "")
         use_rag = kwargs.get("use_rag", True)
+        history = kwargs.get("history", None)
+        on_demand_skills = kwargs.get("on_demand_skills", None)
+
+        messages = self._build_messages(task, system_prompt=system_prompt, use_rag=use_rag)
+
+        # insert history between system and user messages when provided
+        if history:
+            user_msg = messages.pop()
+            messages.extend(history)
+            messages.append(user_msg)
+
+        # append on-demand skill prompts
+        if on_demand_skills:
+            for skill in on_demand_skills:
+                if skill.prompt_extension and messages and hasattr(messages[0], "content"):
+                    messages[0].content += f"\n\n{skill.prompt_extension}"
+
         if self._tool_instances:
-            return await self._invoke_llm_with_tools(
-                task, system_prompt=system_prompt, use_rag=use_rag
-            )
-        return await self._invoke_llm(task, system_prompt=system_prompt, use_rag=use_rag)
+            return await self._invoke_llm_with_tools(messages)
+        return await self._invoke_llm(messages)
 
     async def step(self, messages: list[BaseMessage]) -> BaseMessage:
         if self.llm is None:

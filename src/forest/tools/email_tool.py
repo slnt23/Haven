@@ -3,7 +3,7 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
 from forest.config import settings
-from forest.core.tool_registry import ToolRegistry
+from forest.tools.tool_registry import ToolRegistry
 
 
 @ToolRegistry.register("email_sender")

@@ -2,8 +2,11 @@ from typing import Any
 
 
 class Registry:
-    _items: dict[str, Any] = {}
     _label: str = "item"
+
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        super().__init_subclass__(**kwargs)
+        cls._items: dict[str, Any] = {}
 
     @classmethod
     def register(cls, name: str = "") -> Any:

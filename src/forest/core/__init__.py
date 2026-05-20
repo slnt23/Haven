@@ -1,5 +1,5 @@
 from .base_agent import BaseAgent
-from .tool_registry import ToolRegistry
+from forest.tools.tool_registry import ToolRegistry
 from .memory import AgentMemory
 from .rag import RAGEngine
 

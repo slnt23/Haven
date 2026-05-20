@@ -8,7 +8,8 @@ from __future__ import annotations
 from typing import Any
 
 
-def handle(agent: Any, mcp_manager: Any, text: str) -> tuple[str, bool] | None:
+def handle(agent: Any, text: str) -> tuple[str, bool] | None:
+    mcp_manager = getattr(agent, "mcp_manager", None)
     """Parse and dispatch a slash command.
 
     Returns ``(output, should_exit)``, or ``None`` if *text* is not a command.
@@ -66,6 +67,23 @@ def _cmd_help() -> str:
 
 
 def _cmd_skills(agent: Any) -> str:
+    # aggregate skills from orchestrator sub-agents when applicable
+    sub_agents = getattr(agent, "sub_agents", None)
+
+    if sub_agents:
+        lines = ["Agents 及已加载 Skill:"]
+        for name, sub in sorted(sub_agents.items()):
+            defaults = [s for s in sub.skills.values() if s.default]
+            ondemands = [s for s in sub.skills.values() if not s.default]
+            lines.append(f"  [{name}] — {len(sub.skills)} skill(s)")
+            if defaults:
+                for s in defaults:
+                    lines.append(f"    [默认] {s.name} — {s.description}")
+            if ondemands:
+                for s in ondemands:
+                    lines.append(f"    [按需] {s.name} — {s.description}")
+        return "\n".join(lines)
+
     if not agent.skills:
         return "(未加载任何 skill)"
 
@@ -102,7 +120,13 @@ def _cmd_model(agent: Any, parts: list[str]) -> str:
                 break
         if match:
             try:
+                # switch model on orchestrator and all sub-agents
                 actual = agent.switch_model(match)
+                for sub in getattr(agent, "sub_agents", {}).values():
+                    try:
+                        sub.switch_model(match)
+                    except Exception:
+                        pass
                 return f"已切换到模型: {actual}"
             except Exception as exc:
                 return f"切换失败: {exc}"
@@ -137,6 +161,23 @@ def _cmd_mcp(mcp_manager: Any) -> str:
 
 
 def _cmd_tools(agent: Any) -> str:
+    sub_agents = getattr(agent, "sub_agents", None)
+
+    if sub_agents:
+        all_tools: dict[str, tuple[str, str]] = {}  # name → (desc, agent_name)
+        for a_name, sub in sorted(sub_agents.items()):
+            for t_name, tool in sorted(sub.tools.items()):
+                desc = getattr(tool, "description", "") or ""
+                if t_name not in all_tools:
+                    all_tools[t_name] = (desc, a_name)
+        lines = [f"已加载 {len(all_tools)} 个工具 (来自 {len(sub_agents)} 个 Agent):"]
+        for t_name, (desc, a_name) in sorted(all_tools.items()):
+            if desc:
+                lines.append(f"  {t_name} [{a_name}] — {desc}")
+            else:
+                lines.append(f"  {t_name} [{a_name}]")
+        return "\n".join(lines)
+
     if not agent.tools:
         return "(未加载任何工具)"
     lines = [f"已加载 {len(agent.tools)} 个工具:"]

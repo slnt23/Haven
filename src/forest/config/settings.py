@@ -77,6 +77,9 @@ class Settings(BaseSettings):
     # ==================== Skills ====================
     skill_directory: str = Field(default=_app_config["skill"]["directory"], alias="SKILL_DIRECTORY")
 
+    # ==================== Daemon pid ====================
+    pid_file: Path = Field(default_factory=lambda: Path(__file__).resolve().parent.parent.parent.parent / ".data" / "haven.pid")
+
     # ==================== Project ====================
     project_root: Path = Path(__file__).resolve().parent.parent.parent.parent
 

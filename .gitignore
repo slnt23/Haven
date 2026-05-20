@@ -8,5 +8,6 @@
 forest.egg-info
 .claude
 haven.egg-info
+.data
 
-
+CLAUDE.md

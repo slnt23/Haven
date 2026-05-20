@@ -8,7 +8,7 @@ from pathlib import Path
 
 from forest.config import settings
 from forest.core.base_agent import BaseAgent
-from forest.skills.loader import SkillLoader
+from forest.core.pidfile import is_running, read as pid_read, remove as pid_remove, write as pid_write
 from forest.services.base_channel import BaseChannel
 from forest.services.email_channel import EmailChannel
 from forest.services.socket_channel import SocketChannel
@@ -18,8 +18,8 @@ logger = logging.getLogger("forest.daemon")
 BANNER = """
   +--------------------------------------------------------------+
   |                    Haven Daemon v0.1.0                       |
-  |                                                            |
-  |  Daemon is running. Press Ctrl+C to stop.                  |
+  |                                                              |
+  |  Daemon is running. Press Ctrl+C to stop.                    |
   +--------------------------------------------------------------+
 """
 
@@ -43,11 +43,16 @@ class HavenDaemon:
 
     async def start(self) -> None:
         """Initialise agent and start all enabled channels."""
+        existing = pid_read(settings.pid_file)
+        if existing is not None and is_running(existing):
+            logger.error("Daemon already running (PID %d). Use 'haven stop' first.", existing)
+            raise SystemExit(1)
+
         await self._init_agent()
-        await self._init_mcp()
         self._build_channels()
         await self._start_channels()
         self._register_signals()
+        pid_write(settings.pid_file)
         self._running = True
         self._print_status()
 
@@ -70,6 +75,7 @@ class HavenDaemon:
             except Exception as exc:
                 logger.debug("MCP shutdown: %s", exc)
 
+        pid_remove(settings.pid_file)
         logger.info("Haven daemon stopped")
 
     async def run_forever(self) -> None:
@@ -88,62 +94,14 @@ class HavenDaemon:
     # ------------------------------------------------------------------
 
     async def _init_agent(self) -> None:
-        from forest.agents import GeneralAgent
+        from forest.agents.factory import create_agent
 
-        self.agent = GeneralAgent()
-        self.agent.memory.session_id = "daemon"
-        self.agent.memory.entity_name = "daemon_user"
-        self.agent.memory.channel = "daemon"
-        if self.agent.llm is None:
-            self.agent._init_llm()
-
-        # load skills
-        skill_dir = settings.project_root / settings.skill_directory
-        if skill_dir.is_dir():
-            loaded = SkillLoader.load_from_dir(skill_dir)
-            for skill in loaded:
-                self.agent.skills[skill.name] = skill
+        self.agent = await create_agent(
+            session_id="daemon",
+            entity_name="daemon_user",
+            channel="daemon",
+        )
         logger.info("Agent initialised, %d skill(s) loaded", len(self.agent.skills))
-
-    async def _init_mcp(self) -> None:
-        if not settings.mcp_enabled or self.agent is None:
-            return
-
-        try:
-            from forest.mcp import MCPManager, MCPServerConfig
-            from forest.config import get_mcp_config
-        except ImportError as exc:
-            logger.warning("MCP SDK not available, skipping (%s)", exc)
-            return
-
-        raw_configs = get_mcp_config()
-        if not raw_configs:
-            return
-
-        configs = []
-        for raw in raw_configs:
-            try:
-                configs.append(MCPServerConfig(**raw))
-            except Exception as exc:
-                logger.warning("Invalid MCP config, skipping: %s", exc)
-                continue
-
-        configs = [c for c in configs if c.enabled]
-        if not configs:
-            return
-
-        self.agent.mcp_manager = MCPManager(configs)
-        try:
-            mcp_tools = await self.agent.mcp_manager.start()
-        except Exception as exc:
-            logger.warning("MCP connection failed: %s", exc)
-            self.agent.mcp_manager = None
-            return
-
-        if mcp_tools:
-            self.agent.register_mcp_tools(mcp_tools)
-            self.agent.bind_tools_to_llm()
-            logger.info("MCP: %d tool(s) loaded", len(mcp_tools))
 
     def _build_channels(self) -> None:
         # Socket channel
@@ -182,7 +140,7 @@ class HavenDaemon:
             except NotImplementedError:
                 # Windows fallback: use signal.signal()
                 try:
-                    signal.signal(sig, lambda s, f: self._shutdown_event.set())
+                    signal.signal(sig, lambda *_: self._shutdown_event.set())
                 except Exception:
                     pass
 

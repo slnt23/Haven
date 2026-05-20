@@ -1,4 +1,4 @@
-from forest.core.tool_registry import ToolRegistry
+from forest.tools.tool_registry import ToolRegistry
 
 
 @ToolRegistry.register("medical_kb")

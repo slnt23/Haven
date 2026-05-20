@@ -2,27 +2,11 @@ import os
 from pathlib import Path
 from typing import Any
 
+from dotenv import load_dotenv
 from omegaconf import OmegaConf, DictConfig, ListConfig
 
-
-def _load_dotenv() -> None:
-    """Load .env file into os.environ so get_model_config can read API keys."""
-    env_file = Path(__file__).resolve().parent.parent.parent.parent / ".env"
-    if not env_file.is_file():
-        return
-    with open(env_file, encoding="utf-8") as fh:
-        for line in fh:
-            line = line.strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-            key, _, value = line.partition("=")
-            key = key.strip()
-            value = value.strip().strip('"').strip("'")
-            if key and key not in os.environ:
-                os.environ[key] = value
-
-
-_load_dotenv()
+_env_file = Path(__file__).resolve().parent.parent.parent.parent / ".env"
+load_dotenv(_env_file)
 
 _config: DictConfig | None = None
 

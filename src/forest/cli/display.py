@@ -51,10 +51,20 @@ async def prompt_user() -> str:
         raise
 
 
-def print_banner(agent: BaseAgent, mcp_manager: Any | None = None) -> None:
+def print_banner(agent: BaseAgent) -> None:
     """Print the Haven startup banner with model / skills / MCP status."""
-    skill_count = len(agent.skills)
     model = getattr(agent.llm, "model_name", None) or get_default_model()
+    sub_agents = getattr(agent, "sub_agents", None)
+
+    # aggregate across sub-agents when using orchestrator
+    if sub_agents:
+        skill_count = sum(len(a.skills) for a in sub_agents.values())
+        tool_count = sum(len(a.tools) for a in sub_agents.values())
+    else:
+        skill_count = len(agent.skills)
+        tool_count = len(agent.tools)
+
+    mcp_manager = getattr(agent, "mcp_manager", None)
 
     mcp_line = ""
     if mcp_manager is not None:
@@ -68,24 +78,28 @@ def print_banner(agent: BaseAgent, mcp_manager: Any | None = None) -> None:
             parts.append(f"{failed} offline")
         mcp_line = f"│  {', '.join(parts):<74}│\n"
 
+    agent_line = ""
+    if sub_agents:
+        names = ", ".join(sorted(sub_agents.keys()))
+        agent_line = f"│  Agents: {len(sub_agents)} ({names}):<76│\n"
+
     banner = f"""
-╭──────────────────────────── Haven v0.1.0 ────────────────────────────────╮
+╭──────────────────────────── Haven v0.2.0 ────────────────────────────────╮
 │          _   _                                                             │
 │         | | | | __ ___   _____ _ __                                        │
 │         | |_| |/ _` \\ \\ / / _ \\ '_ \\                                   │
 │         |  _  | (_| |\\ V /  __/ | | |                                     │
 │         |_| |_|\\__,_| \\_/ \\___|_| |_|                                   │
 │                                                                            │
-│  Model:  {model:<64}                                                       │
+│  Model:   {model:<63}│
+│  Agents:  {len(sub_agents) if sub_agents else 1:<63}│
+│  Skills:  {skill_count:<63}│
+│  Tools:   {tool_count:<63}│
+│  MCP:     {mcp_line}                                                       │
 │                                                                            │
-│  MCP :   {mcp_line}                                                        │
-│  skills: {skill_count:<66}                                                 │
-│                                                                            │
-│  辅助命令：                                                                  │
-│  /help        Commands                                                     │
-│  /exit /q     Exit                                                         │
-│                                                                            │
-│  Ready.  Haven · Multi-Agent Runtime                                       │
+│  Commands:                                                                 │
+│  /help        /skills     /tools     /models    /model                     │
+│  /mcp         /clear      /exit /q                                         │
 │                                                                            │
 ╰────────────────────────────────────────────────────────────────────────────╯
 """  # noqa: E501

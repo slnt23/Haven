@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from forest.config import settings
-from forest.core.tool_registry import ToolRegistry
+from forest.tools.tool_registry import ToolRegistry
 
 
 @ToolRegistry.register("file_ops")
