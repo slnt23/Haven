@@ -18,7 +18,13 @@ class GeneralAgent(BaseAgent):
         super().__init__(name, **kwargs)
 
     async def run(self, task: str, **kwargs: Any) -> str:
-        return await self._invoke_llm(task, system_prompt=kwargs.get("system_prompt", ""))
+        system_prompt = kwargs.get("system_prompt", "")
+        use_rag = kwargs.get("use_rag", True)
+        if self._tool_instances:
+            return await self._invoke_llm_with_tools(
+                task, system_prompt=system_prompt, use_rag=use_rag
+            )
+        return await self._invoke_llm(task, system_prompt=system_prompt, use_rag=use_rag)
 
     async def step(self, messages: list[BaseMessage]) -> BaseMessage:
         if self.llm is None:

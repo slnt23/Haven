@@ -25,6 +25,29 @@ rag:
   chunk_overlap: 200
   top_k: 5
 
+# ==================== MCP ====================
+mcp:
+  enabled: true
+  # MCP 服务器配置已移至项目根目录下的 mcp.json 文件。
+  # 使用标准的 mcpServers 格式，可直接从 MCP 市场复制粘贴。
+
+# ==================== Daemon ====================
+daemon:
+  channels:
+    socket:
+      enabled: true
+      host: "127.0.0.1"
+      port: 9020
+    email:
+      enabled: false
+
+# ==================== Memory ====================
+memory:
+  db_path: ".data/memory.db"
+  enabled: true                              # 是否启用长期记忆
+  extract_after_turn: true                   # 每轮对话后自动提取事实
+  min_confidence: 0.5                        # 注入 system prompt 的最低置信度
+
 # ==================== Skills ====================
 skill:
   directory: skills

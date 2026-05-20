@@ -23,7 +23,11 @@ package "User Space" #E8F5E9 {
         file "translation.md" as tr_md
         file "*.md" as any_md <<on-demand>>
     }
+    folder ".data/" as data_dir {
+        database "memory.db" as mem_db
+    }
     file ".env" as env_file
+    file "mcp.json" as mcp_json
 }
 
 cloud "LLM APIs" #ECEFF1 {
@@ -31,12 +35,20 @@ cloud "LLM APIs" #ECEFF1 {
     component "OpenAI" as oai
 }
 
+cloud "MCP Servers\n(External)" #EDE7F6 {
+    component "Local\nProcess\n(stdio)" as mcp_stdio
+    component "Remote\nHTTP SSE" as mcp_http
+    component "Remote\nWebSocket" as mcp_ws
+}
+
 ' --------------------------------------------------------------------------
 ' Entry Points
 ' --------------------------------------------------------------------------
 
 package "Entry Points" #FCE4EC {
-    component "haven\n(CLI)" as cli_cmd
+    component "haven\n(CLI REPL)" as cli_cmd
+    component "haven --task\n(one-shot)" as cli_task
+    component "haven serve\n(daemon)" as cli_serve
     component "run_agent.py" as run_agent
     component "run_email_service.py" as email_svc
     component "eval.py" as eval_script
@@ -48,6 +60,15 @@ package "Entry Points" #FCE4EC {
 
 package "CLI Layer\nsrc/forest/cli/" #FCE4EC {
     component "HavenApp" as haven_app
+    component "main.py" as main_py
+}
+
+package "Services Layer\nsrc/forest/services/" #E8F5E9 {
+    component "HavenDaemon" as daemon
+    component "BaseChannel\n(abstract)" as base_ch
+    component "SocketChannel\n(tcp://9020)" as sock_ch
+    component "EmailChannel\n(IMAP+SMTP)" as email_ch
+    component "EmailService" as es
 }
 
 package "Workflow Layer\nsrc/forest/workflows/" #E8F5E9 {
@@ -67,6 +88,11 @@ package "Skill Layer\nsrc/forest/skills/" #FFF3E0 {
     component "BaseSkill" as bs
 }
 
+package "MCP Layer\nsrc/forest/mcp/" #EDE7F6 {
+    component "MCPManager" as mcpm
+    component "MCPServerConfig" as mcpc
+}
+
 package "Tool Layer\nsrc/forest/tools/" #F3E5F5 {
     component "WebSearchTool" as wst
     component "FileOpsTool" as fot
@@ -78,37 +104,54 @@ package "Tool Layer\nsrc/forest/tools/" #F3E5F5 {
 
 package "Core Layer\nsrc/forest/core/" #E8F0FE {
     component "BaseAgent" as ba
-    component "AgentMemory" as mem
+    component "AgentMemory\n(dual-layer)" as mem
+    component "SQLiteMemoryStore\n(long-term)" as mem_store
     component "ToolRegistry" as treg
     component "RAGEngine" as rag
 }
 
 package "Config Layer\nsrc/forest/config/" #ECEFF1 {
     component "Settings\n(singleton)" as settings
+    database "app.yaml" as app_y
     database "models.yaml" as models_y
-}
-
-package "Service Layer\nsrc/forest/services/" #E8F5E9 {
-    component "EmailService" as es
 }
 
 ' --------------------------------------------------------------------------
 ' Dependencies
 ' --------------------------------------------------------------------------
 
-' user space → config
+' user space → config/data
 env_file --> settings : loads
 skills_dir --> sl : reads .md files
+mcp_json --> mcpc : reads mcpServers
+mem_db --> mem_store : persists
 
 ' entry points → application
-cli_cmd --> haven_app
+cli_cmd --> main_py
+cli_task --> main_py
+cli_serve --> main_py
+main_py --> haven_app : REPL mode
+main_py --> daemon : serve mode
 run_agent --> oa
 email_svc --> es
 eval_script --> ga
 
-' cli → agents + skills
+' cli → agents + skills + mcp + memory
 haven_app --> ga : creates
 haven_app --> sl : loads skills
+haven_app --> mcpm : manages lifecycle
+haven_app --> mem_store : persists to
+
+' daemon → agents + channels + memory
+daemon --> ga : owns
+daemon --> base_ch : manages
+daemon --> mcpm : manages lifecycle
+
+' channels → agents + email
+sock_ch -|> base_ch
+email_ch -|> base_ch
+base_ch --> ga : agent handler
+email_ch --> es : wraps
 
 ' workflows → agents
 rf --> oa
@@ -117,20 +160,31 @@ df --> oa
 df --> ga
 dgf --> ga
 
-' agents → core + skills
+' agents → core + skills + mcp + memory
 ga -|> ba
 oa -|> ba
 ga --> sl : loads
 ga --> bs : holds
+ga --> mcpm : tool injection
 ba --> mem : contains
 ba --> treg : uses
 ba --> rag : optional
+
+' memory → store
+mem --> mem_store : delegates
 
 ' orchestrator → agents
 oa --> ga : delegates to
 
 ' services → agents
 es --> oa : agent_handler
+
+' mcp → core + external
+mcpm *--> mcpc : uses
+mcpm ..> mcp_stdio : connect
+mcpm ..> mcp_http : connect
+mcpm ..> mcp_ws : connect
+ba ..> mcpm : register_mcp_tools()
 
 ' tools → core
 wst --> treg : registers
@@ -143,8 +197,11 @@ rst --> treg : registers
 ' llm calls
 ba ..> ds : invoke
 ba ..> oai : invoke
+mem_store ..> ds : extract facts
+mem_store ..> oai : extract facts
 
 ' config reads
-settings <-- models_y : read by
+settings <-- app_y : default values
+settings <-- models_y : model definitions
 
 @enduml

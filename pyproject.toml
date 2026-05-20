@@ -1,6 +1,11 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
 [project]
 name = "haven"
 version = "0.1.0"
+description = "多智能体交互框架"
 requires-python = ">=3.14"
 dependencies = [
     "deepagents>=0.6.1",
@@ -12,6 +17,8 @@ dependencies = [
     "openai==2.36.0",
     "pydantic>=2.13.4",
     "pydantic-settings>=2.7.0",
+    "mcp>=1.0.0",
+    "langchain-mcp-adapters>=0.1.0",
 ]
 
 [project.scripts]
@@ -22,6 +29,12 @@ haven = "forest.cli.main:main"
 #    "pytest>=8.0.0",
 #    "pytest-asyncio>=0.25.0",
 #]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/forest"]
+include = [
+    "src/forest/config/*.yaml",
+]
 
 [dependency-groups]
 dev = [

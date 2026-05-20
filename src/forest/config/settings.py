@@ -17,8 +17,9 @@ class Settings(BaseSettings):
     )
 
     # ==================== API Keys ====================
-    deepseek_api_key: str = Field(default="", alias="DEEPSEEK_API_KEY")
-    # openai_api_key: str = Field(default="", alias="OPENAI_API_KEY")
+    # 模型 API Key 现在通过 models.yaml 中的 api_key_env 字段指定，
+    # 由 loader.get_model_config() 直接从 os.environ 读取。
+    # 用户只需在 .env 或 shell 中设置对应环境变量即可，无需修改此文件。
 
     # ==================== Agent ====================
     agent_max_iterations: int = Field(default=_app_config["agent"]["max_iterations"], alias="AGENT_MAX_ITERATIONS")
@@ -53,6 +54,26 @@ class Settings(BaseSettings):
     rag_chunk_overlap: int = Field(default=_app_config["rag"]["chunk_overlap"], alias="RAG_CHUNK_OVERLAP")
     rag_top_k: int = Field(default=_app_config["rag"]["top_k"], alias="RAG_TOP_K")
 
+    # ==================== MCP ====================
+    mcp_enabled: bool = Field(default=_app_config["mcp"]["enabled"], alias="MCP_ENABLED")
+
+    # ==================== Daemon ====================
+    daemon_socket_enabled: bool = Field(default=_app_config["daemon"]["channels"]["socket"]["enabled"],
+                                         alias="DAEMON_SOCKET_ENABLED")
+    daemon_socket_host: str = Field(default=_app_config["daemon"]["channels"]["socket"]["host"],
+                                     alias="DAEMON_SOCKET_HOST")
+    daemon_socket_port: int = Field(default=_app_config["daemon"]["channels"]["socket"]["port"],
+                                     alias="DAEMON_SOCKET_PORT")
+    daemon_email_enabled: bool = Field(default=_app_config["daemon"]["channels"]["email"]["enabled"],
+                                        alias="DAEMON_EMAIL_ENABLED")
+
+    # ==================== Memory ====================
+    memory_enabled: bool = Field(default=_app_config["memory"]["enabled"], alias="MEMORY_ENABLED")
+    memory_extract_after_turn: bool = Field(default=_app_config["memory"]["extract_after_turn"],
+                                             alias="MEMORY_EXTRACT_AFTER_TURN")
+    memory_min_confidence: float = Field(default=_app_config["memory"]["min_confidence"],
+                                          alias="MEMORY_MIN_CONFIDENCE")
+
     # ==================== Skills ====================
     skill_directory: str = Field(default=_app_config["skill"]["directory"], alias="SKILL_DIRECTORY")
 
@@ -61,3 +82,9 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+
+def get_mcp_config() -> list[dict]:
+    """Return raw MCP server configurations from ``mcp.json``."""
+    from forest.mcp.config import load_mcp_servers
+    return load_mcp_servers()

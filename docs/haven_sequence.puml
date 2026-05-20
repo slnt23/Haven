@@ -1,6 +1,6 @@
 @startuml haven_sequence
 ' ============================================================================
-' Haven Framework — Sequence: Chat Interaction Flow
+' Haven Framework — Sequence: Chat Interaction + Daemon + Memory
 ' ============================================================================
 
 skinparam backgroundColor #FEFEFE
@@ -8,12 +8,13 @@ skinparam defaultFontSize 13
 skinparam ParticipantPadding 20
 skinparam BoxPadding 10
 
-title Haven — Interactive Chat Sequence
+title Haven — Interactive Chat + Long-Term Memory Sequence
 
 actor "User" as user
 
 box "Haven CLI" #FCE4EC
     participant "HavenApp" as app
+    participant "HavenDaemon" as daemon
 end box
 
 box "Agent" #E3F2FD
@@ -25,6 +26,15 @@ box "Skills" #FFF3E0
     participant "SkillLoader" as loader
     participant "BaseSkill\n(haven.md)" as haven
     participant "BaseSkill\n(code_review.md)" as cr
+end box
+
+box "MCP" #EDE7F6
+    participant "MCPManager" as mcpm
+end box
+
+box "Long-Term Memory" #E8F0FE
+    participant "SQLiteMemoryStore" as mem_store
+    database ".data/memory.db" as sqlite
 end box
 
 box "External" #ECEFF1
@@ -40,6 +50,7 @@ end box
 user -> app : $ haven
 app -> agent : new GeneralAgent()
 activate agent
+agent -> agent : _init_llm(default_model)
 agent --> app : agent ready
 
 app -> loader : load_from_dir("skills/")
@@ -54,70 +65,162 @@ note right of agent
   code_review.md → default=false → on-demand only
 end note
 
+app -> mcpm : new MCPManager(configs from mcp.json)
+activate mcpm
+app -> mcpm : start() → load tools
+mcpm --> app : {tool_name: BaseTool, ...}
+app -> agent : register_mcp_tools(tools)
+agent -> agent : bind_tools_to_llm()
+deactivate mcpm
+
 app -> app : _print_banner()
-user <-- app : Haven (健健) — 多智能体交互框架
+user <-- app : Haven (健健) — Multi-Agent Runtime
 
 ' --------------------------------------------------------------------------
-' Normal Chat Turn
+' Chat Turn with Long-Term Memory
 ' --------------------------------------------------------------------------
 
-== Chat Turn (no keyword match) ==
-
-user -> app : "今天天气怎么样"
-app -> agent : _build_system_prompt()
-agent --> app : role + goal + backstory\n+ haven.md prompt (default)
-
-app -> agent : match_skills("今天天气怎么样")
-agent -> cr : matches("今天天气怎么样")
-cr --> agent : False
-agent --> app : [] (no match)
-
-app -> mem : get_history()
-mem --> app : [...]
-
-app -> llm : [SystemMessage (haven persona)]\n[HistoryMessage...]\n[HumanMessage("今天天气怎么样")]
-llm --> app : "您好！今天灯塔的天气..."
-app -> mem : add_message(HumanMsg)\nadd_message(AIMsg)
-user <-- app : "您好！今天灯塔的天气..."
-
-' --------------------------------------------------------------------------
-' Chat Turn with Keyword Match
-' --------------------------------------------------------------------------
-
-== Chat Turn (keyword match → on-demand skill) ==
+== Chat Turn (with keyword match + memory persistence) ==
 
 user -> app : "帮我审查这段代码\ndef foo(): pass"
+
 app -> agent : _build_system_prompt()
-agent --> app : role + goal + haven.md prompt
+agent -> mem : get_long_term_context()
+mem -> mem_store : format_facts_by_name("cli_user")
+mem_store -> sqlite : SELECT key, value FROM entity_facts\nJOIN entities ...
+sqlite --> mem_store : [{key: "name", value: "张三"}, ...]
+mem_store --> mem : "[长期记忆]\n- name: 张三\n- ..."
+mem --> agent : long-term context (or "")
+agent --> app : haven.md prompt + long-term memory
 
 app -> agent : match_skills("帮我审查这段代码...")
-agent -> cr : matches("帮我审查这段代码...")
-note right of cr
-  trigger_keywords:
-  - 审查, code review, ...
-end note
+agent -> cr : matches(...)
 cr --> agent : True
 agent --> app : [code_review]
 
-app -> app : system_prompt += code_review.prompt
-
 app -> mem : get_history()
-mem --> app : [...]
+mem --> app : [...] (short-term deque)
 
-app -> llm : [SystemMessage (haven + code_review)]\n[History...]\n[HumanMessage("帮我审查代码...")]
+app -> llm : [SystemMessage (haven + memory + code_review)]\n[History...]\n[HumanMessage("帮我审查代码...")]
 llm --> app : "[Code Review Mode]\n发现以下问题: ..."
+
 app -> mem : add_message(HumanMsg)\nadd_message(AIMsg)
+
+app -> agent : save_turn("帮我审查...", "发现以下问题...")
+agent -> mem : save_message("human", ...)\nsave_message("ai", ...)
+mem -> mem_store : save_message(session_id, "human", ...)
+mem_store -> sqlite : INSERT INTO conversations ...
+mem -> mem_store : save_message(session_id, "ai", ...)
+mem_store -> sqlite : INSERT INTO conversations ...
+
+app -> agent : extract_facts_async() [background task]
+
 user <-- app : "发现以下问题: ..."
 
 ' --------------------------------------------------------------------------
-' Slash Command
+' Background Fact Extraction
 ' --------------------------------------------------------------------------
 
-== Slash Command ==
+== Background: Fact Extraction ==
 
-user -> app : "/skills"
-app -> app : _handle_command("/skills")
-user <-- app : 已加载 5 个 skill:\n[默认] haven\n[按需] code_review, ...
+agent -> mem : extract_facts(llm)
+mem -> mem_store : get_last_conversation_pair(session_id)
+mem_store -> sqlite : SELECT role, content FROM conversations\nWHERE session_id = ? ORDER BY id DESC LIMIT 2
+sqlite --> mem_store : [("human", "..."), ("ai", "...")]
+mem_store --> mem : ("我叫张三...", "你好张三...")
+
+mem -> mem_store : extract_and_store("cli_user", snippet, llm)
+
+mem_store -> llm : [EXTRACT_PROMPT + conversation]
+note right of llm
+  "从对话中提取结构化信息:
+   返回 JSON: {facts: [{key, value, confidence}]}"
+end note
+llm --> mem_store : {"facts": [{"key": "name", "value": "张三", "confidence": 0.9}, ...]}
+
+mem_store -> sqlite : INSERT OR IGNORE INTO entities ...
+mem_store -> sqlite : UPSERT entity_facts ...
+mem_store --> mem : extracted 2 fact(s) for 'cli_user'
+
+note right of mem
+  Facts persisted:
+  - name: 张三 (0.9)
+  - job: 软件工程师 (0.9)
+  Injected in next turn's system prompt
+end note
+
+' --------------------------------------------------------------------------
+' Daemon Startup
+' --------------------------------------------------------------------------
+
+== Daemon Startup ==
+
+user -> daemon : $ haven serve
+
+daemon -> agent : new GeneralAgent()
+agent -> agent : _init_llm()
+daemon -> loader : load skills
+daemon -> mcpm : init MCP
+daemon -> mcpm : start()
+
+daemon -> daemon : _build_channels()
+note right of daemon
+  SocketChannel(enabled=True)
+  EmailChannel(enabled=False)
+end note
+
+daemon -> daemon : _start_channels()
+
+user <-- daemon : Daemon is running.\nChannels: [OK] socket (tcp://127.0.0.1:9020)
+
+' --------------------------------------------------------------------------
+' TCP Socket Connection
+' --------------------------------------------------------------------------
+
+== TCP Socket Connection ==
+
+user -> daemon : telnet 127.0.0.1 9020
+note right of daemon
+  asyncio.start_server
+  callback: _handle_connection
+end note
+
+daemon --> user : Haven · Multi-Agent Runtime\n>
+
+user -> daemon : "你好，我叫李四，在杭州做设计师"
+
+daemon -> mem : session_id = "socket_127.0.0.1_xxxxx"
+
+daemon -> agent : _build_system_prompt()
+agent -> mem : get_long_term_context()
+mem --> agent : "" (first contact)
+
+daemon -> llm : [SystemMessage (haven)]\n[HumanMessage("你好，我叫李四...")]
+llm --> daemon : "你好李四！很高兴认识你..."
+
+daemon -> agent : save_turn(...)
+daemon -> agent : extract_facts_async() [background]
+
+daemon --> user : "你好李四！很高兴认识你..."
+
+note right of daemon
+  Background extraction:
+  → entity: socket_127.0.0.1_xxxxx
+  → facts: {name: 李四, job: 设计师, location: 杭州}
+end note
+
+' --------------------------------------------------------------------------
+' Slash Commands
+' --------------------------------------------------------------------------
+
+== Slash Commands ==
+
+user -> app : "/model gpt-4o"
+app -> agent : switch_model("gpt-4o")
+agent -> agent : _init_llm("gpt-4o")
+agent -> agent : bind_tools_to_llm()
+agent --> app : "gpt-4o"
+user <-- app : 已切换到模型: gpt-4o
 
 user -> app : "/clear"
 app -> mem : clear()
@@ -125,6 +228,7 @@ user <-- app : 对话历史已清空。
 
 user -> app : "/exit"
 app -> app : running = False
+app -> mcpm : stop()
 user <-- app : 再见。
 
 @enduml
