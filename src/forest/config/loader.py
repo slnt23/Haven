@@ -1,7 +1,6 @@
 import os
 from pathlib import Path
 from typing import Any
-
 from dotenv import load_dotenv
 from omegaconf import OmegaConf, DictConfig, ListConfig
 
@@ -11,11 +10,26 @@ load_dotenv(_env_file)
 _config: DictConfig | None = None
 
 
+def _find_user_config(filename: str) -> Path | None:
+    """Look for *filename* in CWD, falling back to ``HAVEN_CONFIG_DIR`` env var."""
+    cwd_path = Path.cwd() / filename
+    if cwd_path.is_file():
+        return cwd_path
+    env_dir = os.environ.get("HAVEN_CONFIG_DIR", "")
+    if env_dir:
+        env_path = Path(env_dir) / filename
+        if env_path.is_file():
+            return env_path
+    return None
+
+
 def _load_config() -> DictConfig | None:
     global _config
     if _config is None:
-        config_path = Path(__file__).parent / "models.yaml"
-        _config = OmegaConf.load(config_path)
+        _config = OmegaConf.load(Path(__file__).parent / "models.yaml")
+        user_config_path = _find_user_config("models.yaml")
+        if user_config_path is not None:
+            _config = OmegaConf.merge(_config, OmegaConf.load(user_config_path))
         OmegaConf.resolve(_config)
     return _config
 

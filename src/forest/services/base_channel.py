@@ -32,6 +32,12 @@ class BaseChannel(ABC):
         """Start the channel with a shared agent instance."""
         self._agent = agent
 
+    @property
+    def status_detail(self) -> str:
+        """One-line description shown in daemon start-up banner.  Override to
+        display channel-specific information (address, app-id, etc.)."""
+        return ""
+
     @abstractmethod
     async def stop(self) -> None:
         """Stop the channel and release resources."""

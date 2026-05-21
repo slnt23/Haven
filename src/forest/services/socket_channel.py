@@ -54,6 +54,10 @@ class SocketChannel(BaseChannel):
             await self._server.wait_closed()
         logger.info("SocketChannel stopped")
 
+    @property
+    def status_detail(self) -> str:
+        return f"tcp://{self.host}:{self.port}"
+
     # ------------------------------------------------------------------
     # per-connection handler
     # ------------------------------------------------------------------

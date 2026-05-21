@@ -4,13 +4,13 @@ import asyncio
 import logging
 import signal
 import sys
-from pathlib import Path
 
 from forest.config import settings
 from forest.core.base_agent import BaseAgent
 from forest.core.pidfile import is_running, read as pid_read, remove as pid_remove, write as pid_write
 from forest.services.base_channel import BaseChannel
 from forest.services.email_channel import EmailChannel
+from forest.services.feishu_channel import FeishuChannel
 from forest.services.socket_channel import SocketChannel
 
 logger = logging.getLogger("forest.daemon")
@@ -27,8 +27,8 @@ BANNER = """
 class HavenDaemon:
     """Long-running daemon that shares a single Agent across multiple channels.
 
-    Channels (email, socket, future WeChat, ...) run as parallel asyncio
-    tasks.  The agent is initialised once and shared.
+    Channels (socket, email, feishu, ...) run as parallel asyncio tasks.
+    The agent is initialised once and shared.
     """
 
     def __init__(self) -> None:
@@ -119,6 +119,14 @@ class HavenDaemon:
         if email_enabled:
             self.channels.append(EmailChannel())
 
+        # Feishu channel
+        feishu_enabled = getattr(settings, "daemon_feishu_enabled", False)
+        if feishu_enabled:
+            self.channels.append(FeishuChannel(
+                app_id=getattr(settings, "daemon_feishu_app_id", ""),
+                app_secret=getattr(settings, "daemon_feishu_app_secret", ""),
+            ))
+
     async def _start_channels(self) -> None:
         for ch in self.channels:
             try:
@@ -153,12 +161,9 @@ class HavenDaemon:
             f"  Channels:",
         ]
         for ch in self.channels:
-            detail = ""
-            if ch.name == "socket":
-                host = getattr(ch, "host", "?")
-                port = getattr(ch, "port", "?")
-                detail = f"  (tcp://{host}:{port})"
-            lines.append(f"    [OK] {ch.name}{detail}")
+            detail = ch.status_detail
+            label = f"  ({detail})" if detail else ""
+            lines.append(f"    [OK] {ch.name}{label}")
         lines.append("")
         sys.stdout.write("\n".join(lines) + "\n")
         sys.stdout.flush()

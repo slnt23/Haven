@@ -1,12 +1,34 @@
+import os
 from pathlib import Path
-
 from omegaconf import OmegaConf
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-_app_config = OmegaConf.to_container(OmegaConf.load(Path(__file__).parent / "app.yaml"), resolve=True)
-
 _env_file = Path(__file__).resolve().parent.parent.parent.parent / ".env"
+
+
+def _find_user_config(filename: str) -> Path | None:
+    """Look for *filename* in CWD, falling back to ``HAVEN_CONFIG_DIR`` env var."""
+    cwd_path = Path.cwd() / filename
+    if cwd_path.is_file():
+        return cwd_path
+    env_dir = os.environ.get("HAVEN_CONFIG_DIR", "")
+    if env_dir:
+        env_path = Path(env_dir) / filename
+        if env_path.is_file():
+            return env_path
+    return None
+
+
+def _load_app_config() -> dict:
+    config = OmegaConf.load(Path(__file__).parent / "app.yaml")
+    user_config_path = _find_user_config("haven.yaml")
+    if user_config_path is not None:
+        config = OmegaConf.merge(config, OmegaConf.load(user_config_path))
+    return OmegaConf.to_container(config, resolve=True)
+
+
+_app_config = _load_app_config()
 
 
 class Settings(BaseSettings):
@@ -26,7 +48,7 @@ class Settings(BaseSettings):
     agent_max_execution_time: int = Field(default=_app_config["agent"]["max_execution_time"],
                                           alias="AGENT_MAX_EXECUTION_TIME")
 
-    # ==================== Web Search ====================
+    # ==================== Web Search ====================# TODO 这里后期的改到yaml中，不能写死这个key 的名字，使其可以自定义，
     web_search_api_key: str = Field(default="", alias="WEB_SEARCH_API_KEY")
     web_search_engine: str = Field(default=_app_config["web_search"]["engine"], alias="WEB_SEARCH_ENGINE")
 
@@ -48,8 +70,7 @@ class Settings(BaseSettings):
 
     # ==================== RAG ====================
     rag_embedding_model: str = Field(default=_app_config["rag"]["embedding_model"], alias="RAG_EMBEDDING_MODEL")
-    rag_embedding_api_base: str = Field(default=_app_config["rag"]["embedding_api_base"],
-                                        alias="RAG_EMBEDDING_API_BASE")
+    rag_embedding_api_base: str = Field(default=_app_config["rag"]["embedding_api_base"],alias="RAG_EMBEDDING_API_BASE")
     rag_chunk_size: int = Field(default=_app_config["rag"]["chunk_size"], alias="RAG_CHUNK_SIZE")
     rag_chunk_overlap: int = Field(default=_app_config["rag"]["chunk_overlap"], alias="RAG_CHUNK_OVERLAP")
     rag_top_k: int = Field(default=_app_config["rag"]["top_k"], alias="RAG_TOP_K")
@@ -58,21 +79,18 @@ class Settings(BaseSettings):
     mcp_enabled: bool = Field(default=_app_config["mcp"]["enabled"], alias="MCP_ENABLED")
 
     # ==================== Daemon ====================
-    daemon_socket_enabled: bool = Field(default=_app_config["daemon"]["channels"]["socket"]["enabled"],
-                                         alias="DAEMON_SOCKET_ENABLED")
-    daemon_socket_host: str = Field(default=_app_config["daemon"]["channels"]["socket"]["host"],
-                                     alias="DAEMON_SOCKET_HOST")
-    daemon_socket_port: int = Field(default=_app_config["daemon"]["channels"]["socket"]["port"],
-                                     alias="DAEMON_SOCKET_PORT")
-    daemon_email_enabled: bool = Field(default=_app_config["daemon"]["channels"]["email"]["enabled"],
-                                        alias="DAEMON_EMAIL_ENABLED")
+    daemon_socket_enabled: bool = Field(default=_app_config["daemon"]["channels"]["socket"]["enabled"],alias="DAEMON_SOCKET_ENABLED")
+    daemon_socket_host: str = Field(default=_app_config["daemon"]["channels"]["socket"]["host"],alias="DAEMON_SOCKET_HOST")
+    daemon_socket_port: int = Field(default=_app_config["daemon"]["channels"]["socket"]["port"],alias="DAEMON_SOCKET_PORT")
+    daemon_email_enabled: bool = Field(default=_app_config["daemon"]["channels"]["email"]["enabled"],alias="DAEMON_EMAIL_ENABLED")
+    daemon_feishu_enabled: bool = Field(default=_app_config["daemon"]["channels"]["feishu"]["enabled"],alias="DAEMON_FEISHU_ENABLED")
+    daemon_feishu_app_id: str = Field(default=_app_config["daemon"]["channels"]["feishu"]["app_id"],alias="DAEMON_FEISHU_APP_ID")
+    daemon_feishu_app_secret: str = Field(default=_app_config["daemon"]["channels"]["feishu"]["app_secret"],alias="DAEMON_FEISHU_APP_SECRET")
 
     # ==================== Memory ====================
     memory_enabled: bool = Field(default=_app_config["memory"]["enabled"], alias="MEMORY_ENABLED")
-    memory_extract_after_turn: bool = Field(default=_app_config["memory"]["extract_after_turn"],
-                                             alias="MEMORY_EXTRACT_AFTER_TURN")
-    memory_min_confidence: float = Field(default=_app_config["memory"]["min_confidence"],
-                                          alias="MEMORY_MIN_CONFIDENCE")
+    memory_extract_after_turn: bool = Field(default=_app_config["memory"]["extract_after_turn"], alias="MEMORY_EXTRACT_AFTER_TURN")
+    memory_min_confidence: float = Field(default=_app_config["memory"]["min_confidence"],alias="MEMORY_MIN_CONFIDENCE")
 
     # ==================== Skills ====================
     skill_directory: str = Field(default=_app_config["skill"]["directory"], alias="SKILL_DIRECTORY")

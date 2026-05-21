@@ -10,7 +10,6 @@ haven/
 ├── .env                            # 环境变量（LLM Key、SMTP 凭证等）
 ├── mcp.json                        # MCP 服务器配置（标准 mcpServers 格式）
 ├── skills/                         # Skill 定义（.md 文件，拖入即用）
-│   ├── haven.md                    # 默认人格 — 健健（default: true）
 │   ├── code_review.md              # 代码审查
 │   ├── translation.md              # 翻译
 │   ├── summarization.md            # 摘要
@@ -22,7 +21,8 @@ haven/
 │   │   ├── settings.py             # Pydantic BaseSettings 单例
 │   │   ├── loader.py               # YAML 配置加载（OmegaConf）
 │   │   ├── app.yaml                # 框架默认参数（agent/RAG/email/MCP/skill）
-│   │   └── models.yaml             # LLM 模型定义
+│   │   ├── models.yaml             # LLM 模型定义
+│   │   └── haven.md                # 系统核心人格（随包分发）
 │   │
 │   ├── core/                       # 核心框架层
 │   │   ├── base_agent.py           # BaseAgent 抽象基类 + skill/工具/MCP/记忆 集成
@@ -108,16 +108,20 @@ OrchestratorAgent   ←──    code_review.md   （按需激活）  web_fetch 
 
 ### 1. 配置层 `config/`
 
-配置文件分为四层，各有明确职责：
+配置文件分层加载，内置默认值可被用户 YAML 覆盖，环境变量优先级最高：
 
 | 文件 | 位置 | 职责 |
 |------|------|------|
-| `app.yaml` | `src/forest/config/` | 框架默认参数（agent/RAG/email/MCP/skill） |
-| `models.yaml` | `src/forest/config/` | LLM 模型定义（provider、endpoint、参数） |
+| `app.yaml` | `src/forest/config/` | 框架默认参数（内置，随包分发） |
+| `models.yaml` | `src/forest/config/` | LLM 模型默认定义（内置，随包分发） |
+| `haven.yaml` | 项目根目录 | 用户覆盖框架参数（可选，只写要改的字段） |
+| `models.yaml` | 项目根目录 | 用户追加/覆盖模型定义（可选） |
 | `mcp.json` | 项目根目录 | MCP 服务器连接配置（标准 mcpServers 格式） |
-| `.env` | 项目根目录 | API Key、邮箱密码等敏感信息（覆盖 app.yaml） |
+| `.env` | 项目根目录 | API Key、邮箱密码等敏感信息 |
 
-配置优先级：`.env` 环境变量 > `app.yaml` 默认值
+配置优先级：**内置默认 < 用户 YAML (CWD) < 环境变量 (.env / shell)**
+
+用户 YAML 与内置 YAML 做 deep merge，未覆盖的字段继承内置默认值。可通过 `HAVEN_CONFIG_DIR` 环境变量指定用户配置目录。
 
 **`settings.py`** — 使用 `pydantic-settings` 从 `.env` 和 `app.yaml` 读取，全局单例：
 
@@ -435,6 +439,7 @@ class BaseChannel(ABC):
 |------|------|
 | `SocketChannel` | TCP 服务器（默认 `127.0.0.1:9020`），telnet 式 REPL。每条连接独立会话（会话隔离），支持 `/exit` `/model` `/models` `/help` |
 | `EmailChannel` | 包装 `EmailService`，IMAP 轮询未读邮件 → Agent 处理 → SMTP 自动回复。白名单过滤 + 去重 |
+| `FeishuChannel` | 飞书 / Lark 即时通讯渠道，WebSocket 长连接接收消息，API 回复。无需公网 IP，支持自动重连 |
 
 **渠道启用配置（`app.yaml`）：**
 
@@ -447,6 +452,33 @@ daemon:
       port: 9020
     email:
       enabled: false    # 需 .env 配置 SMTP/IMAP 凭证
+    feishu:
+      enabled: false    # 需 .env 配置 DAEMON_FEISHU_APP_ID / DAEMON_FEISHU_APP_SECRET
+      app_id: ""
+      app_secret: ""
+```
+
+#### 飞书渠道配置步骤
+
+1. 打开 [飞书开发者后台](https://open.feishu.cn/app)，创建**企业自建应用**
+2. **添加应用能力** → 开启 **机器人（Bot）**
+3. **凭证与基础信息** → 复制 **App ID** 和 **App Secret**
+4. **事件订阅**（可选，WebSocket 模式无需配置回调 URL）
+5. **发布** → 创建版本并发布（仅应用管理员和测试用户可见即可）
+6. 在飞书客户端搜索机器人名称，开始对话
+
+在 `.env` 或用户 `haven.yaml` 中启用：
+
+```bash
+DAEMON_FEISHU_ENABLED=true
+DAEMON_FEISHU_APP_ID=cli_xxxxxxxx
+DAEMON_FEISHU_APP_SECRET=xxxxxxxx
+```
+
+```
+飞书用户 → 飞书服务器 → WebSocket 事件 → FeishuChannel → agent.run()
+                                                              ↓
+飞书用户 ← 飞书 API 回复 ← ← ← ← ← ← ← ← ← ← ← ← ← agent 返回结果
 ```
 
 ### 9. 工作流层 `workflows/`
