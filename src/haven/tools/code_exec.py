@@ -3,10 +3,6 @@ import sys
 import tempfile
 from pathlib import Path
 
-from haven.tools.tool_registry import ToolRegistry
-
-
-@ToolRegistry.register("code_exec")
 class CodeExecTool:
     def __init__(self):
         self.timeout = 30

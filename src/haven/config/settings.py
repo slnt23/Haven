@@ -103,5 +103,5 @@ settings = Settings()
 
 def get_mcp_config() -> list[dict]:
     """Return raw MCP server configurations from ``mcp.json``."""
-    from haven.mcp.config import load_mcp_servers
+    from haven.tools.mcp_config import load_mcp_servers
     return load_mcp_servers()

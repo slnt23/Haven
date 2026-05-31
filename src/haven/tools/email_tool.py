@@ -3,10 +3,7 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
 from haven.config import settings
-from haven.tools.tool_registry import ToolRegistry
 
-
-@ToolRegistry.register("email_sender")
 class EmailSenderTool:
     def __init__(self):
         self.smtp_host = settings.email_smtp_host

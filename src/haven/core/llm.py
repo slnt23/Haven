@@ -60,27 +60,6 @@ def create_llm(model_name: str | None = None) -> BaseChatModel:
     return model
 
 
-def switch_llm(current: BaseChatModel | None, model_name: str) -> BaseChatModel:
-    """安全切换到另一模型。若新模型初始化失败，保留原模型并抛出异常。
-
-    Args:
-        current: 当前模型（可为 None）。
-        model_name: 目标模型名。
-
-    Returns:
-        新模型实例。
-
-    Raises:
-        与 :func:`create_llm` 相同的异常类型。
-    """
-    try:
-        return create_llm(model_name)
-    except Exception:
-        if current is not None:
-            logger.warning("模型切换失败，保留当前模型")
-        raise
-
-
 def bind_tools(llm: BaseChatModel, tools: list[Any]) -> BaseChatModel:
     """对 LLM 执行 ``bind_tools()``。
 

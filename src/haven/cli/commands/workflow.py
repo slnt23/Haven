@@ -8,7 +8,7 @@ import typer
 
 from haven.cli.ui.console import (
     get_console, render_table, render_json, render_error,
-    render_success, render_info, render_list, dim, blank,
+    render_success, render_info, render_list, render_markdown, dim, blank,
 )
 
 workflow_app = typer.Typer(help="工作流管理 + 执行")
@@ -125,7 +125,7 @@ def run_workflow(
     output: Annotated[Optional[str], typer.Option("--output", "-o", help="结果写入文件")] = None,
     checkpoint: Annotated[bool, typer.Option("--checkpoint", help="启用 checkpoint")] = False,
 ) -> None:
-    """按工作流执行任务。"""
+    """按工作流执行任务。每个节点依次运行，支持失败重试。"""
     registry = _get_registry()
     if name not in registry.list_all():
         render_error(f"工作流不存在: {name}。可用: {', '.join(registry.list_all())}")
@@ -135,8 +135,55 @@ def run_workflow(
         render_error("--task 不能为空")
         raise typer.Exit(code=1)
 
-    render_info(f"[TODO] 执行工作流 '{name}' — RuntimeService 集成后可用")
-    render_info(f"  任务: {task[:80]}...")
+    # ---- 获取 Graph 信息 ----
+    try:
+        graph = registry.build(name)
+        nodes = list(graph._nodes.keys())
+    except Exception as exc:
+        render_error(f"构建工作流失败: {exc}")
+        raise typer.Exit(code=1)
+
+    # ---- 初始化 RuntimeService ----
+    import asyncio
+    from haven.cli.services.runtime_service import RuntimeService
+
+    async def _exec():
+        svc = RuntimeService()
+        await svc.start(session_id=f"wf_{name}", load_mcp=False)
+
+        if watch:
+            from haven.cli.ui.progress import NodeWatcher
+            watcher = NodeWatcher(nodes)
+            watcher.start()
+
+        try:
+            result = await svc.run_workflow(name, task, checkpoint=checkpoint)
+        finally:
+            if watch:
+                watcher.stop()
+            await svc.stop()
+
+        return result
+
+    result = asyncio.run(_exec())
+
+    # ---- 输出 ----
+    if json_output:
+        render_json(result)
+    else:
+        blank()
+        render_success(f"工作流: {name}  ({result['nodes_executed']} 个节点, {result['elapsed_ms']}ms)")
+        blank()
+        render_markdown(result["result"])
+        blank()
+
+    if output:
+        try:
+            with open(output, "w", encoding="utf-8") as f:
+                f.write(result["result"])
+            render_success(f"结果已写入: {output}")
+        except OSError as exc:
+            render_error(f"写入失败: {exc}")
 
 
 @workflow_app.command("resume", help="从 checkpoint 恢复执行")

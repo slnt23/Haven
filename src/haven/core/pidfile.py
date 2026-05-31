@@ -51,9 +51,3 @@ def remove(path: Path) -> None:
         pass
 
 
-def kill(pid: int) -> None:
-    """按 *pid* 终止进程。"""
-    if sys.platform == "win32":
-        subprocess.run(["taskkill", "/f", "/pid", str(pid)], capture_output=True)
-    else:
-        os.kill(pid, signal.SIGTERM)

@@ -6,8 +6,6 @@ import logging
 import threading
 
 from haven.config import settings
-from haven.core.base_agent import BaseAgent
-from haven.core.session import ChatSession
 from haven.services.base_channel import BaseChannel
 
 logger = logging.getLogger("haven.feishu_channel")
@@ -72,7 +70,7 @@ class FeishuChannel(BaseChannel):
         )
         self.app_id = app_id or getattr(settings, "daemon_feishu_app_id", "")
         self.app_secret = app_secret or getattr(settings, "daemon_feishu_app_secret", "")
-        self._session: ChatSession | None = None
+        self._session: Any = None
         self._running = False
         self._ws_thread: threading.Thread | None = None
 
@@ -80,7 +78,7 @@ class FeishuChannel(BaseChannel):
     # 通道生命周期
     # ------------------------------------------------------------------
 
-    async def start(self, agent: BaseAgent) -> None:
+    async def start(self, agent: Any) -> None:
         await super().start(agent)
 
         if not self.app_id or not self.app_secret:
@@ -90,7 +88,7 @@ class FeishuChannel(BaseChannel):
             self.enabled = False
             return
 
-        self._session = ChatSession(agent)
+        self._session = agent  # PlannerAgent 实例，直接调用 execute()
 
         loop = asyncio.get_running_loop()
 
@@ -200,9 +198,9 @@ class FeishuChannel(BaseChannel):
         self.agent.memory.entity_name = f"feishu_{open_id}"
         self.agent.memory.channel = "feishu"
 
-        # 通过 ChatSession 处理
+        # 通过 PlannerAgent 处理
         try:
-            response = await self._session.process(text)
+            response = await self._session.execute(text)
         except Exception:
             logger.exception("FeishuChannel: agent error")
             response = "抱歉，处理消息时出错了，请稍后重试。"

@@ -1,7 +1,5 @@
-from haven.tools.tool_registry import ToolRegistry
 
 
-@ToolRegistry.register("medical_kb")
 class MedicalKnowledgeTool:
     SYMPTOM_DATABASE: dict[str, list[dict[str, str]]] = {
         "headache": [

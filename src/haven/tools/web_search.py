@@ -1,8 +1,5 @@
 from haven.config import settings
-from haven.tools.tool_registry import ToolRegistry
 
-
-@ToolRegistry.register("web_search")
 class WebSearchTool:
     def __init__(self):
         self.api_key = settings.web_search_api_key

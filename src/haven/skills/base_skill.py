@@ -29,23 +29,9 @@ class BaseSkill:
     category: str = ""
     source_file: Path = field(default_factory=Path)
 
-    # ==================================================================
-    # 向后兼容
-    # ==================================================================
-
     @property
     def prompt_extension(self) -> str:
-        """兼容 BaseAgent._build_system_prompt() 调用。"""
         return self.prompt
-
-    @property
-    def trigger_keywords(self) -> list[str]:
-        """已废弃。保留属性避免 V1 引用报错，始终返回空列表。"""
-        return []
-
-    def matches(self, task: str) -> bool:
-        """已废弃。激活决定权交给 SkillSelector。始终返回 False。"""
-        return False
 
     # ==================================================================
     # 工具查询

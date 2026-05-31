@@ -5,7 +5,6 @@ import logging
 from typing import Any
 
 from haven.config import settings
-from haven.core.base_agent import BaseAgent
 from haven.services.base_channel import BaseChannel
 from haven.services.email_service import EmailService
 
@@ -13,13 +12,13 @@ logger = logging.getLogger("haven.email_channel")
 
 
 class EmailChannel(BaseChannel):
-    """邮件通道——轮询 IMAP 收件箱，经 Agent 处理后通过 SMTP 回复。"""
+    """邮件通道——轮询 IMAP 收件箱，经 PlannerAgent 处理后通过 SMTP 回复。"""
 
     def __init__(self) -> None:
         super().__init__("email",
                          enabled=getattr(settings, "daemon_email_enabled", False) or False)
 
-    async def start(self, agent: BaseAgent) -> None:
+    async def start(self, agent: Any) -> None:
         await super().start(agent)
 
         if not settings.email_smtp_username or not settings.email_smtp_password:
@@ -29,7 +28,7 @@ class EmailChannel(BaseChannel):
 
         async def agent_handler(subject: str, body: str) -> str:
             task = f"主题: {subject}\n\n{body}"
-            return await self.agent.run(task)
+            return await self.agent.execute(task)
 
         self._service = EmailService(agent_handler=agent_handler)
         await self._service.start()

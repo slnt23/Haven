@@ -45,9 +45,11 @@ app = typer.Typer(
 # ---- 注册子命令组 (有二级命令的) ----
 from haven.cli.commands.workflow import workflow_app
 from haven.cli.commands.skill import skill_app
+from haven.cli.commands.tool import tool_app
 
 app.add_typer(workflow_app, name="workflow")
 app.add_typer(skill_app, name="skill")
+app.add_typer(tool_app, name="tool")
 
 
 # ---------------------------------------------------------------------------

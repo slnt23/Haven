@@ -82,32 +82,3 @@ class HistoryManager:
 # ====================================================================
 # Tab 补全
 # ====================================================================
-
-
-class TabCompleter:
-    """命令补全器。按上下文字典补全。
-
-    用法::
-
-        completer = TabCompleter({"skill": ["coder", "medical"], "model": ["gpt-4o"]})
-        matches = completer.complete("haven skill co")  # → ["coder"]
-    """
-
-    def __init__(self, completions: dict[str, list[str]] | None = None):
-        self._completions: dict[str, list[str]] = completions or {}
-
-    def register(self, category: str, values: list[str]) -> None:
-        self._completions[category] = values
-
-    def complete(self, text: str) -> list[str]:
-        parts = text.strip().split()
-        if len(parts) <= 1:
-            return []
-        last = parts[-1].lower()
-        # 补全命令名
-        if len(parts) == 2 and not parts[1].startswith("-"):
-            cmds = ["chat", "run", "serve", "stop", "status",
-                    "skill", "workflow", "provider", "tool", "model",
-                    "memory", "session", "config", "doctor", "version"]
-            return [c for c in cmds if c.startswith(last)]
-        return [v for v in self._completions.get("all", []) if v.lower().startswith(last)]

@@ -1,10 +1,7 @@
 from pathlib import Path
 
 from haven.config import settings
-from haven.tools.tool_registry import ToolRegistry
 
-
-@ToolRegistry.register("file_ops")
 class FileOpsTool:
     def __init__(self):
         self.work_dir = settings.project_root

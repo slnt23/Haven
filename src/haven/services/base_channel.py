@@ -1,8 +1,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-
-from haven.core.base_agent import BaseAgent
+from typing import Any
 
 
 class BaseChannel(ABC):
@@ -14,26 +13,26 @@ class BaseChannel(ABC):
     def __init__(self, name: str, enabled: bool = True) -> None:
         self.name = name
         self.enabled = enabled
-        self._agent: BaseAgent | None = None
+        self._agent: Any = None
 
     @property
-    def agent(self) -> BaseAgent:
+    def agent(self) -> Any:
         if self._agent is None:
             raise RuntimeError(f"Channel '{self.name}': agent not set")
         return self._agent
 
     async def handle_message(self, message: str) -> str:
         """将消息路由到共享 agent 并返回响应。"""
-        return await self.agent.run(message)
+        return await self.agent.execute(message)
 
     @abstractmethod
-    async def start(self, agent: BaseAgent) -> None:
+    async def start(self, agent: Any) -> None:
         """用共享 agent 实例启动通道。"""
         self._agent = agent
 
     @property
     def status_detail(self) -> str:
-        """守护进程启动 banner 中显示的单行描述。可覆写以显示通道特定信息（地址、app-id 等）。"""
+        """守护进程启动 banner 中显示的单行描述。"""
         return ""
 
     @abstractmethod

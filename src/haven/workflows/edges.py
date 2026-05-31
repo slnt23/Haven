@@ -62,38 +62,12 @@ class ConditionalEdge:
 # ====================================================================
 
 
-def review_router(state: WorkflowState) -> str:
-    """Review 路由：评分 >= 70 → tester；< 70 → coder（如未超限）。"""
-    dev_state = state  # type: DevWorkflowState
-    retries = dev_state.node_retry_counts.get("coder", 0)
-
-    if dev_state.review_score >= 70 and not dev_state.review_blockers:
-        return "tester"
-
-    if retries >= dev_state.max_retries_per_node:
-        return ConditionalEdge.END
-    return "coder"
-
-
 def test_router(state: WorkflowState) -> str:
     """测试路由：通过 → END；失败 → coder（如未超限）。"""
     dev_state = state  # type: DevWorkflowState
     retries = dev_state.node_retry_counts.get("coder", 0)
 
     if dev_state.test_passed:
-        return ConditionalEdge.END
-
-    if retries >= dev_state.max_retries_per_node:
-        return ConditionalEdge.END
-    return "coder"
-
-
-def quality_gate_router(state: WorkflowState) -> str:
-    """质量门禁：review >= 80 且 test 通过 → END；否则 → coder。"""
-    dev_state = state  # type: DevWorkflowState
-    retries = dev_state.node_retry_counts.get("coder", 0)
-
-    if dev_state.review_score >= 80 and dev_state.test_passed:
         return ConditionalEdge.END
 
     if retries >= dev_state.max_retries_per_node:

@@ -18,7 +18,6 @@ from pydantic import BaseModel, Field
 
 from haven.runtime.runtime import AgentRuntime
 from haven.skills.registry import SkillRegistry
-from haven.skills.selector import SkillSelector
 
 logger = logging.getLogger("haven.planner")
 
@@ -149,7 +148,6 @@ class PlannerAgent:
     ):
         self.runtime = runtime
         self._workflow_registry = workflow_registry
-        self._selector = SkillSelector(llm=None)  # LLM 延迟绑定
         self._plan_cache: dict[str, ExecutionPlan] = {}
 
     @property
@@ -301,16 +299,65 @@ class PlannerAgent:
         return plan
 
     # ==================================================================
-    # 执行路径 1: Workflow（后续阶段实现）
+    # 执行路径 1: Workflow — Graph.run() 引擎
     # ==================================================================
 
+    _WORKFLOW_STATE_MAP: dict[str, Any] = {}  # 延迟导入避免循环依赖
+
     async def _execute_via_workflow(self, plan: ExecutionPlan, task: str) -> str:
-        logger.info("Workflow 执行: %s", plan.workflow)
-        return await self.runtime.run(
-            task,
-            active_skills=self._load_skills(plan.skills),
-            use_memory=True,
-        )
+        """通过 WorkflowGraph 执行多步工作流。
+
+        1. 从 WorkflowRegistry 获取对应 Graph
+        2. 构建 WorkflowState（按 workflow 类型选择正确的 State 子类）
+        3. 注入 Runtime 引用到 state
+        4. graph.run(state, runtime) → 返回最终输出
+        """
+        wf_name = plan.workflow
+        if not wf_name or self._workflow_registry is None:
+            return await self.runtime.run(task, use_memory=True)
+
+        try:
+            graph = self._workflow_registry.build(wf_name)
+        except Exception as exc:
+            logger.error("构建工作流 '%s' 失败: %s", wf_name, exc)
+            return f"[错误] 工作流 '{wf_name}' 构建失败: {exc}"
+
+        # 按工作流名选择对应的 State 类型
+        state = self._make_state(wf_name, task)
+
+        # 注入 Runtime
+        state._runtime = self.runtime
+        state.session_id = self.runtime.state.session_id
+
+        logger.info("执行工作流 '%s': %d 节点, task=%s", wf_name, len(graph._nodes), task[:60])
+
+        try:
+            result_state = await graph.run(state, runtime=self.runtime)
+        except Exception as exc:
+            logger.error("工作流 '%s' 执行失败: %s", wf_name, exc)
+            return f"[错误] 工作流执行失败: {exc}"
+
+        if result_state.status == "failed":
+            logger.warning("工作流 '%s' 失败: %s", wf_name, result_state.errors)
+            return f"[工作流失败]\n" + "\n".join(result_state.errors)
+
+        logger.info("工作流 '%s' 完成", wf_name)
+        return result_state.final_output or "(工作流完成，无输出)"
+
+    def _make_state(self, wf_name: str, task: str) -> Any:
+        """按工作流类型构建对应的 WorkflowState 子类实例。"""
+        if "dev" in wf_name:
+            from haven.workflows.state import DevWorkflowState
+            return DevWorkflowState(task=task, session_id=self.runtime.state.session_id)
+        elif "research" in wf_name:
+            from haven.workflows.state import ResearchWorkflowState
+            return ResearchWorkflowState(task=task, session_id=self.runtime.state.session_id)
+        elif "diagnosis" in wf_name:
+            from haven.workflows.state import DiagnosisWorkflowState
+            return DiagnosisWorkflowState(task=task, session_id=self.runtime.state.session_id)
+        else:
+            from haven.workflows.state import WorkflowState
+            return WorkflowState(task=task, session_id=self.runtime.state.session_id)
 
     # ==================================================================
     # 执行路径 2: 自编排多步

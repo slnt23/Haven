@@ -96,25 +96,6 @@ class SQLiteCheckpointer(Checkpointer):
         return [dict(r) for r in rows]
 
 
-class MemoryCheckpointer(Checkpointer):
-    """内存 Checkpointer（测试用）。"""
-
-    def __init__(self):
-        self._store: dict[str, Any] = {}
-
-    async def save(self, session_id: str, node_name: str, state: Any) -> None:
-        self._store[session_id] = state
-
-    async def load(self, session_id: str) -> Any | None:
-        return self._store.get(session_id)
-
-    async def list_sessions(self) -> list[dict[str, Any]]:
-        return [
-            {"session_id": k, "node_name": getattr(v, "current_node", ""), "created_at": ""}
-            for k, v in self._store.items()
-        ]
-
-
 def _serialize(state: Any) -> dict:
     """序列化 state 为 dict，排除不可序列化的字段。"""
     if hasattr(state, "__dataclass_fields__"):

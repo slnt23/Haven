@@ -4,9 +4,9 @@ import asyncio
 import logging
 import signal
 import sys
+from typing import Any
 
 from haven.config import settings
-from haven.core.base_agent import BaseAgent
 from haven.core.pidfile import is_running, read as pid_read, remove as pid_remove, write as pid_write
 from haven.services.base_channel import BaseChannel
 from haven.services.email_channel import EmailChannel
@@ -17,7 +17,7 @@ logger = logging.getLogger("haven.daemon")
 
 BANNER = """
   +--------------------------------------------------------------+
-  |                    Haven Daemon v0.1.0                       |
+  |                    Haven Daemon v2.0.0                       |
   |                                                              |
   |  Daemon is running. Press Ctrl+C to stop.                    |
   +--------------------------------------------------------------+
@@ -25,21 +25,17 @@ BANNER = """
 
 
 class HavenDaemon:
-    """长期运行守护进程，在多个通道间共享单个 Agent。
+    """长期运行守护进程，在多个通道间共享单个 PlannerAgent。
 
     通道（socket、邮件、飞书等）以并行 asyncio 任务运行。
     Agent 初始化一次并共享使用。
     """
 
     def __init__(self) -> None:
-        self.agent: BaseAgent | None = None
+        self.agent: Any = None
         self.channels: list[BaseChannel] = []
         self._running = False
         self._shutdown_event = asyncio.Event()
-
-    # ------------------------------------------------------------------
-    # 生命周期
-    # ------------------------------------------------------------------
 
     async def start(self) -> None:
         """初始化 agent 并启动所有已启用的通道。"""
@@ -69,20 +65,25 @@ class HavenDaemon:
             except Exception as exc:
                 logger.warning("Error stopping channel '%s': %s", ch.name, exc)
 
-        if self.agent and hasattr(self.agent, "mcp_manager") and self.agent.mcp_manager:
+        # 清理 Runtime（MCP 连接等）
+        if self.agent and hasattr(self.agent, "runtime"):
+            rt = self.agent.runtime
+            tm = getattr(rt, "tool_manager", None)
+            if tm:
+                try:
+                    await tm.stop_all()
+                except Exception as exc:
+                    logger.debug("ToolManager shutdown: %s", exc)
             try:
-                await self.agent.mcp_manager.stop()
-            except Exception as exc:
-                logger.debug("MCP shutdown: %s", exc)
+                await rt.extract_facts_async()
+            except Exception:
+                pass
 
         pid_remove(settings.pid_file)
         logger.info("Haven daemon stopped")
 
     async def run_forever(self) -> None:
-        """启动守护进程并等待关闭信号。
-
-        Ctrl+C (SIGINT) 或 SIGTERM 时干净退出。
-        """
+        """启动守护进程并等待关闭信号。"""
         try:
             await self.start()
             await self._shutdown_event.wait()
@@ -94,17 +95,17 @@ class HavenDaemon:
     # ------------------------------------------------------------------
 
     async def _init_agent(self) -> None:
-        from haven.agents.factory import create_agent
+        from haven.runtime.factory import create_agent
 
         self.agent = await create_agent(
             session_id="daemon",
             entity_name="daemon_user",
             channel="daemon",
         )
-        logger.info("Agent initialised, %d skill(s) loaded", len(self.agent.skills))
+        skills = len(getattr(self.agent.runtime, "skills", {}))
+        logger.info("Agent initialised, %d skill(s) loaded", skills)
 
     def _build_channels(self) -> None:
-        # Socket 通道
         socket_enabled = getattr(settings, "daemon_socket_enabled", True)
         socket_host = getattr(settings, "daemon_socket_host", "127.0.0.1")
         socket_port = getattr(settings, "daemon_socket_port", 9020)
@@ -114,12 +115,10 @@ class HavenDaemon:
                 shutdown_callback=self._shutdown_event.set,
             ))
 
-        # 邮件通道
         email_enabled = getattr(settings, "daemon_email_enabled", False)
         if email_enabled:
             self.channels.append(EmailChannel())
 
-        # 飞书通道
         feishu_enabled = getattr(settings, "daemon_feishu_enabled", False)
         if feishu_enabled:
             self.channels.append(FeishuChannel(
@@ -146,18 +145,19 @@ class HavenDaemon:
             try:
                 loop.add_signal_handler(sig, _handler)
             except NotImplementedError:
-                # Windows fallback: use signal.signal()
                 try:
                     signal.signal(sig, lambda *_: self._shutdown_event.set())
                 except Exception:
                     pass
 
     def _print_status(self) -> None:
-        model = getattr(self.agent.llm, "model_name", None) or "unknown"
+        rt = self.agent.runtime if self.agent else None
+        llm = getattr(rt, "llm", None) if rt else None
+        model = getattr(llm, "model_name", None) or "unknown"
+
         lines = [
             BANNER,
             f"  Model   : {model}",
-            f"  Skills  : {len(self.agent.skills) if self.agent else 0}",
             f"  Channels:",
         ]
         for ch in self.channels:

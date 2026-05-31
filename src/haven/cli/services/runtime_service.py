@@ -150,8 +150,13 @@ class RuntimeService:
             pass
 
         try:
-            tools = getattr(self._runtime, "_tools", {})
-            status["tools"] = len(tools)
+            tm = getattr(self._runtime, "_tool_manager", None)
+            if tm:
+                status["tools"] = len(tm.list_all())
+                status["providers"] = len(tm.list_providers())
+            else:
+                tools = getattr(self._runtime, "_tools", {})
+                status["tools"] = len(tools)
         except Exception:
             pass
 
@@ -252,6 +257,81 @@ class RuntimeService:
             asyncio.create_task(self._runtime.extract_facts_async())
 
         return {"result": result, "plan": plan, "elapsed_ms": elapsed_ms}
+
+    async def run_workflow(
+        self,
+        workflow_name: str,
+        task: str,
+        *,
+        checkpoint: bool = False,
+    ) -> dict[str, Any]:
+        """执行指定工作流。
+
+        Returns:
+            {result: str, workflow: str, nodes_executed: int, elapsed_ms: int}
+        """
+        if not self._initialized:
+            return {"result": "[错误] Runtime 未初始化", "workflow": workflow_name,
+                    "nodes_executed": 0, "elapsed_ms": 0}
+
+        from haven.workflows.registry import WorkflowRegistry
+
+        wf_names = WorkflowRegistry.list_all()
+        if workflow_name not in wf_names:
+            return {"result": f"[错误] 工作流不存在: {workflow_name}。可用: {', '.join(wf_names)}",
+                    "workflow": workflow_name, "nodes_executed": 0, "elapsed_ms": 0}
+
+        t0 = time.monotonic()
+
+        try:
+            graph = WorkflowRegistry.build(workflow_name)
+        except Exception as exc:
+            return {"result": f"[错误] 构建工作流失败: {exc}",
+                    "workflow": workflow_name, "nodes_executed": 0, "elapsed_ms": 0}
+
+        # 按名称选择 State 类型
+        state = self._make_workflow_state(workflow_name, task)
+        state._runtime = self._runtime
+        state.session_id = self._session_id
+
+        if not checkpoint:
+            graph._checkpointer = None
+
+        logger.info("Workflow '%s': %d nodes, task=%s",
+                     workflow_name, len(graph._nodes), task[:60])
+
+        try:
+            result_state = await graph.run(state, runtime=self._runtime)
+        except Exception as exc:
+            logger.error("Workflow '%s' error: %s", workflow_name, exc)
+            return {"result": f"[错误] {exc}", "workflow": workflow_name,
+                    "nodes_executed": len(state.node_outputs), "elapsed_ms": int((time.monotonic() - t0) * 1000)}
+
+        elapsed_ms = int((time.monotonic() - t0) * 1000)
+
+        if result_state.status == "failed":
+            return {"result": "[工作流失败]\n" + "\n".join(result_state.errors),
+                    "workflow": workflow_name,
+                    "nodes_executed": len(result_state.node_outputs),
+                    "elapsed_ms": elapsed_ms}
+
+        return {"result": result_state.final_output or "(完成)",
+                "workflow": workflow_name,
+                "nodes_executed": len(result_state.node_outputs),
+                "elapsed_ms": elapsed_ms}
+
+    @staticmethod
+    def _make_workflow_state(wf_name: str, task: str) -> Any:
+        from haven.workflows.state import (
+            WorkflowState, DevWorkflowState, ResearchWorkflowState, DiagnosisWorkflowState,
+        )
+        if "dev" in wf_name:
+            return DevWorkflowState(task=task)
+        elif "research" in wf_name:
+            return ResearchWorkflowState(task=task)
+        elif "diagnosis" in wf_name:
+            return DiagnosisWorkflowState(task=task)
+        return WorkflowState(task=task)
 
     async def chat_stream(self, task: str) -> AsyncIterator[str]:
         """REPL 流式对话（逐 token 返回）。

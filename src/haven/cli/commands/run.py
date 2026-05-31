@@ -17,7 +17,7 @@ from haven.cli.ui.console import (
 )
 from haven.cli.ui.progress import spinner
 from haven.cli.services.cli_service import CLIContext
-from haven.cli.utils.validators import validate_task
+from haven.cli.validators import validate_task
 
 logger = logging.getLogger("haven.cli.run")
 

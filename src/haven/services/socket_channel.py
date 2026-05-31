@@ -7,15 +7,13 @@ from typing import Any
 from langchain_core.messages import AIMessage, HumanMessage
 
 from haven.config import settings
-from haven.core.base_agent import BaseAgent
-from haven.core.session import ChatSession
 from haven.services.base_channel import BaseChannel
 
 logger = logging.getLogger("haven.socket_channel")
 
 BANNER = (
     "\r\n"
-    "  Haven · Multi-Agent Runtime\r\n"
+    "  Haven V2  Multi-Agent Runtime\r\n"
     "  Type /exit to disconnect, /help for commands\r\n"
     "\r\n"
 )
@@ -25,7 +23,7 @@ class SocketChannel(BaseChannel):
     """TCP socket 通道——类 telnet 的远程聊天 REPL。
 
     每个连接维护独立的对话历史（会话隔离）。
-    通过共享 :class:`ChatSession` 与 LLM 交互。
+    通过 PlannerAgent.execute() 与 LLM 交互。
     """
 
     def __init__(self, host: str = "127.0.0.1", port: int = 9020,
@@ -37,12 +35,10 @@ class SocketChannel(BaseChannel):
         self.host = host
         self.port = port
         self._server: asyncio.Server | None = None
-        self._session: ChatSession | None = None
         self._shutdown_callback = shutdown_callback
 
-    async def start(self, agent: BaseAgent) -> None:
+    async def start(self, agent: Any) -> None:
         await super().start(agent)
-        self._session = ChatSession(agent)
         self._server = await asyncio.start_server(
             self._handle_connection, self.host, self.port
         )
@@ -57,10 +53,6 @@ class SocketChannel(BaseChannel):
     @property
     def status_detail(self) -> str:
         return f"tcp://{self.host}:{self.port}"
-
-    # ------------------------------------------------------------------
-    # 按连接处理
-    # ------------------------------------------------------------------
 
     async def _handle_connection(
         self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
@@ -88,28 +80,19 @@ class SocketChannel(BaseChannel):
             if not text:
                 continue
 
-            # 内置命令
             if text.startswith("/"):
                 if await self._handle_command(text, writer):
                     if text in ("/exit", "/quit", "/q"):
                         break
                     continue
 
-            # 设置会话身份（用于长期记忆）
-            self.agent.memory.session_id = session_id
-            self.agent.memory.entity_name = session_id
-            self.agent.memory.channel = "socket"
-
-            # 通过 ChatSession 处理（使用连接本地历史）
+            # 通过 PlannerAgent.execute() 处理
             try:
-                response = await self._session.process(
-                    user_input=text, history=history, persist=True,
-                )
+                response = await self.agent.execute(text)
             except Exception as exc:
                 response = f"[错误] {exc}"
                 logger.error("SocketChannel: agent error for %s: %s", addr, exc)
 
-            # 更新连接本地历史（提供 history 时 ChatSession 不操作短期记忆）
             history.append(HumanMessage(content=text))
             history.append(AIMessage(content=response))
 
@@ -117,7 +100,8 @@ class SocketChannel(BaseChannel):
             await writer.drain()
 
             # 后台事实提取
-            asyncio.create_task(self.agent.extract_facts_async())
+            if hasattr(self.agent, "runtime"):
+                asyncio.create_task(self.agent.runtime.extract_facts_async())
 
         try:
             writer.close()
@@ -125,10 +109,6 @@ class SocketChannel(BaseChannel):
         except Exception:
             pass
         logger.info("SocketChannel: connection from %s closed", addr)
-
-    # ------------------------------------------------------------------
-    # 命令处理
-    # ------------------------------------------------------------------
 
     async def _handle_command(self, text: str, writer: asyncio.StreamWriter) -> bool:
         parts = text.strip().split()
@@ -159,7 +139,9 @@ class SocketChannel(BaseChannel):
             return True
 
         if cmd == "/model":
-            model = getattr(self.agent.llm, "model_name", None) or "unknown"
+            rt = getattr(self.agent, "runtime", None)
+            llm = getattr(rt, "llm", None) if rt else None
+            model = getattr(llm, "model_name", None) or "unknown"
             writer.write(f"  current model: {model}\r\n".encode("utf-8"))
             await writer.drain()
             return True
