@@ -30,7 +30,6 @@ haven = "haven.cli.main:main"
 packages = ["src/haven"]
 include = [
     "src/haven/config/*",
-    "src/haven/user/**/*",
 ]
 
 [dependency-groups]

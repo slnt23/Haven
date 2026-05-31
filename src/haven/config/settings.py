@@ -1,42 +1,21 @@
-import os
 from pathlib import Path
 from omegaconf import OmegaConf
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+
 def _find_user_config(filename: str) -> Path | None:
-    """在 CWD 中查找 *filename*，回退到 ``HAVEN_CONFIG_DIR`` 环境变量。"""
+    """在 CWD 中查找 *filename*，不存在返回 None。"""
     cwd_path = Path.cwd() / filename
-    if cwd_path.is_file():
-        return cwd_path
-    env_dir = os.environ.get("HAVEN_CONFIG_DIR", "")
-    if env_dir:
-        env_path = Path(env_dir) / filename
-        if env_path.is_file():
-            return env_path
-    return None
+    return cwd_path if cwd_path.is_file() else None
 
 
 def find_user_path(relative_path: str) -> Path:
-    """CWD 优先解析 *relative_path*（文件或目录）。
-
-    优先级：CWD → ``HAVEN_CONFIG_DIR`` → 内置 ``src/haven/user/`` 目录。
+    """返回 CWD 下的 *relative_path*。
 
     始终返回路径——调用方按需检查是否存在。
     """
-    _package_dir = Path(__file__).resolve().parent.parent  # src/haven/
-
-    cwd_path = Path.cwd() / relative_path
-    if cwd_path.exists():
-        return cwd_path
-
-    env_dir = os.environ.get("HAVEN_CONFIG_DIR", "")
-    if env_dir:
-        env_path = Path(env_dir) / relative_path
-        if env_path.exists():
-            return env_path
-
-    return _package_dir / "user" / relative_path
+    return Path.cwd() / relative_path
 
 
 def _load_app_config() -> dict:
@@ -65,7 +44,7 @@ class Settings(BaseSettings):
     agent_max_execution_time: int = Field(default=_app_config["agent"]["max_execution_time"],
                                           alias="AGENT_MAX_EXECUTION_TIME")
 
-    # ==================== Web Search ====================# TODO 这里后期的改到yaml中，不能写死这个key 的名字，使其可以自定义，
+    # ==================== Web Search ====================
     web_search_api_key: str = Field(default="", alias="WEB_SEARCH_API_KEY")
     web_search_engine: str = Field(default=_app_config["web_search"]["engine"], alias="WEB_SEARCH_ENGINE")
 

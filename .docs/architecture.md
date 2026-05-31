@@ -121,7 +121,7 @@ OrchestratorAgent   ←──    code_review.md   （按需激活）  web_fetch 
 
 配置优先级：**内置默认 < 用户 YAML (CWD) < 环境变量 (.env / shell)**
 
-用户 YAML 与内置 YAML 做 deep merge，未覆盖的字段继承内置默认值。可通过 `HAVEN_CONFIG_DIR` 环境变量指定用户配置目录。
+用户 YAML 与内置 YAML 做 deep merge，未覆盖的字段继承内置默认值。
 
 **`settings.py`** — 使用 `pydantic-settings` 从 `.env` 和 `app.yaml` 读取，全局单例：
 

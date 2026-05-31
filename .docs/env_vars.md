@@ -83,7 +83,6 @@
 |------|--------|------|
 | `MCP_ENABLED` | true | 启用 MCP 工具集成 |
 | `SKILL_DIRECTORY` | skills | Skill 文件目录 |
-| `HAVEN_CONFIG_DIR` | — | 用户配置文件目录（替代 CWD） |
 
 ---
 

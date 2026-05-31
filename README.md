@@ -31,8 +31,8 @@ REPL 内可用命令：`/help` `/models` `/model <名称>` `/skills` `/tools` `/
 | `.env` | API Key、邮箱密码等敏感信息 | — |
 | `haven.yaml` | 框架参数（agent、RAG、email、memory 等） | `src/haven/config/app.yaml` |
 | `models.yaml` | 自定义/追加 LLM 模型 | `src/haven/config/models.yaml` |
-| `skills/` | 自定义 Skill 文件（`.md`，拖入即用） | `src/haven/user/skills/` |
-| `mcp/mcp.json` | MCP 服务器配置 | `src/haven/user/mcp/mcp.json` |
+| `skills/` | 自定义 Skill 文件（`.md`，拖入即用） | CWD |
+| `mcp.json` | MCP 服务器配置 | CWD |
 
 优先级：**内置默认 < 用户 YAML < 环境变量**
 
@@ -62,7 +62,6 @@ REPL 内可用命令：`/help` `/models` `/model <名称>` `/skills` `/tools` `/
 │   ├── services/       # 守护进程 & 渠道
 │   ├── skills/         # Skill 加载器
 │   ├── tools/          # 内置工具
-│   ├── user/           # 用户可扩展内容（Skills、mcp.json 等包内置默认）
 │   └── workflows/      # 工作流组合
 ├── docs/
 │   └── architecture.md # 详细架构文档

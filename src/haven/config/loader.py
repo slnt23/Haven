@@ -3,20 +3,9 @@ from pathlib import Path
 from typing import Any
 from omegaconf import OmegaConf, DictConfig, ListConfig
 
+from haven.config.settings import _find_user_config
+
 _config: DictConfig | None = None
-
-
-def _find_user_config(filename: str) -> Path | None:
-    """在 CWD 中查找 *filename*，回退到 ``HAVEN_CONFIG_DIR`` 环境变量。"""
-    cwd_path = Path.cwd() / filename
-    if cwd_path.is_file():
-        return cwd_path
-    env_dir = os.environ.get("HAVEN_CONFIG_DIR", "")
-    if env_dir:
-        env_path = Path(env_dir) / filename
-        if env_path.is_file():
-            return env_path
-    return None
 
 
 def _load_config() -> DictConfig | None:
