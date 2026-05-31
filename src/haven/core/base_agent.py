@@ -20,6 +20,12 @@ logger = logging.getLogger("haven.agent")
 
 class BaseAgent(ABC):
     def __init__(self, name: str, llm: BaseChatModel | None = None):
+        """初始化 agent。
+
+        Args:
+            name: agent 名称，用于日志和注册表标识。
+            llm: 可选的外部 LangChain 模型实例；为 None 时通过 ``_init_llm()`` 延迟初始化。
+        """
         self.name = name
         self.llm = llm
         self.tools: dict[str, Any] = {}
@@ -31,6 +37,7 @@ class BaseAgent(ABC):
         self.max_execution_time = settings.agent_max_execution_time
 
     def register_tool(self, name: str, tool: Any) -> None:
+        """按名称注册内部工具，供 ``_execute_tool_call`` 按名查找调用。"""
         self.tools[name] = tool
 
     def register_lc_tool(self, tool: BaseTool) -> None:
@@ -66,7 +73,10 @@ class BaseAgent(ABC):
         return getattr(self.llm, "model_name", model_name)
 
     def enable_skill(self, skill: "BaseSkill") -> None:
-        """将 skill 实例加载到当前 agent。"""
+        """直接注入一个 skill 实例到当前 agent。
+
+        适用于工厂或编排器在运行时动态加载 skill 的场景。
+        """
         self.skills[skill.name] = skill
 
     def load_skills_from_dir(self, directory: str | None = None) -> int:
@@ -86,12 +96,18 @@ class BaseAgent(ABC):
         return len(loaded)
 
     def disable_skill(self, name: str) -> None:
+        """从 agent 中按名称移除 skill，不存在时不报错。"""
         self.skills.pop(name, None)
 
     def enable_rag(self, rag: "RAGEngine") -> None:
+        """注入 RAG 引擎，使后续 LLM 调用自动附带检索上下文。"""
         self.rag = rag
 
     def _init_llm(self, model_name: str | None = None) -> BaseChatModel:
+        """延迟初始化 LLM 实例。
+
+        若已初始化则直接返回；否则从 ``models.yaml`` 加载配置并创建对应 provider 的模型。
+        """
         if self.llm is not None:
             return self.llm
 
@@ -178,6 +194,7 @@ class BaseAgent(ABC):
         return messages
 
     async def _invoke_llm(self, messages: list[BaseMessage]) -> str:
+        """直接调用 LLM（无工具），返回文本响应。"""
         if self.llm is None:
             self._init_llm()
         response = await self.llm.ainvoke(messages)
@@ -222,7 +239,10 @@ class BaseAgent(ABC):
         return last.content if hasattr(last, "content") else str(last)
 
     async def _execute_tool_call(self, name: str, args: dict[str, Any]) -> str:
-        """按名称查找工具并用 *args* 调用。"""
+        """按名称查找工具并用 *args* 调用，返回执行结果字符串。
+
+        支持 ``ainvoke`` 协程和普通 callable 两种形式的工具。
+        """
         tool = self.tools.get(name)
         if tool is None:
             return f"Error: tool '{name}' not found. Available: {list(self.tools.keys())}"
@@ -238,13 +258,22 @@ class BaseAgent(ABC):
 
     @abstractmethod
     async def run(self, task: str, **kwargs: Any) -> str:
+        """执行一次完整任务：接收用户输入，返回文本响应。
+
+        子类必须实现核心业务逻辑。
+        """
         ...
 
     @abstractmethod
     async def step(self, messages: list[BaseMessage]) -> BaseMessage:
+        """单步 LLM 调用：接收消息列表，返回一个 AI 消息。
+
+        供外部循环或工作流逐轮控制 agent 行为。
+        """
         ...
 
     def reset(self) -> None:
+        """清空 agent 的短期记忆，不回退长期存储。"""
         self.memory.clear()
 
     # ------------------------------------------------------------------

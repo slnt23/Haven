@@ -46,13 +46,13 @@ ROUTE_MAP: dict[str, str] = {
 
 
 class OrchestratorAgent(BaseAgent):
-    """Routes user requests to the most suitable specialist agent.
+    """将用户请求路由至最合适的 specialist agent。
 
-    1. Classify user intent with a lightweight LLM call.
-    2. Route to the matching specialist.
-    3. Return the specialist's response.
+    1. 轻量级 LLM 调用分类用户意图。
+    2. 路由到匹配的 specialist。
+    3. 返回 specialist 的响应。
 
-    Falls back to the companion agent when classification is ambiguous.
+    分类模糊时回退到 companion agent。
     """
 
     def __init__(self, name: str = "orchestrator", llm: Any = None) -> None:
@@ -61,7 +61,7 @@ class OrchestratorAgent(BaseAgent):
         self._default_agent = "companion"
 
     def register_agent(self, name: str, agent: BaseAgent) -> None:
-        """Register a sub-agent with the orchestrator."""
+        """向编排器注册子 agent。"""
         self.sub_agents[name] = agent
 
     # ------------------------------------------------------------------
@@ -69,7 +69,7 @@ class OrchestratorAgent(BaseAgent):
     # ------------------------------------------------------------------
 
     def match_skills(self, task: str) -> list["BaseSkill"]:
-        """Aggregate on-demand skill matches from all sub-agents."""
+        """聚合全部子 agent 的按需 skill 匹配结果。"""
         seen: set[str] = set()
         matched: list["BaseSkill"] = []
         for agent in self.sub_agents.values():
@@ -85,14 +85,14 @@ class OrchestratorAgent(BaseAgent):
 
     async def run(self, task: str, **kwargs: Any) -> str:
         intent = await self._classify_intent(task)
-        logger.info("Intent: %s → routing to %s", intent, ROUTE_MAP.get(intent, self._default_agent))
+        logger.info("意图: %s → 路由到 %s", intent, ROUTE_MAP.get(intent, self._default_agent))
 
         agent_name = ROUTE_MAP.get(intent, self._default_agent)
         agent = self.sub_agents.get(agent_name)
 
         if agent is None:
             agent = self.sub_agents.get(self._default_agent)
-            logger.warning("Agent '%s' not found, falling back to '%s'", agent_name, self._default_agent)
+            logger.warning("Agent '%s' 未找到，回退到 '%s'", agent_name, self._default_agent)
 
         if agent is None:
             return "[错误] 没有可用的 Agent"
@@ -104,7 +104,7 @@ class OrchestratorAgent(BaseAgent):
         return msg
 
     def reset(self) -> None:
-        """Clear memory for the orchestrator and all sub-agents."""
+        """清空编排器及全部子 agent 的记忆。"""
         super().reset()
         for agent in self.sub_agents.values():
             agent.reset()
@@ -114,7 +114,7 @@ class OrchestratorAgent(BaseAgent):
     # ------------------------------------------------------------------
 
     async def _classify_intent(self, task: str) -> str:
-        """Use LLM to classify the user's intent into a category."""
+        """用 LLM 将用户意图分类到对应类别。"""
         if self.llm is None:
             self._init_llm()
 
@@ -124,12 +124,12 @@ class OrchestratorAgent(BaseAgent):
             response = await self.llm.ainvoke([HumanMessage(content=prompt)])
             raw = (response.content if hasattr(response, "content") else str(response)).strip().lower()
         except Exception as exc:
-            logger.warning("Intent classification failed: %s, defaulting to chat", exc)
+            logger.warning("意图分类失败: %s，回退到 chat", exc)
             return "chat"
 
         for category in ("chat", "code", "medical", "practical"):
             if category in raw:
                 return category
 
-        logger.debug("Unrecognized classification output: %r, defaulting to chat", raw)
+        logger.debug("无法识别的分类输出: %r，回退到 chat", raw)
         return "chat"

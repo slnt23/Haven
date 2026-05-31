@@ -1,116 +1,168 @@
-"""``haven`` CLI 命令入口。"""
+"""haven CLI V2 — 统一入口。Typer + Rich。
+
+自动命令注册，统一帮助，Rich 终端渲染，全局异常处理。
+"""
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import sys
+from pathlib import Path
+from typing import Annotated, Optional
 
-from haven.config import settings
-from haven.core.pidfile import is_running, kill, read as pid_read, remove as pid_remove
+import typer
+from rich.logging import RichHandler
+
+from haven.cli.services.cli_service import CLIContext
+from haven.cli.ui.console import render_error, dim, blank
+
+# ---------------------------------------------------------------------------
+# 日志
+# ---------------------------------------------------------------------------
+
+logging.basicConfig(
+    level=logging.WARNING,
+    format="%(message)s",
+    datefmt="[%X]",
+    handlers=[RichHandler(rich_tracebacks=True, show_time=False, show_path=False)],
+)
+
+logger = logging.getLogger("haven.cli")
+
+# ---------------------------------------------------------------------------
+# 主应用
+# ---------------------------------------------------------------------------
+
+app = typer.Typer(
+    name="haven",
+    help="Haven — 多智能体交互框架",
+    rich_markup_mode="rich",
+    no_args_is_help=False,
+    context_settings={"help_option_names": ["-h", "--help"]},
+    invoke_without_command=True,
+)
+
+# ---- 注册子命令组 (有二级命令的) ----
+from haven.cli.commands.workflow import workflow_app
+from haven.cli.commands.skill import skill_app
+
+app.add_typer(workflow_app, name="workflow")
+app.add_typer(skill_app, name="skill")
 
 
-def main() -> None:
-    """运行 Haven REPL、单轮查询、守护进程或管理命令。
+# ---------------------------------------------------------------------------
+# 全局回调 + 默认命令
+# ---------------------------------------------------------------------------
 
-    用法::
 
-        haven                  # 交互式 REPL
-        haven --task <prompt>  # 单轮查询
-        haven serve            # 启动守护进程（常驻、多通道）
-        haven stop             # 停止运行中的守护进程
-        haven status           # 查看守护进程状态
-        haven restart          # 重启守护进程
+@app.callback(invoke_without_command=True)
+def main(
+    ctx: typer.Context,
+    version: Annotated[bool, typer.Option("--version", help="显示版本")] = False,
+    verbose: Annotated[bool, typer.Option("--verbose", "-v", help="详细输出")] = False,
+    quiet: Annotated[bool, typer.Option("--quiet", "-q", help="静默输出")] = False,
+    json_output: Annotated[bool, typer.Option("--json", help="JSON 输出")] = False,
+    no_color: Annotated[bool, typer.Option("--no-color", help="禁用彩色输出")] = False,
+    config: Annotated[Optional[str], typer.Option("--config", "-c", help="指定配置文件")] = None,
+) -> None:
+    """Haven — 基于 Python 3.14+ 和 LangChain 的多智能体交互框架。
+
+    默认命令为 chat（启动 REPL）。
     """
-    args = sys.argv[1:]
-
-    # 管理命令（stop / status / restart）
-    if args and args[0] in _MANAGEMENT_COMMANDS:
-        _MANAGEMENT_COMMANDS[args[0]]()
-        return
-
-    # 守护进程模式
-    if args and args[0] == "serve":
-        logging.basicConfig(
-            level=logging.INFO,
-            format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-            datefmt="%H:%M:%S",
-        )
-        asyncio.run(_run_daemon())
-        return
-
-    # 单轮模式：haven --task "你的问题"
-    task: str | None = None
-    if args and args[0] == "--task":
-        if len(args) > 1:
-            task = " ".join(args[1:])
-
-    from haven.cli.app import HavenApp
-
-    app = HavenApp()
-    try:
-        asyncio.run(app.start(greeting_task=task))
-    except KeyboardInterrupt:
-        pass
-
-
-def _cmd_stop() -> None:
-    """停止运行中的 Haven 守护进程。"""
-    pid = pid_read(settings.pid_file)
-    if pid is None:
-        print("Haven daemon is not running (no PID file).")
-        return
-    if not is_running(pid):
-        print(f"PID file found but process {pid} is not alive. Cleaning up.")
-        pid_remove(settings.pid_file)
-        return
-    print(f"Stopping Haven daemon (PID {pid})...")
-    kill(pid)
-    pid_remove(settings.pid_file)
-    print("Done.")
-
-
-def _cmd_status() -> None:
-    """打印 Haven 守护进程状态。"""
-    pid = pid_read(settings.pid_file)
-    if pid is None:
-        print("Haven daemon is not running.")
-        return
-    if is_running(pid):
-        print(f"Haven daemon is running (PID {pid}).")
-    else:
-        print(f"PID file found but process {pid} is not alive. Cleaning up.")
-        pid_remove(settings.pid_file)
-
-
-def _cmd_restart() -> None:
-    """停止运行中的守护进程（如有）并启动新的。"""
-    _cmd_stop()
-    print("Starting Haven daemon...")
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-        datefmt="%H:%M:%S",
+    cli_ctx = CLIContext(
+        verbose=verbose, quiet=quiet,
+        json_output=json_output, no_color=no_color,
     )
-    asyncio.run(_run_daemon())
+    ctx.obj = cli_ctx
+
+    if version:
+        typer.echo("haven v2.0.0")
+        raise typer.Exit()
+
+    if verbose:
+        logging.getLogger("haven").setLevel(logging.DEBUG)
+
+    if config:
+        p = Path(config)
+        if not p.is_file():
+            render_error(f"配置文件不存在: {config}")
+            raise typer.Exit(code=1)
+
+    # 默认 → chat
+    if ctx.invoked_subcommand is None:
+        from haven.cli.commands.chat import run_chat
+        run_chat(ctx, model=None, session=None, task=None, no_memory=False, verbose=verbose)
 
 
-_MANAGEMENT_COMMANDS = {
-    "stop": _cmd_stop,
-    "status": _cmd_status,
-    "restart": _cmd_restart,
-}
+# ====================================================================
+# 直接命令 (无二级子命令)
+# ====================================================================
+
+@app.command(name="chat", help="启动交互式 REPL 对话")
+def chat_cmd(
+    ctx: typer.Context,
+    model: Annotated[str | None, typer.Option("--model", "-m", help="指定模型")] = None,
+    session: Annotated[str | None, typer.Option("--session", "-s", help="恢复会话 ID")] = None,
+    task: Annotated[str | None, typer.Option("--task", "-t", help="启动后立即执行的任务")] = None,
+    no_memory: Annotated[bool, typer.Option("--no-memory", help="禁用长期记忆")] = False,
+    verbose: Annotated[bool, typer.Option("--verbose", "-v", help="详细模式")] = False,
+) -> None:
+    """启动交互式 REPL，持续读取-求值-输出循环。"""
+    from haven.cli.commands.chat import run_chat
+    run_chat(ctx, model=model, session=session, task=task, no_memory=no_memory, verbose=verbose)
 
 
-async def _run_daemon() -> None:
-    from haven.services.daemon import HavenDaemon
+@app.command(name="run", help="单轮任务执行")
+def run_cmd(
+    ctx: typer.Context,
+    task: Annotated[str, typer.Option("--task", "-t", help="任务文本（必填）")] = "",
+    file: Annotated[Optional[str], typer.Option("--file", "-f", help="从文件读取任务")] = None,
+    model: Annotated[str | None, typer.Option("--model", "-m", help="指定模型")] = None,
+    stream: Annotated[bool, typer.Option("--stream", "-s", help="流式输出")] = False,
+    json_output: Annotated[bool, typer.Option("--json", "-j", help="JSON 格式输出")] = False,
+    no_memory: Annotated[bool, typer.Option("--no-memory", help="禁用长期记忆")] = False,
+    no_plan: Annotated[bool, typer.Option("--no-plan", help="跳过 Planner")] = False,
+    output: Annotated[Optional[str], typer.Option("--output", "-o", help="结果写入文件")] = None,
+    verbose: Annotated[bool, typer.Option("--verbose", "-v", help="详细模式")] = False,
+) -> None:
+    """执行单轮任务，输出结果后退出。"""
+    from haven.cli.commands.run import run_task
+    run_task(ctx, task=task, file=file, model=model, stream=stream,
+             json_output=json_output, no_memory=no_memory, no_plan=no_plan,
+             output=output, verbose=verbose)
 
-    daemon = HavenDaemon()
+
+@app.command(name="doctor", help="环境诊断")
+def doctor_cmd(
+    ctx: typer.Context,
+    check: Annotated[str | None, typer.Option("--check", help="只检查指定项")] = None,
+    json_output: Annotated[bool, typer.Option("--json", "-j", help="JSON 输出")] = False,
+) -> None:
+    """运行环境诊断，检查依赖和配置完整性。"""
+    from haven.cli.commands.doctor import run_doctor
+    run_doctor(ctx, check=check, json_output=json_output)
+
+
+# ====================================================================
+# 入口
+# ====================================================================
+
+
+def main_cli() -> None:
+    """``haven`` 命令入口。"""
     try:
-        await daemon.run_forever()
+        app()
+    except typer.Exit as e:
+        sys.exit(e.exit_code)
     except KeyboardInterrupt:
-        pass
+        dim("\n中断。")
+        sys.exit(130)
+    except Exception as exc:
+        render_error(str(exc))
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.exception("Fatal error")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
-    main()
+    main_cli()

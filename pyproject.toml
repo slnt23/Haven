@@ -21,10 +21,12 @@ dependencies = [
     "langchain-mcp-adapters>=0.1.0",
     "lark-oapi>=1.0.0",
     "uv==0.11.17",
+    "typer>=0.16",
+    "rich>=14.0",
 ]
 
 [project.scripts]
-haven = "haven.cli.main:main"
+haven = "haven.cli.main:main_cli"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/haven"]

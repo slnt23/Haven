@@ -1,9 +1,11 @@
-"""CoderAgent — 软件工程 specialist。"""
+"""CoderAgent — 软件工程 specialist，基于 ``create_agent`` 官方 API。"""
 
 from __future__ import annotations
 
 from typing import Any
 
+from langchain.agents import create_agent
+from langchain_core.messages import HumanMessage
 from langchain_core.tools import StructuredTool
 
 from haven.agents.general import GeneralAgent
@@ -34,7 +36,7 @@ PROMPT = """\
 
 
 class CoderAgent(GeneralAgent):
-    """软件工程 specialist agent。"""
+    """软件工程 specialist agent，使用 ``create_agent`` 管理工具调用循环。"""
 
     def __init__(self, name: str = "coder", **kwargs: Any) -> None:
         super().__init__(name, **kwargs)
@@ -69,3 +71,33 @@ class CoderAgent(GeneralAgent):
             name="web_search",
             description="Search the web for technical information. Args: query (search string)",
         ))
+
+        self._agent_graph = None
+
+    # ------------------------------------------------------------------
+    # Graph 构建
+    # ------------------------------------------------------------------
+
+    def build_graph(self) -> None:
+        """用 ``create_agent`` 构建 agent 图（模型 + 工具 + system prompt）。"""
+        if self.llm is None:
+            self._init_llm()
+        system = self._build_system_prompt()
+        self._agent_graph = create_agent(
+            model=self.llm,
+            tools=self._tool_instances if self._tool_instances else None,
+            system_prompt=system,
+        )
+
+    # ------------------------------------------------------------------
+    # 公开 API
+    # ------------------------------------------------------------------
+
+    async def run(self, task: str, **kwargs: Any) -> str:
+        """执行任务：调用 ``create_agent`` 图完成工具调用循环。"""
+        if self._agent_graph is None:
+            self.build_graph()
+        result = await self._agent_graph.ainvoke({
+            "messages": [HumanMessage(content=task)]
+        })
+        return result["messages"][-1].content

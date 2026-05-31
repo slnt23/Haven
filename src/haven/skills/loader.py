@@ -1,3 +1,9 @@
+"""SkillLoader — 扫描 skills/*.md 文件并构建 BaseSkill 实例。
+
+支持 V2 新字段（description / tags / tools / dependencies / version）
+同时向后兼容 V1 旧字段（trigger_keywords）。
+"""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -13,21 +19,19 @@ class SkillLoader:
     每个 ``.md`` 文件必须以 ``---`` 分隔的 YAML frontmatter 开头::
 
         ---
-        name: code_review
-        description: Review code for bugs
-        trigger_keywords:
-          - review
-          - 审查
+        name: coder
+        description: 软件工程专家...
+        tags:
+          - development
+        tools:
+          - code_exec
+        dependencies: []
+        version: "2.0"
         ---
 
-        You are an expert code reviewer…
-
-    frontmatter 之后的正文为 skill 的 prompt 扩展。
+        ## 角色：高级软件工程师助手
+        ...
     """
-
-    # ------------------------------------------------------------------
-    # 公开 API
-    # ------------------------------------------------------------------
 
     @staticmethod
     def load_from_dir(directory: str | Path) -> list[BaseSkill]:
@@ -49,10 +53,6 @@ class SkillLoader:
             return None
         return SkillLoader._parse_file(filepath)
 
-    # ------------------------------------------------------------------
-    # 内部实现
-    # ------------------------------------------------------------------
-
     @staticmethod
     def _parse_file(filepath: Path) -> BaseSkill | None:
         raw = filepath.read_text(encoding="utf-8")
@@ -72,7 +72,12 @@ class SkillLoader:
             name=str(meta.get("name", filepath.stem)),
             description=str(meta.get("description", "")),
             prompt=body.strip(),
-            trigger_keywords=meta.get("trigger_keywords", []),
+            # V2 新字段
+            tags=_ensure_str_list(meta.get("tags", [])),
+            tools=_ensure_str_list(meta.get("tools", [])),
+            dependencies=_ensure_str_list(meta.get("dependencies", [])),
+            version=str(meta.get("version", "1.0")),
+            # 兼容字段
             category=str(meta.get("category", "")),
             source_file=filepath,
             default=bool(meta.get("default", False)),
@@ -85,7 +90,6 @@ class SkillLoader:
         if not raw.startswith("---"):
             return None, raw
 
-        # 查找闭合的 ---
         end = raw.find("---", 3)
         if end == -1:
             return None, raw
@@ -93,3 +97,8 @@ class SkillLoader:
         frontmatter = raw[3:end].strip()
         body = raw[end + 3:].strip()
         return frontmatter, body
+
+
+def _ensure_str_list(value: list) -> list[str]:
+    """确保列表中的每个元素都是字符串。"""
+    return [str(v) for v in (value or [])]
