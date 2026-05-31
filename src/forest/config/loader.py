@@ -1,11 +1,7 @@
 import os
 from pathlib import Path
 from typing import Any
-from dotenv import load_dotenv
 from omegaconf import OmegaConf, DictConfig, ListConfig
-
-_env_file = Path(__file__).resolve().parent.parent.parent.parent / ".env"
-load_dotenv(_env_file)
 
 _config: DictConfig | None = None
 
@@ -47,8 +43,8 @@ def get_model_config(model_name: str) -> dict[str, Any]:
 
     API keys are read from environment variables.  The ``api_key_env`` field
     in *models.yaml* names the env var (e.g. ``DEEPSEEK_API_KEY``).  Users can
-    set it in ``.env`` or their shell — no code changes needed when adding a
-    new model.
+    set it as a system environment variable — no code changes needed when
+    adding a new model.
     """
     models = load_models_config()
     model_cfg = models[model_name]

@@ -4,9 +4,6 @@ from omegaconf import OmegaConf
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-_env_file = Path(__file__).resolve().parent.parent.parent.parent / ".env"
-
-
 def _find_user_config(filename: str) -> Path | None:
     """Look for *filename* in CWD, falling back to ``HAVEN_CONFIG_DIR`` env var."""
     cwd_path = Path.cwd() / filename
@@ -33,8 +30,6 @@ _app_config = _load_app_config()
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=str(_env_file),
-        env_file_encoding="utf-8",
         extra="ignore",
     )
 
