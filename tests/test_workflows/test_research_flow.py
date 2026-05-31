@@ -1,6 +1,6 @@
 import pytest
 
-from forest.workflows import ResearchFlow
+from haven.workflows import ResearchFlow
 
 
 @pytest.fixture

@@ -15,7 +15,7 @@ haven/
 │   ├── summarization.md            # 摘要
 │   └── data_analysis.md            # 数据分析
 │
-├── src/forest/
+├── src/haven/
 │   ├── config/                     # 配置层
 │   │   ├── __init__.py             # 统一导出 settings + loader
 │   │   ├── settings.py             # Pydantic BaseSettings 单例
@@ -112,8 +112,8 @@ OrchestratorAgent   ←──    code_review.md   （按需激活）  web_fetch 
 
 | 文件 | 位置 | 职责 |
 |------|------|------|
-| `app.yaml` | `src/forest/config/` | 框架默认参数（内置，随包分发） |
-| `models.yaml` | `src/forest/config/` | LLM 模型默认定义（内置，随包分发） |
+| `app.yaml` | `src/haven/config/` | 框架默认参数（内置，随包分发） |
+| `models.yaml` | `src/haven/config/` | LLM 模型默认定义（内置，随包分发） |
 | `haven.yaml` | 项目根目录 | 用户覆盖框架参数（可选，只写要改的字段） |
 | `models.yaml` | 项目根目录 | 用户追加/覆盖模型定义（可选） |
 | `mcp.json` | 项目根目录 | MCP 服务器连接配置（标准 mcpServers 格式） |
@@ -355,7 +355,7 @@ _build_system_prompt()
 | `OrchestratorAgent` | 维护 `sub_agents` 字典，`run(task)` 广播给所有子 agent 并聚合结果 |
 
 ```python
-from forest.agents import GeneralAgent, OrchestratorAgent
+from haven.agents import GeneralAgent, OrchestratorAgent
 
 # 单 agent 模式
 agent = GeneralAgent()

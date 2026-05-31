@@ -1,0 +1,36 @@
+{
+  "mcpServers": {
+//    "_example_stdio": {
+//      "type": "stdio",
+//      "command": "npx",
+//      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
+//      "env": {
+//        "HOME": "${USERPROFILE}"
+//      },
+//      "description": "Local filesystem access via MCP",
+//      "enabled": false
+//    },
+//    "_example_fetch": {
+//      "type": "stdio",
+//      "command": "uvx",
+//      "args": ["mcp-server-fetch"],
+//      "description": "Web fetching capability",
+//      "enabled": false
+//    },
+//    "_example_http": {
+//      "type": "sse",
+//      "url": "http://localhost:8000/mcp",
+//      "headers": {
+//        "Authorization": "Bearer ${MCP_API_KEY}"
+//      },
+//      "description": "Remote MCP server via HTTP SSE",
+//      "enabled": false
+//    },
+//    "_example_ws": {
+//      "type": "websocket",
+//      "url": "ws://localhost:9000/mcp",
+//      "description": "Remote MCP server via WebSocket",
+//      "enabled": false
+//    }
+  }
+}

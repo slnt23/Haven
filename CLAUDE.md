@@ -4,7 +4,7 @@
 
 ## 项目
 
-**Haven**（Python 包名：`forest`）— 基于 Python 3.14+、LangChain 与 pydantic-settings 构建的多智能体交互框架。人格与领域能力通过 Markdown 技能文件注入，零代码扩展；外部工具通过 MCP 协议集成。
+**Haven**（Python 包名：`haven`）— 基于 Python 3.14+、LangChain 与 pydantic-settings 构建的多智能体交互框架。人格与领域能力通过 Markdown 技能文件注入，零代码扩展；外部工具通过 MCP 协议集成。
 
 ## 常用命令
 
@@ -16,48 +16,61 @@ uv run haven --task "..." # 单轮问答
 uv run haven serve        # 启动守护进程（多通道：TCP + 邮件 + 飞书）
 uv run haven stop         # 停止守护进程
 uv run haven status       # 查看守护进程状态
+uv run haven restart      # 重启守护进程
 uv run pytest             # 运行全部测试
+uv run pytest tests/path  # 运行单个测试文件
 ```
 
 ## 架构
+
+**入口**：`AgentFactory.create_agent()` 创建一个 `OrchestratorAgent` + 4 个 specialist 子 agent（`CoderAgent`、`MedicalAgent`、`CompanionAgent`、`PracticalAgent`），共享内存、Skills 和 MCP 工具。
 
 **两种 Agent 类型，无数种能力：**
 
 ```
 Agent（管怎么跑）         Skill（管怎么想）            MCP（管外部能力）
 ─────────────────      ─────────────────────        ────────────────────
-GeneralAgent    ←──    haven.md      （默认人格）    filesystem   ← stdio
-OrchestratorAgent ←──  code_review.md（按需激活）    web_fetch    ← HTTP SSE
-                        *.md          （零代码）     ...          ← WebSocket
+OrchestratorAgent ←──  haven.md      （默认人格）    filesystem   ← stdio
+  ├─ CoderAgent     ←── code_review.md（按需激活）    web_fetch    ← HTTP SSE
+  ├─ MedicalAgent   ←── *.md          （零代码）     ...          ← WebSocket
+  ├─ CompanionAgent
+  └─ PracticalAgent
 ```
 
 - **人格** = 默认 Skill（`haven.md`）注入 system prompt
 - **领域能力** = 按需 Skill，用户输入关键词触发匹配后临时注入
 - **外部能力** = `mcp.json` 中配置的标准 MCP 服务器
 
+**路由流程**：用户输入 → `OrchestratorAgent._classify_intent()`（LLM 分类为 code/medical/practical/chat）→ 路由到对应 specialist → specialist 执行 `run()`（含工具调用循环）→ 返回结果
+
 **核心分层（自底向上）：**
 
 | 层 | 目录 | 职责 |
 |-------|-----------|------|
-| Config | `src/forest/config/` | YAML + env vars，OmegaConf deep-merge |
-| Core | `src/forest/core/` | `BaseAgent`、`AgentMemory`、`RAGEngine`、`SQLiteMemoryStore` |
-| Skills | `src/forest/skills/` | `.md` 文件加载，YAML frontmatter 解析 |
-| MCP | `src/forest/mcp/` | MCP 服务器生命周期管理 + 工具发现 |
-| Agents | `src/forest/agents/` | `GeneralAgent`（单agent）+ `OrchestratorAgent`（编排） |
-| Tools | `src/forest/tools/` | 内置工具（搜索、文件、代码执行、邮件、RAG） |
-| Workflows | `src/forest/workflows/` | 多 agent 流水线（调研、开发、诊断） |
-| CLI | `src/forest/cli/` | `main.py` 入口 + `HavenApp` REPL 循环 |
-| Services | `src/forest/services/` | 守护进程 + 渠道（TCP socket、邮件、飞书） |
+| Config | `src/haven/config/` | YAML + env vars，OmegaConf deep-merge |
+| Core | `src/haven/core/` | `BaseAgent`、`AgentMemory`、`RAGEngine`、`SQLiteMemoryStore` |
+| Skills | `src/haven/skills/` | `.md` 文件加载，YAML frontmatter 解析 |
+| User | `src/haven/user/` | 用户可扩展内容（Skills `.md`、`mcp.json`，拖入即用），CWD 优先 |
+| MCP | `src/haven/mcp/` | MCP 服务器生命周期管理 + 工具发现 |
+| Agents | `src/haven/agents/` | `GeneralAgent`（单agent）+ `OrchestratorAgent`（编排） |
+| Tools | `src/haven/tools/` | 内置工具（搜索、文件、代码执行、邮件、RAG） |
+| Workflows | `src/haven/workflows/` | 多 agent 流水线（调研、开发、诊断） |
+| CLI | `src/haven/cli/` | `main.py` 入口 + `HavenApp` REPL 循环 |
+| Services | `src/haven/services/` | 守护进程 + 渠道（TCP socket、邮件、飞书） |
 
 ## 关键约定
 
-- **包名与项目名**：pip 包名为 `haven`（命令：`haven`），但 Python 包名为 `forest`（导入：`from forest...`）。源码位于 `src/forest/`。
-- **配置优先级**：内置 YAML < 用户 YAML（CWD 或 `HAVEN_CONFIG_DIR`）< 环境变量（`.env` / shell）。用户 YAML deep-merge 覆盖内置默认值。
+- **包名与项目名**：pip 包名为 `haven`（命令：`haven`），Python 包名也为 `haven`（导入：`from haven...`）。源码位于 `src/haven/`。
+- **配置优先级**：内置 YAML < 用户 YAML（CWD 或 `HAVEN_CONFIG_DIR`）< 环境变量（`.env` / shell）。用户 YAML deep-merge 覆盖内置默认值。`_find_user_config()` 先查 CWD，再查 `HAVEN_CONFIG_DIR` 环境变量指向的目录——此模式在 `settings.py` 和 `loader.py` 中一致使用。
+- **配置目录**：`src/haven/config/` 包含 `app.yaml`（框架默认参数）、`models.yaml`（内置模型定义）、`haven.md`（系统人格 prompt）。用户可在项目根目录放置同名文件覆盖。
 - **模型 Key 解析**：`models.yaml` 中每模型声明 `api_key_env` 字段（如 `DEEPSEEK_API_KEY`），loader 从 `os.environ` 动态读取。`settings.py` 中不硬编码任何 Key。
-- **Skill 文件**：`skills/` 下的 `.md` 文件，包含 YAML frontmatter（`name`、`trigger_keywords`、`default`、`prompt_extension`）。`default: true` = 始终激活的人格 skill，其余按关键词匹配按需激活。
+- **Skill 文件**：`src/haven/user/skills/` 下的 `.md` 文件（包内置默认），包含 YAML frontmatter（`name`、`trigger_keywords`、`default`、`prompt_extension`）。`default: true` = 始终激活的人格 skill，其余按关键词匹配按需激活。用户可在 CWD 下创建 `skills/` 目录覆盖。
 - **Agent 工具绑定**：先 `register_lc_tool()` 注册，再调用 `bind_tools_to_llm()` 执行 `llm.bind_tools()`。`switch_model()` 切换模型后工具自动重绑。
-- **记忆系统**：双层 —— 短期记忆（`deque[BaseMessage]`，max 100）+ 长期记忆（SQLite，`SQLiteMemoryStore`）。每轮对话后 LLM 自动提取事实信息。
-- **MCP 工具**：从 `mcp.json`（标准 `mcpServers` 格式）加载。`${VAR}` 语法自动解析环境变量。`"enabled": false` 的服务器跳过不加载。单服务器故障不影响其他。
+- **记忆系统**：双层 —— 短期记忆（`deque[BaseMessage]`，max 100）+ 长期记忆（SQLite，`SQLiteMemoryStore`）。每轮对话后 LLM 自动提取事实信息。`save_turn()` 持久化一轮对话，`extract_facts_async()` 异步提取事实。
+- **MCP 工具**：从 `src/haven/user/mcp/mcp.json`（包内置示例）加载，标准 `mcpServers` 格式。`${VAR}` 语法自动解析环境变量。`"enabled": false` 的服务器跳过不加载。用户可在 CWD 下放置 `mcp.json` 覆盖。单服务器故障不影响其他。
+- **用户扩展**：`src/haven/user/` 统一存放所有用户可扩展内容（Skills、MCP 配置等）。运行时通过 `find_user_path()` 查找，优先级：CWD → `HAVEN_CONFIG_DIR` → 包内置 `user/` 目录。
+- **Registry 模式**：`Registry` 基类提供 `register()` / `get()` / `list_all()` 类方法。`ToolRegistry` 和 `SkillRegistry` 均继承自此基类。新建可注册组件时继承 `Registry` 并设置 `_label`。
+- **运行时数据**：守护进程 PID 文件写入 `.data/haven.pid`，由 `core/pidfile.py` 管理。
 
 ---
 

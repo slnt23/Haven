@@ -1,6 +1,6 @@
 import pytest
 
-from forest.agents import GeneralAgent
+from haven.agents import GeneralAgent
 
 
 @pytest.fixture

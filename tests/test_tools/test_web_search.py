@@ -1,6 +1,6 @@
 import pytest
 
-from forest.tools import WebSearchTool
+from haven.tools import WebSearchTool
 
 
 @pytest.fixture
