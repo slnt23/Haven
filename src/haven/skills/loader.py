@@ -8,9 +8,9 @@ from .base_skill import BaseSkill
 
 
 class SkillLoader:
-    """Scans a directory for ``*.md`` skill files and builds BaseSkill instances.
+    """扫描目录中的 ``*.md`` skill 文件并构建 BaseSkill 实例。
 
-    Each ``.md`` file must start with YAML frontmatter delimited by ``---``::
+    每个 ``.md`` 文件必须以 ``---`` 分隔的 YAML frontmatter 开头::
 
         ---
         name: code_review
@@ -22,11 +22,11 @@ class SkillLoader:
 
         You are an expert code reviewer…
 
-    The body after the frontmatter is the skill's prompt extension.
+    frontmatter 之后的正文为 skill 的 prompt 扩展。
     """
 
     # ------------------------------------------------------------------
-    # public API
+    # 公开 API
     # ------------------------------------------------------------------
 
     @staticmethod
@@ -50,7 +50,7 @@ class SkillLoader:
         return SkillLoader._parse_file(filepath)
 
     # ------------------------------------------------------------------
-    # internal
+    # 内部实现
     # ------------------------------------------------------------------
 
     @staticmethod
@@ -80,12 +80,12 @@ class SkillLoader:
 
     @staticmethod
     def _split_frontmatter(raw: str) -> tuple[str | None, str]:
-        """Return (frontmatter, body) or (None, raw) if no frontmatter found."""
+        """返回 (frontmatter, body)，无 frontmatter 时返回 (None, raw)。"""
         raw = raw.lstrip()
         if not raw.startswith("---"):
             return None, raw
 
-        # find closing ---
+        # 查找闭合的 ---
         end = raw.find("---", 3)
         if end == -1:
             return None, raw

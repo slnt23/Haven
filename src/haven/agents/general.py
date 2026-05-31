@@ -8,10 +8,10 @@ from haven.core.base_agent import BaseAgent
 
 
 class GeneralAgent(BaseAgent):
-    """A single general-purpose agent.
+    """单一通用 agent。
 
-    Personality comes from default skills (e.g. haven.md); domain expertise
-    comes from on-demand skills matched per task.  No hardcoded roles.
+    人格来自默认 skill（如 haven.md）；领域能力来自按任务匹配的按需 skill。
+    不硬编码角色。
     """
 
     def __init__(self, name: str = "general", **kwargs: Any) -> None:
@@ -25,13 +25,13 @@ class GeneralAgent(BaseAgent):
 
         messages = self._build_messages(task, system_prompt=system_prompt, use_rag=use_rag)
 
-        # insert history between system and user messages when provided
+        # 如有历史记录，插入到 system 与 user 消息之间
         if history:
             user_msg = messages.pop()
             messages.extend(history)
             messages.append(user_msg)
 
-        # append on-demand skill prompts
+        # 追加按需 skill 的 prompt
         if on_demand_skills:
             for skill in on_demand_skills:
                 if skill.prompt_extension and messages and hasattr(messages[0], "content"):

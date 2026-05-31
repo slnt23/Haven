@@ -14,14 +14,14 @@ logger = logging.getLogger("haven.feishu_channel")
 
 
 # ------------------------------------------------------------------
-# asynchronous reply helper — offloads the synchronous lark API call
-# to a worker thread so the main event loop isn't blocked
+# 异步回复辅助函数——将同步 lark API 调用放到工作线程，
+# 避免阻塞主事件循环
 # ------------------------------------------------------------------
 
 async def _send_reply(
     app_id: str, app_secret: str, open_id: str, text: str,
 ) -> None:
-    """Send a text reply via Feishu :ref:`CreateMessage` API in a thread."""
+    """在线程中通过飞书 CreateMessage API 发送文本回复。"""
 
     def _sync() -> None:
         from lark_oapi.api.im.v1 import (
@@ -57,13 +57,12 @@ async def _send_reply(
 # ------------------------------------------------------------------
 
 class FeishuChannel(BaseChannel):
-    """Feishu / Lark messaging channel.
+    """飞书 / Lark 消息通道。
 
-    Receives messages via WebSocket long-connection and replies through
-    the Feishu Open API.  No public URL or webhook endpoint is required.
+    通过 WebSocket 长连接接收消息，经飞书 Open API 回复。
+    无需公网 URL 或 webhook 端点。
 
-    **Prerequisites** — Create a Feishu enterprise app in the developer
-    console, enable Bot capability, and obtain App ID + App Secret.
+    **前置条件**——在飞书开发者控制台创建企业应用，启用 Bot 能力，获取 App ID 和 App Secret。
     """
 
     def __init__(self, app_id: str = "", app_secret: str = "") -> None:
@@ -78,7 +77,7 @@ class FeishuChannel(BaseChannel):
         self._ws_thread: threading.Thread | None = None
 
     # ------------------------------------------------------------------
-    # channel life-cycle
+    # 通道生命周期
     # ------------------------------------------------------------------
 
     async def start(self, agent: BaseAgent) -> None:
@@ -95,9 +94,9 @@ class FeishuChannel(BaseChannel):
 
         loop = asyncio.get_running_loop()
 
-        # The lark-oapi WebSocket Client.start() is synchronous and blocking
-        # (it calls ``run_until_complete`` internally).  Run it in a daemon
-        # thread so the daemon's asyncio loop is not blocked.
+        # lark-oapi 的 WebSocket Client.start() 是同步阻塞的
+        # （内部调用 ``run_until_complete``）。放到守护线程中运行，
+        # 避免阻塞守护进程的 asyncio 循环。
         self._running = True
         self._ws_thread = threading.Thread(
             target=self._run_ws, args=(loop,), daemon=True,
@@ -107,8 +106,8 @@ class FeishuChannel(BaseChannel):
 
     async def stop(self) -> None:
         self._running = False
-        # The WS thread is a daemon — it will be terminated when the process
-        # exits.  There is no public stop() on lark-oapi's WS Client.
+        # WS 线程是守护线程——进程退出时自动终止。
+        # lark-oapi 的 WS Client 不提供公开的 stop() 方法。
         logger.info("FeishuChannel stopped")
 
     @property
@@ -118,14 +117,13 @@ class FeishuChannel(BaseChannel):
         return "not configured"
 
     # ------------------------------------------------------------------
-    # WebSocket event handler (runs in worker thread)
+    # WebSocket 事件处理（在工作线程中运行）
     # ------------------------------------------------------------------
 
     def _run_ws(self, main_loop: asyncio.AbstractEventLoop) -> None:
-        """Blocking entry-point for the WebSocket worker thread."""
+        """WebSocket 工作线程的阻塞入口。"""
 
-        # Build a dispatcher that forwards ``im.message.receive_v1`` events
-        # to the main asyncio loop.
+        # 构建分发器，将 ``im.message.receive_v1`` 事件转发到主 asyncio 循环。
         from lark_oapi.event.dispatcher_handler import EventDispatcherHandler
 
         def _on_message(event) -> None:
@@ -157,11 +155,11 @@ class FeishuChannel(BaseChannel):
                 logger.exception("FeishuChannel: WS client crashed")
 
     # ------------------------------------------------------------------
-    # event processing (runs on main asyncio loop)
+    # 事件处理（在主 asyncio 循环中运行）
     # ------------------------------------------------------------------
 
     async def _handle_event(self, event) -> None:
-        """Process a single incoming message event from Feishu."""
+        """处理来自飞书的单条消息事件。"""
 
         evt = event.event
         if evt is None:
@@ -171,7 +169,7 @@ class FeishuChannel(BaseChannel):
         if message is None or message.message_type != "text":
             return
 
-        # Parse the text content (Feishu delivers it as a JSON string)
+        # 解析文本内容（飞书以 JSON 字符串形式传递）
         text = ""
         try:
             content = json.loads(message.content or "{}")
@@ -182,7 +180,7 @@ class FeishuChannel(BaseChannel):
         if not text:
             return
 
-        # If the message contains @mentions, strip the leading @bot_name
+        # 若消息包含 @提及，去除前导的 @bot_name
         if message.mentions:
             for mention in message.mentions:
                 key = getattr(mention, "key", "")
@@ -197,20 +195,19 @@ class FeishuChannel(BaseChannel):
             open_id, chat_id, text[:100],
         )
 
-        # Stamp the agent memory with per-user identity
+        # 将 agent 记忆标记为按用户身份隔离
         self.agent.memory.session_id = f"feishu_{open_id}"
         self.agent.memory.entity_name = f"feishu_{open_id}"
         self.agent.memory.channel = "feishu"
 
-        # Process through ChatSession
+        # 通过 ChatSession 处理
         try:
             response = await self._session.process(text)
         except Exception:
             logger.exception("FeishuChannel: agent error")
             response = "抱歉，处理消息时出错了，请稍后重试。"
 
-        # Feishu text messages have a ~20 KB payload limit.  Truncate if
-        # the agent's response exceeds it (reserve some margin).
+        # 飞书文本消息有约 20KB 的载荷限制。若 agent 响应超限则截断（预留余量）。
         max_len = 18000
         if len(response) > max_len:
             response = response[:max_len] + "\n\n…(内容过长已截断)"
@@ -218,5 +215,5 @@ class FeishuChannel(BaseChannel):
         if open_id:
             await _send_reply(self.app_id, self.app_secret, open_id, response)
 
-        # Background fact extraction
+        # 后台事实提取
         asyncio.create_task(self.agent.extract_facts_async())

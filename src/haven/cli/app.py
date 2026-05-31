@@ -1,4 +1,4 @@
-"""Haven CLI — interactive REPL."""
+"""Haven CLI——交互式 REPL。"""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from haven.cli.commands import handle as handle_command
 from haven.agents.factory import create_agent
 
 class HavenApp:
-    """Interactive REPL for the Haven multi-agent framework."""
+    """Haven 多 agent 框架的交互式 REPL。"""
 
     def __init__(self, agent: BaseAgent | None = None) -> None:
         self.agent = agent
@@ -50,7 +50,7 @@ class HavenApp:
             await self._chat(user_input)
 
     # ------------------------------------------------------------------
-    # chat
+    # 对话
     # ------------------------------------------------------------------
 
     async def _chat(self, user_input: str) -> None:
@@ -67,11 +67,11 @@ class HavenApp:
 
         print_line(response)
 
-        # background fact extraction
+        # 后台事实提取
         asyncio.create_task(self.agent.extract_facts_async())
 
     # ------------------------------------------------------------------
-    # commands
+    # 命令处理
     # ------------------------------------------------------------------
 
     def _handle_command(self, text: str) -> bool:

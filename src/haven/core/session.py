@@ -1,7 +1,7 @@
-"""ChatSession — reusable single-turn conversation handler.
+"""ChatSession — 可复用的单轮对话处理器。
 
-Encapsulates system-prompt assembly, memory, and persistence.
-Used by both the CLI REPL and socket channels.
+封装 system-prompt 组装、记忆和持久化。
+CLI REPL 和 socket 通道共用。
 """
 
 from __future__ import annotations
@@ -17,17 +17,16 @@ logger = logging.getLogger("haven.session")
 
 
 class ChatSession:
-    """Process one conversation turn through a shared agent.
+    """通过共享 agent 处理一轮对话。
 
-    Builds the full message list (system prompt + skills + history + user
-    input), delegates to the agent for LLM invocation, then updates memory
-    and persists.
+    构建完整消息列表（system prompt + skills + 历史 + 用户输入），
+    委托 agent 调用 LLM，然后更新记忆并持久化。
 
-    Usage::
+    用法::
 
         session = ChatSession(agent)
         response = await session.process("你好")
-        # optionally trigger background fact extraction
+        # 可选：触发后台事实提取
         await agent.extract_facts_async()
     """
 
@@ -40,14 +39,13 @@ class ChatSession:
         history: list[Any] | None = None,
         persist: bool = True,
     ) -> str:
-        """Process a single user message and return the agent's response.
+        """处理单条用户消息并返回 agent 的响应。
 
         Args:
-            user_input: The user's message text.
-            history: Optional override for conversation history (used for
-                     per-connection session isolation in socket channels).
-                     When ``None``, ``agent.memory.get_history()`` is used.
-            persist: Whether to save the turn to long-term memory.
+            user_input: 用户消息文本。
+            history: 可选的对话历史覆盖（用于 socket 通道中的按连接会话隔离）。
+                     为 ``None`` 时使用 ``agent.memory.get_history()``。
+            persist: 是否将本轮对话保存到长期记忆。
         """
         on_demand = self.agent.match_skills(user_input)
 
@@ -72,11 +70,11 @@ class ChatSession:
     def _update_memory(
         self, user_input: str, content: str, history: list[Any] | None
     ) -> None:
-        """Update short-term memory (only when using agent's own history)."""
+        """更新短期记忆（仅当使用 agent 自身历史时）。"""
         if history is None:
             self.agent.memory.add_message(HumanMessage(content=user_input))
             self.agent.memory.add_message(AIMessage(content=content))
 
     async def process_no_persist(self, user_input: str) -> str:
-        """Process a message without persisting to long-term memory."""
+        """处理消息但不持久化到长期记忆。"""
         return await self.process(user_input, persist=False)

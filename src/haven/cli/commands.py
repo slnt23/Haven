@@ -1,6 +1,6 @@
-"""Slash-command handlers for the Haven CLI REPL.
+"""Haven CLI REPL 的斜杠命令处理器。
 
-All handlers return ``(output: str, should_exit: bool)``.
+所有处理器返回 ``(output: str, should_exit: bool)``。
 """
 
 from __future__ import annotations
@@ -10,9 +10,9 @@ from typing import Any
 
 def handle(agent: Any, text: str) -> tuple[str, bool] | None:
     mcp_manager = getattr(agent, "mcp_manager", None)
-    """Parse and dispatch a slash command.
+    """解析并分发斜杠命令。
 
-    Returns ``(output, should_exit)``, or ``None`` if *text* is not a command.
+    返回 ``(output, should_exit)``，若 *text* 不是命令则返回 ``None``。
     """
     if not text.startswith("/"):
         return None
@@ -48,7 +48,7 @@ def handle(agent: Any, text: str) -> tuple[str, bool] | None:
 
 
 # ------------------------------------------------------------------
-# individual handlers
+# 各个命令处理器
 # ------------------------------------------------------------------
 
 def _cmd_help() -> str:
@@ -67,7 +67,7 @@ def _cmd_help() -> str:
 
 
 def _cmd_skills(agent: Any) -> str:
-    # aggregate skills from orchestrator sub-agents when applicable
+    # 使用 orchestrator 时聚合子 agent 的 skills
     sub_agents = getattr(agent, "sub_agents", None)
 
     if sub_agents:
@@ -120,7 +120,7 @@ def _cmd_model(agent: Any, parts: list[str]) -> str:
                 break
         if match:
             try:
-                # switch model on orchestrator and all sub-agents
+                # 对 orchestrator 和所有子 agent 切换模型
                 actual = agent.switch_model(match)
                 for sub in getattr(agent, "sub_agents", {}).values():
                     try:

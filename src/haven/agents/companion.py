@@ -1,4 +1,4 @@
-"""CompanionAgent — daily companionship and casual chat."""
+"""CompanionAgent — 日常陪伴与闲聊。"""
 
 from __future__ import annotations
 
@@ -37,7 +37,7 @@ PROMPT = """\
 
 
 class CompanionAgent(GeneralAgent):
-    """Daily companion agent with the Haven persona — chat, emotional support, daily banter."""
+    """日常陪伴 agent，Haven 人格——聊天、情感支持、日常互动。"""
 
     def __init__(self, name: str = "companion", **kwargs: Any) -> None:
         super().__init__(name, **kwargs)

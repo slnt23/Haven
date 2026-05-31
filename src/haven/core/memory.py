@@ -6,25 +6,24 @@ from langchain_core.messages import BaseMessage
 
 
 class AgentMemory:
-    """Dual-layer memory: in-memory deque (short-term) + SQLite (long-term).
+    """双层记忆：内存 deque（短期）+ SQLite（长期）。
 
-    Short-term memory holds the last N messages for immediate context.
-    Long-term memory persists all conversations and extracts structured
-    facts about entities (people) from conversations.
+    短期记忆保留最近 N 条消息作为即时上下文。
+    长期记忆持久化全部对话，并提取关于实体（人）的结构化事实。
     """
 
     def __init__(self, max_messages: int = 100):
         self.messages: deque[BaseMessage] = deque(maxlen=max_messages)
         self.metadata: dict[str, Any] = {}
 
-        # long-term store (lazy init to avoid DB creation on import)
+        # 长期存储（延迟初始化，避免导入时创建数据库）
         self._store = None
         self._session_id: str = "default"
         self._entity_name: str = ""
         self._channel: str = "cli"
 
     # ------------------------------------------------------------------
-    # short-term
+    # 短期记忆
     # ------------------------------------------------------------------
 
     def add_message(self, message: BaseMessage) -> None:
@@ -45,19 +44,19 @@ class AgentMemory:
         return len(self.messages)
 
     # ------------------------------------------------------------------
-    # long-term store access
+    # 长期存储访问
     # ------------------------------------------------------------------
 
     @property
     def store(self):
-        """Lazy-init the SQLite memory store."""
+        """延迟初始化 SQLite 记忆存储。"""
         if self._store is None:
             from haven.core.memory_store import SQLiteMemoryStore
             self._store = SQLiteMemoryStore()
         return self._store
 
     # ------------------------------------------------------------------
-    # session identity
+    # 会话身份
     # ------------------------------------------------------------------
 
     @property
@@ -85,18 +84,18 @@ class AgentMemory:
         self._entity_name = value
 
     # ------------------------------------------------------------------
-    # long-term persistence
+    # 长期持久化
     # ------------------------------------------------------------------
 
     def save_message(self, role: str, content: str) -> None:
-        """Persist a single message to the long-term store."""
+        """将单条消息持久化到长期存储。"""
         try:
             self.store.save_message(self.session_id, role, content, channel=self.channel)
         except Exception as exc:
             logging.getLogger("haven.memory").warning("save_message failed: %s", exc)
 
     def get_long_term_context(self, entity_name: str = "") -> str:
-        """Return formatted long-term facts for injection into system prompt."""
+        """返回格式化的长期事实，用于注入 system prompt。"""
         name = entity_name or self.entity_name
         try:
             return self.store.format_facts_by_name(name)
@@ -105,7 +104,7 @@ class AgentMemory:
             return ""
 
     async def extract_facts(self, llm: Any) -> None:
-        """Extract facts from the most recent conversation pair and store them."""
+        """从最近一轮对话中提取事实并存储。"""
         name = self.entity_name
         if not name or name == "default":
             return

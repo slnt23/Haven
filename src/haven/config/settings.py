@@ -5,7 +5,7 @@ from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 def _find_user_config(filename: str) -> Path | None:
-    """Look for *filename* in CWD, falling back to ``HAVEN_CONFIG_DIR`` env var."""
+    """在 CWD 中查找 *filename*，回退到 ``HAVEN_CONFIG_DIR`` 环境变量。"""
     cwd_path = Path.cwd() / filename
     if cwd_path.is_file():
         return cwd_path
@@ -18,11 +18,11 @@ def _find_user_config(filename: str) -> Path | None:
 
 
 def find_user_path(relative_path: str) -> Path:
-    """Resolve *relative_path* (file or directory) with CWD-first lookup.
+    """CWD 优先解析 *relative_path*（文件或目录）。
 
-    Priority: CWD → ``HAVEN_CONFIG_DIR`` → built-in ``src/haven/user/`` directory.
+    优先级：CWD → ``HAVEN_CONFIG_DIR`` → 内置 ``src/haven/user/`` 目录。
 
-    Always returns a path — caller should check existence if needed.
+    始终返回路径——调用方按需检查是否存在。
     """
     _package_dir = Path(__file__).resolve().parent.parent  # src/haven/
 

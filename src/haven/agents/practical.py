@@ -1,4 +1,4 @@
-"""PracticalAgent — tech troubleshooting & daily life for engineering-minded users."""
+"""PracticalAgent — 面向工科用户的技术排障与日常生活助手。"""
 
 from __future__ import annotations
 
@@ -38,7 +38,7 @@ PROMPT = """\
 
 
 class PracticalAgent(GeneralAgent):
-    """Tech troubleshooting & daily-life agent for engineering-minded users."""
+    """面向工科用户的技术排障与日常生活 agent。"""
 
     def __init__(self, name: str = "practical", **kwargs: Any) -> None:
         super().__init__(name, **kwargs)

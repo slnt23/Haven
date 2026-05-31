@@ -7,7 +7,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field, model_validator
 
 
-# Mapping from standard MCP "type" → internal transport
+# 标准 MCP "type" → 内部 transport 映射
 _TYPE_MAP: dict[str, str] = {
     "stdio": "stdio",
     "sse": "http",
@@ -18,11 +18,10 @@ _TYPE_MAP: dict[str, str] = {
 
 
 class MCPServerConfig(BaseModel):
-    """Configuration for a single MCP server.
+    """单个 MCP 服务器配置。
 
-    Accepts both the standard ``mcpServers`` entry fields (``type``,
-    ``command``, ``args``, ``env``, ``url``, ``headers``) and our
-    internal ``transport`` alias.
+    同时接受标准 ``mcpServers`` 条目字段（``type``、``command``、
+    ``args``、``env``、``url``、``headers``）和内部 ``transport`` 别名。
     """
 
     name: str
@@ -30,23 +29,23 @@ class MCPServerConfig(BaseModel):
     enabled: bool = True
     description: str = ""
 
-    # stdio transport
+    # stdio 传输
     command: str = ""
     args: list[str] = Field(default_factory=list)
     env: dict[str, str] = Field(default_factory=dict)
 
-    # http / websocket transport
+    # http / websocket 传输
     url: str = ""
     headers: dict[str, str] = Field(default_factory=dict)
 
-    # ---- factory: parse standard mcpServers entry ----
+    # ---- 工厂：解析标准 mcpServers 条目 ----
 
     @classmethod
     def from_standard_entry(cls, name: str, entry: dict[str, Any]) -> "MCPServerConfig":
-        """Build config from a standard ``mcpServers`` entry.
+        """从标准 ``mcpServers`` 条目构建配置。
 
-        The standard format uses ``type`` (not ``transport``) and
-        ``"sse"`` / ``"streamableHttp"`` for HTTP-based servers::
+        标准格式使用 ``type``（非 ``transport``），HTTP 服务器使用
+        ``"sse"`` / ``"streamableHttp"``::
 
             {
               "type": "stdio",
@@ -88,10 +87,10 @@ class MCPServerConfig(BaseModel):
 
 
 def load_mcp_servers(path: str | Path | None = None) -> list[dict[str, Any]]:
-    """Load MCP server entries from a standard ``mcp.json`` file.
+    """从标准 ``mcp.json`` 文件加载 MCP 服务器条目。
 
-    Returns a list of dicts suitable for ``MCPServerConfig(**entry)``,
-    with the standard format already converted to internal field names.
+    返回适合 ``MCPServerConfig(**entry)`` 的字典列表，
+    标准格式已转换为内部字段名。
     """
     if path is None:
         from haven.config import find_user_path

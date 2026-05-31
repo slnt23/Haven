@@ -6,10 +6,9 @@ from haven.core.base_agent import BaseAgent
 
 
 class BaseChannel(ABC):
-    """Abstract interface for a chat channel.
+    """聊天通道抽象接口。
 
-    A channel is a message source/sink — it receives incoming messages,
-    passes them through the shared Agent, and sends back responses.
+    通道是消息的入口/出口——接收传入消息，通过共享 Agent 处理，返回响应。
     """
 
     def __init__(self, name: str, enabled: bool = True) -> None:
@@ -24,20 +23,19 @@ class BaseChannel(ABC):
         return self._agent
 
     async def handle_message(self, message: str) -> str:
-        """Route a message through the shared agent and return the response."""
+        """将消息路由到共享 agent 并返回响应。"""
         return await self.agent.run(message)
 
     @abstractmethod
     async def start(self, agent: BaseAgent) -> None:
-        """Start the channel with a shared agent instance."""
+        """用共享 agent 实例启动通道。"""
         self._agent = agent
 
     @property
     def status_detail(self) -> str:
-        """One-line description shown in daemon start-up banner.  Override to
-        display channel-specific information (address, app-id, etc.)."""
+        """守护进程启动 banner 中显示的单行描述。可覆写以显示通道特定信息（地址、app-id 等）。"""
         return ""
 
     @abstractmethod
     async def stop(self) -> None:
-        """Stop the channel and release resources."""
+        """停止通道并释放资源。"""

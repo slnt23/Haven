@@ -4,10 +4,10 @@ from pathlib import Path
 
 
 class BaseSkill:
-    """A skill defined by a markdown file — pure data, no code required.
+    """由 markdown 文件定义的技能——纯数据，零代码。
 
-    Each .md skill file has YAML frontmatter for metadata; the body is the
-    prompt extension injected into the agent's system prompt.
+    每个 .md skill 文件通过 YAML frontmatter 定义元数据；
+    正文作为 prompt 扩展注入 agent 的 system prompt。
     """
 
     def __init__(
@@ -29,7 +29,7 @@ class BaseSkill:
         self.default = default
 
     # ------------------------------------------------------------------
-    # prompt_extension — for compatibility with BaseAgent._build_system_prompt
+    # prompt_extension — 兼容 BaseAgent._build_system_prompt
     # ------------------------------------------------------------------
 
     @property
@@ -37,7 +37,7 @@ class BaseSkill:
         return self.prompt
 
     # ------------------------------------------------------------------
-    # keyword matching
+    # 关键词匹配
     # ------------------------------------------------------------------
 
     def matches(self, task: str) -> bool:
@@ -47,7 +47,7 @@ class BaseSkill:
         return any(kw.lower() in task_lower for kw in self.trigger_keywords)
 
     # ------------------------------------------------------------------
-    # representation
+    # 表示
     # ------------------------------------------------------------------
 
     def __repr__(self) -> str:

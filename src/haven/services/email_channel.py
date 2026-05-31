@@ -13,7 +13,7 @@ logger = logging.getLogger("haven.email_channel")
 
 
 class EmailChannel(BaseChannel):
-    """Email channel — polls IMAP inbox, processes via Agent, replies via SMTP."""
+    """邮件通道——轮询 IMAP 收件箱，经 Agent 处理后通过 SMTP 回复。"""
 
     def __init__(self) -> None:
         super().__init__("email",

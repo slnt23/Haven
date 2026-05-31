@@ -1,7 +1,6 @@
-"""AgentFactory — create a fully initialised multi-agent system.
+"""AgentFactory — 创建完整初始化的多 agent 系统。
 
-Returns an :class:`OrchestratorAgent` with specialist sub-agents
-pre-registered and tools bound.
+返回一个 :class:`OrchestratorAgent`，已预注册 specialist 子 agent 并绑定工具。
 """
 
 from __future__ import annotations
@@ -41,21 +40,21 @@ async def create_agent(
     orch.memory.entity_name = entity_name
     orch.memory.channel = channel
 
-    # -- specialist agents --------------------------------------------------
+    # -- 子 agent ------------------------------------------------------------
     coder = CoderAgent()
     medical = MedicalAgent()
     companion = CompanionAgent()
     practical = PracticalAgent()
 
     for agent in (coder, medical, companion, practical):
-        agent.memory = orch.memory  # share memory across all agents
+        agent.memory = orch.memory  # 所有 agent 共享内存
 
     _load_persona(companion)
 
     if load_skills:
         _load_skills(coder, medical, companion, practical)
 
-    # init LLMs and bind tools
+    # 初始化 LLM 并绑定工具
     for agent in (coder, medical, companion, practical):
         agent._init_llm()
         agent.bind_tools_to_llm()
@@ -135,7 +134,7 @@ async def _init_mcp(orch: OrchestratorAgent) -> None:
         return
 
     if mcp_tools:
-        # share MCP tools with all sub-agents
+        # 将 MCP 工具共享给所有子 agent
         for agent in orch.sub_agents.values():
             agent.register_mcp_tools(mcp_tools)
             agent.bind_tools_to_llm()

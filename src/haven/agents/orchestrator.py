@@ -1,4 +1,4 @@
-"""OrchestratorAgent — classify user intent and route to the best specialist."""
+"""OrchestratorAgent — 分类用户意图并路由到最合适的 specialist。"""
 
 from __future__ import annotations
 
@@ -65,7 +65,7 @@ class OrchestratorAgent(BaseAgent):
         self.sub_agents[name] = agent
 
     # ------------------------------------------------------------------
-    # skill aggregation
+    # skill 聚合
     # ------------------------------------------------------------------
 
     def match_skills(self, task: str) -> list["BaseSkill"]:
@@ -80,7 +80,7 @@ class OrchestratorAgent(BaseAgent):
         return matched
 
     # ------------------------------------------------------------------
-    # public API
+    # 公开 API
     # ------------------------------------------------------------------
 
     async def run(self, task: str, **kwargs: Any) -> str:
@@ -110,7 +110,7 @@ class OrchestratorAgent(BaseAgent):
             agent.reset()
 
     # ------------------------------------------------------------------
-    # internal
+    # 内部方法
     # ------------------------------------------------------------------
 
     async def _classify_intent(self, task: str) -> str:

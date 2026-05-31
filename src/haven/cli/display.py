@@ -1,4 +1,4 @@
-"""UI helpers for the Haven CLI — banner, loading animation, prompts."""
+"""Haven CLI 界面辅助——banner、加载动画、提示符。"""
 
 from __future__ import annotations
 
@@ -14,14 +14,14 @@ _LOADING_WORDS = ["思考中", "分析中", "处理中", "生成中", "整理中
 
 
 def print_line(*args: Any) -> None:
-    """Write a line to stdout, flushing immediately."""
+    """向 stdout 写入一行并立即刷新。"""
     text = " ".join(str(a) for a in args)
     sys.stdout.write(text + "\n")
     sys.stdout.flush()
 
 
 async def show_loading(stop_event: asyncio.Event) -> None:
-    """Animated loading indicator — cycles through words with dots."""
+    """动画加载指示——循环显示文字加点号。"""
     words = itertools.cycle(_LOADING_WORDS)
     dots_seq = ["   ", ".  ", ".. ", "..."]
     while not stop_event.is_set():
@@ -37,7 +37,7 @@ async def show_loading(stop_event: asyncio.Event) -> None:
 
 
 async def prompt_user() -> str:
-    """Read a line from stdin with a styled prompt."""
+    """从 stdin 读取一行，带样式提示符。"""
     try:
         print_line()
         print_line("——" * 30)
@@ -52,11 +52,11 @@ async def prompt_user() -> str:
 
 
 def print_banner(agent: BaseAgent) -> None:
-    """Print the Haven startup banner with model / skills / MCP status."""
+    """打印 Haven 启动 banner，含模型 / skills / MCP 状态。"""
     model = getattr(agent.llm, "model_name", None) or get_default_model()
     sub_agents = getattr(agent, "sub_agents", None)
 
-    # aggregate across sub-agents when using orchestrator
+    # 使用 orchestrator 时聚合子 agent 数据
     if sub_agents:
         skill_count = sum(len(a.skills) for a in sub_agents.values())
         tool_count = sum(len(a.tools) for a in sub_agents.values())

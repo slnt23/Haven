@@ -1,4 +1,4 @@
-"""CoderAgent — software engineering specialist."""
+"""CoderAgent — 软件工程 specialist。"""
 
 from __future__ import annotations
 
@@ -34,7 +34,7 @@ PROMPT = """\
 
 
 class CoderAgent(GeneralAgent):
-    """Specialized agent for software engineering tasks."""
+    """软件工程 specialist agent。"""
 
     def __init__(self, name: str = "coder", **kwargs: Any) -> None:
         super().__init__(name, **kwargs)

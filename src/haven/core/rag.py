@@ -6,7 +6,7 @@ from langchain_openai import OpenAIEmbeddings
 
 
 class _TextSplitter:
-    """Minimal recursive text splitter — no external dependency needed."""
+    """极简递归文本分割器——无需外部依赖。"""
 
     def __init__(self, chunk_size: int = 1000, chunk_overlap: int = 200):
         self.chunk_size = chunk_size
@@ -33,11 +33,11 @@ class _TextSplitter:
             elif remaining:
                 chunks.extend(self._split(part, remaining))
             else:
-                # force chunk at character level
+                # 字符级强制切块
                 for i in range(0, len(part), self.chunk_size - self.chunk_overlap):
                     chunks.append(part[i : i + self.chunk_size])
 
-        # merge short neighbours
+        # 合并过短的相邻块
         merged_chunks: list[str] = []
         for c in chunks:
             if (
@@ -60,11 +60,10 @@ class _TextSplitter:
 
 
 class RAGEngine:
-    """Lightweight RAG engine: chunk -> embed -> store -> retrieve.
+    """轻量级 RAG 引擎：分块 → 嵌入 → 存储 → 检索。
 
-    Uses OpenAI-compatible embeddings and an in-memory vector store.
-    Swap InMemoryVectorStore for a persistent store (Chroma, Pinecone, etc.)
-    when you need persistence.
+    使用 OpenAI 兼容嵌入模型和内存向量存储。
+    需要持久化时可替换为 Chroma、Pinecone 等持久存储。
     """
 
     def __init__(
@@ -85,20 +84,20 @@ class RAGEngine:
         self._doc_count = 0
 
     # ------------------------------------------------------------------
-    # ingestion
+    # 数据导入
     # ------------------------------------------------------------------
 
     def add_texts(
         self, texts: list[str], metadatas: list[dict] | None = None
     ) -> int:
-        """Chunk and index a list of raw text strings. Returns number of chunks."""
+        """将原始文本列表分块并索引。返回分块数。"""
         docs = self.splitter.create_documents(texts, metadatas or [{}] * len(texts))
         self.vector_store.add_documents(docs)
         self._doc_count += len(docs)
         return len(docs)
 
     def add_files(self, paths: list[str | Path]) -> int:
-        """Load one or more text/markdown files and index their contents."""
+        """加载一个或多个文本/markdown 文件并索引其内容。"""
         total = 0
         for path in paths:
             p = Path(path)
@@ -111,7 +110,7 @@ class RAGEngine:
     def add_directory(
         self, directory: str | Path, glob_pattern: str = "**/*.md"
     ) -> int:
-        """Recursively index all files matching *glob_pattern* under *directory*."""
+        """递归索引 *directory* 下匹配 *glob_pattern* 的所有文件。"""
         total = 0
         for p in Path(directory).glob(glob_pattern):
             if p.is_file():
@@ -119,15 +118,15 @@ class RAGEngine:
         return total
 
     # ------------------------------------------------------------------
-    # retrieval
+    # 检索
     # ------------------------------------------------------------------
 
     def retrieve(self, query: str, top_k: int = 5) -> list[Document]:
-        """Semantic search — return top-k most relevant chunks."""
+        """语义搜索——返回 top-k 最相关片段。"""
         return self.vector_store.similarity_search(query, k=top_k)
 
     def format_context(self, docs: list[Document]) -> str:
-        """Render retrieved documents into a string ready for prompt injection."""
+        """将检索到的文档渲染为可注入 prompt 的字符串。"""
         if not docs:
             return ""
         parts: list[str] = []
@@ -138,7 +137,7 @@ class RAGEngine:
         return "\n\n".join(parts)
 
     # ------------------------------------------------------------------
-    # helpers
+    # 辅助方法
     # ------------------------------------------------------------------
 
     @property
@@ -146,6 +145,6 @@ class RAGEngine:
         return self._doc_count
 
     def clear(self) -> None:
-        """Drop all indexed documents."""
+        """清除所有已索引文档。"""
         self.vector_store = InMemoryVectorStore(self.embeddings)
         self._doc_count = 0

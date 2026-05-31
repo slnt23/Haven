@@ -11,15 +11,14 @@ logger = logging.getLogger("haven.pidfile")
 
 
 def write(path: Path) -> None:
-    """Write the current process PID to *path*."""
+    """将当前进程 PID 写入 *path*。"""
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(str(os.getpid()))
     logger.debug("PID %d written to %s", os.getpid(), path)
 
 
 def read(path: Path) -> int | None:
-    """Read a PID from *path*.  Returns ``None`` when the file is missing
-    or contains garbage."""
+    """从 *path* 读取 PID。文件缺失或内容无效时返回 ``None``。"""
     if not path.exists():
         return None
     try:
@@ -29,7 +28,7 @@ def read(path: Path) -> int | None:
 
 
 def is_running(pid: int) -> bool:
-    """Check whether a process with *pid* is alive."""
+    """检查 *pid* 对应的进程是否存活。"""
     if sys.platform == "win32":
         result = subprocess.run(
             ["tasklist", "/fi", f"PID eq {pid}", "/nh"],
@@ -45,7 +44,7 @@ def is_running(pid: int) -> bool:
 
 
 def remove(path: Path) -> None:
-    """Delete the PID file at *path*."""
+    """删除 *path* 处的 PID 文件。"""
     try:
         path.unlink(missing_ok=True)
     except OSError:
@@ -53,7 +52,7 @@ def remove(path: Path) -> None:
 
 
 def kill(pid: int) -> None:
-    """Terminate a process by *pid*."""
+    """按 *pid* 终止进程。"""
     if sys.platform == "win32":
         subprocess.run(["taskkill", "/f", "/pid", str(pid)], capture_output=True)
     else:

@@ -1,4 +1,4 @@
-"""MedicalAgent — health & medical specialist, based on the Haven persona."""
+"""MedicalAgent — 健康与医疗 specialist，基于 Haven 人格。"""
 
 from __future__ import annotations
 
@@ -37,7 +37,7 @@ PROMPT = """\
 
 
 class MedicalAgent(GeneralAgent):
-    """Medical specialist agent — health consultation and symptom analysis."""
+    """医疗 specialist agent——健康咨询与症状分析。"""
 
     def __init__(self, name: str = "medical", **kwargs: Any) -> None:
         super().__init__(name, **kwargs)

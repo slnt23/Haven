@@ -25,10 +25,10 @@ BANNER = """
 
 
 class HavenDaemon:
-    """Long-running daemon that shares a single Agent across multiple channels.
+    """长期运行守护进程，在多个通道间共享单个 Agent。
 
-    Channels (socket, email, feishu, ...) run as parallel asyncio tasks.
-    The agent is initialised once and shared.
+    通道（socket、邮件、飞书等）以并行 asyncio 任务运行。
+    Agent 初始化一次并共享使用。
     """
 
     def __init__(self) -> None:
@@ -38,11 +38,11 @@ class HavenDaemon:
         self._shutdown_event = asyncio.Event()
 
     # ------------------------------------------------------------------
-    # lifecycle
+    # 生命周期
     # ------------------------------------------------------------------
 
     async def start(self) -> None:
-        """Initialise agent and start all enabled channels."""
+        """初始化 agent 并启动所有已启用的通道。"""
         existing = pid_read(settings.pid_file)
         if existing is not None and is_running(existing):
             logger.error("Daemon already running (PID %d). Use 'haven stop' first.", existing)
@@ -57,7 +57,7 @@ class HavenDaemon:
         self._print_status()
 
     async def stop(self) -> None:
-        """Gracefully stop all channels and release resources."""
+        """优雅停止所有通道并释放资源。"""
         if not self._running:
             return
         self._running = False
@@ -79,9 +79,9 @@ class HavenDaemon:
         logger.info("Haven daemon stopped")
 
     async def run_forever(self) -> None:
-        """Start daemon and wait for shutdown signal.
+        """启动守护进程并等待关闭信号。
 
-        Shuts down cleanly on Ctrl+C (SIGINT) or SIGTERM.
+        Ctrl+C (SIGINT) 或 SIGTERM 时干净退出。
         """
         try:
             await self.start()
@@ -90,7 +90,7 @@ class HavenDaemon:
             await self.stop()
 
     # ------------------------------------------------------------------
-    # internal
+    # 内部实现
     # ------------------------------------------------------------------
 
     async def _init_agent(self) -> None:
@@ -104,7 +104,7 @@ class HavenDaemon:
         logger.info("Agent initialised, %d skill(s) loaded", len(self.agent.skills))
 
     def _build_channels(self) -> None:
-        # Socket channel
+        # Socket 通道
         socket_enabled = getattr(settings, "daemon_socket_enabled", True)
         socket_host = getattr(settings, "daemon_socket_host", "127.0.0.1")
         socket_port = getattr(settings, "daemon_socket_port", 9020)
@@ -114,12 +114,12 @@ class HavenDaemon:
                 shutdown_callback=self._shutdown_event.set,
             ))
 
-        # Email channel
+        # 邮件通道
         email_enabled = getattr(settings, "daemon_email_enabled", False)
         if email_enabled:
             self.channels.append(EmailChannel())
 
-        # Feishu channel
+        # 飞书通道
         feishu_enabled = getattr(settings, "daemon_feishu_enabled", False)
         if feishu_enabled:
             self.channels.append(FeishuChannel(

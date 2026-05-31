@@ -1,7 +1,6 @@
-"""Long-term memory store backed by SQLite.
+"""基于 SQLite 的长期记忆存储。
 
-Stores entities, their structured facts, conversation logs, and uses LLM
-to automatically extract important facts from conversations.
+存储实体、结构化事实、对话记录，并通过 LLM 自动从对话中提取重要事实。
 """
 
 from __future__ import annotations
@@ -44,9 +43,9 @@ EXTRACT_PROMPT = """\
 
 
 class SQLiteMemoryStore:
-    """SQLite-backed persistent memory for entities, facts, and conversations.
+    """基于 SQLite 的持久化记忆，存储实体、事实和对话。
 
-    Database file: ``.data/memory.db`` (configurable via settings).
+    数据库文件：``.data/memory.db``（可通过 settings 配置）。
     """
 
     def __init__(self, db_path: str | Path | None = None) -> None:
@@ -60,7 +59,7 @@ class SQLiteMemoryStore:
         self._init_schema()
 
     # ------------------------------------------------------------------
-    # schema
+    # 数据库模式
     # ------------------------------------------------------------------
 
     def _init_schema(self) -> None:
@@ -103,7 +102,7 @@ class SQLiteMemoryStore:
         self._conn.commit()
 
     # ------------------------------------------------------------------
-    # entities
+    # 实体
     # ------------------------------------------------------------------
 
     def get_or_create_entity(self, name: str, entity_type: str = "person") -> int:
@@ -124,7 +123,7 @@ class SQLiteMemoryStore:
         return dict(row) if row else None
 
     # ------------------------------------------------------------------
-    # facts
+    # 事实
     # ------------------------------------------------------------------
 
     def upsert_fact(
@@ -150,7 +149,7 @@ class SQLiteMemoryStore:
 
     def upsert_facts_batch(self, entity_id: int, facts: list[dict[str, Any]],
                            source: str = "") -> int:
-        """Insert or update a batch of extracted facts. Returns count of facts written."""
+        """批量插入或更新提取的事实。返回写入的事实数量。"""
         count = 0
         for fact in facts:
             key = fact.get("key", "")
@@ -178,7 +177,7 @@ class SQLiteMemoryStore:
         return self.get_facts(entity["id"], min_confidence)
 
     def format_facts_for_prompt(self, entity_id: int, min_confidence: float = 0.5) -> str:
-        """Format entity facts as a system prompt injection snippet."""
+        """将实体事实格式化为 system prompt 注入片段。"""
         facts = self.get_facts(entity_id, min_confidence)
         if not facts:
             return ""
@@ -194,7 +193,7 @@ class SQLiteMemoryStore:
         return self.format_facts_for_prompt(entity["id"], min_confidence)
 
     # ------------------------------------------------------------------
-    # conversations
+    # 对话
     # ------------------------------------------------------------------
 
     def save_message(self, session_id: str, role: str, content: str,
@@ -217,7 +216,7 @@ class SQLiteMemoryStore:
         return [dict(r) for r in reversed(rows)]
 
     def get_last_conversation_pair(self, session_id: str) -> tuple[str, str]:
-        """Return (user_message, ai_response) of the most recent exchange."""
+        """返回最近一轮对话的 (用户消息, AI 回复)。"""
         rows = self._conn.execute("""
             SELECT role, content FROM conversations
             WHERE session_id = ?
@@ -233,16 +232,16 @@ class SQLiteMemoryStore:
         return user_msg, ai_msg
 
     # ------------------------------------------------------------------
-    # LLM-powered extraction
+    # LLM 事实抽取
     # ------------------------------------------------------------------
 
     async def extract_and_store(
         self, entity_name: str, conversation_snippet: str,
         llm: Any, source: str = "",
     ) -> list[dict[str, Any]]:
-        """Use LLM to extract facts from a conversation and store them.
+        """用 LLM 从对话中提取事实并存储。
 
-        Returns the list of extracted facts.
+        返回提取的事实列表。
         """
         if not conversation_snippet.strip():
             return []
@@ -268,16 +267,16 @@ class SQLiteMemoryStore:
 
     @staticmethod
     def _parse_extraction(raw: str) -> list[dict[str, Any]]:
-        """Parse LLM extraction response into a list of fact dicts."""
-        # trim to JSON
+        """将 LLM 抽取响应解析为事实字典列表。"""
+        # 提取 JSON
         raw = raw.strip()
-        # remove markdown fences if present
+        # 去除可能的 markdown 代码块标记
         if raw.startswith("```"):
             lines = raw.split("\n")
             raw = "\n".join(lines[1:]) if len(lines) > 1 else raw
             if raw.endswith("```"):
                 raw = raw[:-3]
-        # find JSON object
+        # 查找 JSON 对象
         brace_start = raw.find("{")
         if brace_start == -1:
             return []
@@ -289,7 +288,7 @@ class SQLiteMemoryStore:
         return data.get("facts", [])
 
     # ------------------------------------------------------------------
-    # lifecycle
+    # 生命周期
     # ------------------------------------------------------------------
 
     def close(self) -> None:

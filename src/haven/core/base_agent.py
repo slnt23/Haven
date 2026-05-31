@@ -34,27 +34,26 @@ class BaseAgent(ABC):
         self.tools[name] = tool
 
     def register_lc_tool(self, tool: BaseTool) -> None:
-        """Register a LangChain ``BaseTool`` for ``bind_tools()``."""
+        """注册 LangChain ``BaseTool``，供 ``bind_tools()`` 使用。"""
         self._tool_instances.append(tool)
         self.tools[tool.name] = tool
 
     def register_mcp_tools(self, tools: dict[str, BaseTool]) -> None:
-        """Register MCP-discovered tools."""
+        """注册 MCP 发现的工具。"""
         for name, tool in tools.items():
             self.register_lc_tool(tool)
 
     def bind_tools_to_llm(self) -> None:
-        """Apply ``bind_tools()`` on the LLM if tools are registered."""
+        """对 LLM 执行 ``bind_tools()``（如有已注册工具）。"""
         if self.llm is None:
             self._init_llm()
         if self._tool_instances:
             self.llm = self.llm.bind_tools(self._tool_instances)
 
     def switch_model(self, model_name: str) -> str:
-        """Switch to a different model, re-binding tools if any.
+        """切换到另一模型，如有工具则重新绑定。
 
-        Returns the model name that was actually set.
-        If the new model fails to initialise, the previous one is kept.
+        返回实际设置的模型名。若新模型初始化失败，保留原模型不变。
         """
         previous = self.llm
         self.llm = None
@@ -67,16 +66,15 @@ class BaseAgent(ABC):
         return getattr(self.llm, "model_name", model_name)
 
     def enable_skill(self, skill: "BaseSkill") -> None:
-        """Load a skill instance into this agent."""
+        """将 skill 实例加载到当前 agent。"""
         self.skills[skill.name] = skill
 
     def load_skills_from_dir(self, directory: str | None = None) -> int:
-        """Auto-discover and load all ``.md`` skill files from *directory*.
+        """从 *directory* 自动发现并加载所有 ``.md`` skill 文件。
 
-        If *directory* is not given, ``settings.skill_directory`` is resolved
-        relative to ``settings.project_root``.
+        若未指定 *directory*，则通过 ``find_user_path()`` 解析技能目录。
 
-        Returns the number of skills loaded.
+        返回加载的 skill 数量。
         """
 
         if directory is None:
@@ -125,13 +123,13 @@ class BaseAgent(ABC):
         return self.llm
 
     def _build_system_prompt(self) -> str:
-        """Assemble system prompt from default skills + long-term memory."""
+        """组装 system prompt：默认 skill + 长期记忆。"""
         parts: list[str] = []
         for skill in self.skills.values():
             if skill.default and skill.prompt_extension:
                 parts.append(skill.prompt_extension)
 
-        # inject long-term memory about current entity
+        # 注入当前实体的长期记忆
         ltm = self.memory.get_long_term_context()
         if ltm:
             parts.append(ltm)
@@ -139,7 +137,7 @@ class BaseAgent(ABC):
         return "\n".join(parts) if parts else ""
 
     def match_skills(self, task: str) -> list["BaseSkill"]:
-        """Return on-demand (non-default) skills whose trigger keywords match *task*."""
+        """返回触发关键词匹配 *task* 的按需 skill（非默认 skill）。"""
         matched: list["BaseSkill"] = []
         for skill in self.skills.values():
             if skill.default:
@@ -149,7 +147,7 @@ class BaseAgent(ABC):
         return matched
 
     def _build_rag_context(self, task: str) -> str:
-        """Build RAG context string for prompt injection. Returns empty string if nothing retrieved."""
+        """构建注入 prompt 的 RAG 上下文。无检索结果时返回空字符串。"""
         if self.rag is None or self.rag.doc_count == 0:
             return ""
         retrieved = self.rag.retrieve(task, top_k=settings.rag_top_k)
@@ -160,7 +158,7 @@ class BaseAgent(ABC):
     def _build_messages(
         self, task: str, system_prompt: str = "", use_rag: bool = True,
     ) -> list[BaseMessage]:
-        """Assemble the message list (system + human) for an LLM call."""
+        """组装 LLM 调用的消息列表（system + human）。"""
         full_system = self._build_system_prompt()
         if system_prompt:
             full_system = f"{full_system}\n{system_prompt}" if full_system else system_prompt
@@ -186,12 +184,11 @@ class BaseAgent(ABC):
         return response.content if hasattr(response, "content") else str(response)
 
     async def _invoke_llm_with_tools(self, messages: list[BaseMessage]) -> str:
-        """LLM invocation with a tool-calling loop.
+        """带工具调用循环的 LLM 调用。
 
-        1. Invoke LLM (which may return ``tool_calls``).
-        2. If ``tool_calls`` present: execute each, append ``ToolMessage``,
-           loop back (respecting ``max_iterations``).
-        3. Return the final text response.
+        1. 调用 LLM（可能返回 ``tool_calls``）。
+        2. 若有 ``tool_calls``：逐一执行，追加 ``ToolMessage``，循环（受 ``max_iterations`` 限制）。
+        3. 返回最终文本响应。
         """
         if self.llm is None:
             self._init_llm()
@@ -225,7 +222,7 @@ class BaseAgent(ABC):
         return last.content if hasattr(last, "content") else str(last)
 
     async def _execute_tool_call(self, name: str, args: dict[str, Any]) -> str:
-        """Look up a tool by name and invoke it with *args*."""
+        """按名称查找工具并用 *args* 调用。"""
         tool = self.tools.get(name)
         if tool is None:
             return f"Error: tool '{name}' not found. Available: {list(self.tools.keys())}"
@@ -251,16 +248,16 @@ class BaseAgent(ABC):
         self.memory.clear()
 
     # ------------------------------------------------------------------
-    # long-term memory
+    # 长期记忆
     # ------------------------------------------------------------------
 
     def save_turn(self, user_input: str, response: str) -> None:
-        """Persist a conversation turn to long-term store."""
+        """将一轮对话持久化到长期存储。"""
         self.memory.save_message("human", user_input)
         self.memory.save_message("ai", response)
 
     async def extract_facts_async(self) -> None:
-        """Extract facts about the current entity from the last conversation turn."""
+        """从最近一轮对话中提取关于当前实体的事实。"""
         if self.llm is None:
             return
         await self.memory.extract_facts(self.llm)

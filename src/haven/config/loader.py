@@ -7,7 +7,7 @@ _config: DictConfig | None = None
 
 
 def _find_user_config(filename: str) -> Path | None:
-    """Look for *filename* in CWD, falling back to ``HAVEN_CONFIG_DIR`` env var."""
+    """在 CWD 中查找 *filename*，回退到 ``HAVEN_CONFIG_DIR`` 环境变量。"""
     cwd_path = Path.cwd() / filename
     if cwd_path.is_file():
         return cwd_path
@@ -39,12 +39,11 @@ def load_models_config() -> DictConfig | ListConfig:
 
 
 def get_model_config(model_name: str) -> dict[str, Any]:
-    """Resolve a model name to its full configuration.
+    """将模型名解析为完整配置。
 
-    API keys are read from environment variables.  The ``api_key_env`` field
-    in *models.yaml* names the env var (e.g. ``DEEPSEEK_API_KEY``).  Users can
-    set it as a system environment variable — no code changes needed when
-    adding a new model.
+    API Key 从环境变量读取。*models.yaml* 中的 ``api_key_env`` 字段
+    指定对应的环境变量名（如 ``DEEPSEEK_API_KEY``）。
+    用户只需设置环境变量即可，新增模型无需修改代码。
     """
     models = load_models_config()
     model_cfg = models[model_name]

@@ -14,16 +14,16 @@ logger = logging.getLogger("haven.mcp")
 
 
 class MCPManager:
-    """Manages connections to multiple MCP servers.
+    """管理多个 MCP 服务器的连接。
 
-    Lifecycle::
+    生命周期::
 
         manager = MCPManager(configs)
-        tools = await manager.start()    # connect all, discover tools
-        # ... agent uses tools ...
-        await manager.stop()             # graceful shutdown
+        tools = await manager.start()    # 连接全部，发现工具
+        # ... agent 使用工具 ...
+        await manager.stop()             # 优雅关闭
 
-    Per-server graceful degradation: one offline server never blocks others.
+    单服务器故障不影响其他服务器运行。
     """
 
     def __init__(self, server_configs: list[MCPServerConfig] | None = None):
@@ -35,14 +35,14 @@ class MCPManager:
         self._started = False
 
     # ------------------------------------------------------------------
-    # lifecycle
+    # 生命周期
     # ------------------------------------------------------------------
 
     async def start(self) -> dict[str, BaseTool]:
-        """Connect to all enabled MCP servers and discover tools.
+        """连接所有启用的 MCP 服务器并发现工具。
 
-        Returns a flat ``{tool_name: BaseTool}`` dict.
-        Servers that fail to connect are recorded in ``_failed_servers``.
+        返回 ``{tool_name: BaseTool}`` 字典。
+        连接失败的服务器记录在 ``_failed_servers`` 中。
         """
         if self._started:
             return self._tools
@@ -60,7 +60,7 @@ class MCPManager:
         return self._tools
 
     async def stop(self) -> None:
-        """Gracefully close all MCP sessions."""
+        """优雅关闭所有 MCP 会话。"""
         try:
             await self._exit_stack.aclose()
         except Exception as exc:
@@ -71,7 +71,7 @@ class MCPManager:
         self._started = False
 
     # ------------------------------------------------------------------
-    # tool access
+    # 工具访问
     # ------------------------------------------------------------------
 
     @property
@@ -80,7 +80,7 @@ class MCPManager:
 
     @property
     def tool_list(self) -> list[BaseTool]:
-        """Tools as a flat list — suitable for ``llm.bind_tools()``."""
+        """工具平铺列表——适合 ``llm.bind_tools()``。"""
         return list(self._tools.values())
 
     @property
@@ -92,7 +92,7 @@ class MCPManager:
         return len(self._failed_servers)
 
     def get_status_summary(self) -> str:
-        """Human-readable status for the CLI banner / ``/mcp`` command."""
+        """CLI banner / ``/mcp`` 命令的可读状态信息。"""
         if not self._active_servers and not self._failed_servers:
             return "    (none)"
 
@@ -104,14 +104,13 @@ class MCPManager:
         return "\n".join(lines)
 
     # ------------------------------------------------------------------
-    # internal
+    # 内部实现
     # ------------------------------------------------------------------
 
     async def _connect_one(self, cfg: MCPServerConfig) -> None:
-        """Connect a single server, discover its tools, and register them.
+        """连接单个服务器，发现并注册其工具。
 
-        On failure the server is added to ``_failed_servers`` — other servers
-        continue unaffected.
+        失败时服务器记入 ``_failed_servers``——其他服务器不受影响。
         """
         try:
             if cfg.transport == "stdio":
@@ -181,7 +180,7 @@ class MCPManager:
 
     @staticmethod
     def _resolve_env_vars(mapping: dict[str, str]) -> dict[str, str]:
-        """Replace ``${VAR}`` patterns with environment variable values."""
+        """将 ``${VAR}`` 模式替换为环境变量值。"""
         resolved: dict[str, str] = {}
         for key, value in mapping.items():
             resolved[key] = re.sub(
@@ -193,14 +192,14 @@ class MCPManager:
 
 
 def _tool_belongs_to_server(tool: BaseTool, server_name: str) -> bool:
-    """Heuristic to count tools from a specific server.
+    """判断工具是否属于指定服务器的启发式方法。
 
-    ``langchain-mcp-adapters`` may prefix tool names or attach metadata.
-    We try metadata first, then fall back to a name prefix check.
+    ``langchain-mcp-adapters`` 可能给工具名加前缀或附加元数据。
+    先尝试 metadata，再回退到名称前缀检查。
     """
     meta = getattr(tool, "metadata", None) or {}
     if meta.get("server_name") == server_name:
         return True
     if tool.name.startswith(f"{server_name}_") or tool.name.startswith(f"{server_name}."):
         return True
-    return True  # can't disambiguate — count it
+    return True  # 无法区分——计入该服务器

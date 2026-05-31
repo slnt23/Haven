@@ -22,10 +22,10 @@ BANNER = (
 
 
 class SocketChannel(BaseChannel):
-    """TCP socket channel — telnet-like REPL for remote chat.
+    """TCP socket 通道——类 telnet 的远程聊天 REPL。
 
-    Each connection maintains its own conversation history (session isolation).
-    Uses the shared :class:`ChatSession` for LLM interaction.
+    每个连接维护独立的对话历史（会话隔离）。
+    通过共享 :class:`ChatSession` 与 LLM 交互。
     """
 
     def __init__(self, host: str = "127.0.0.1", port: int = 9020,
@@ -59,7 +59,7 @@ class SocketChannel(BaseChannel):
         return f"tcp://{self.host}:{self.port}"
 
     # ------------------------------------------------------------------
-    # per-connection handler
+    # 按连接处理
     # ------------------------------------------------------------------
 
     async def _handle_connection(
@@ -88,19 +88,19 @@ class SocketChannel(BaseChannel):
             if not text:
                 continue
 
-            # built-in commands
+            # 内置命令
             if text.startswith("/"):
                 if await self._handle_command(text, writer):
                     if text in ("/exit", "/quit", "/q"):
                         break
                     continue
 
-            # set session identity for long-term memory
+            # 设置会话身份（用于长期记忆）
             self.agent.memory.session_id = session_id
             self.agent.memory.entity_name = session_id
             self.agent.memory.channel = "socket"
 
-            # route through ChatSession with connection-local history
+            # 通过 ChatSession 处理（使用连接本地历史）
             try:
                 response = await self._session.process(
                     user_input=text, history=history, persist=True,
@@ -109,14 +109,14 @@ class SocketChannel(BaseChannel):
                 response = f"[错误] {exc}"
                 logger.error("SocketChannel: agent error for %s: %s", addr, exc)
 
-            # update connection-local history (ChatSession doesn't touch it when history is provided)
+            # 更新连接本地历史（提供 history 时 ChatSession 不操作短期记忆）
             history.append(HumanMessage(content=text))
             history.append(AIMessage(content=response))
 
             writer.write(f"{response}\r\n\r\n".encode("utf-8"))
             await writer.drain()
 
-            # background fact extraction
+            # 后台事实提取
             asyncio.create_task(self.agent.extract_facts_async())
 
         try:
@@ -127,7 +127,7 @@ class SocketChannel(BaseChannel):
         logger.info("SocketChannel: connection from %s closed", addr)
 
     # ------------------------------------------------------------------
-    # commands
+    # 命令处理
     # ------------------------------------------------------------------
 
     async def _handle_command(self, text: str, writer: asyncio.StreamWriter) -> bool:
