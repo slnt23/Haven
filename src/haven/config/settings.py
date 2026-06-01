@@ -131,7 +131,7 @@ class Settings(BaseSettings):
     # ==================== Daemon pid ====================
     pid_file: Path = Field(
         default_factory=lambda: (
-            Path(__file__).resolve().parent.parent.parent.parent / ".data" / "haven.pid"
+                Path(__file__).resolve().parent.parent.parent.parent / ".data" / "haven.pid"
         )
     )
 

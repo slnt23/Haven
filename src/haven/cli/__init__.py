@@ -1,6 +1,6 @@
 """Haven CLI V2 — Typer + Rich 命令体系。
 
-haven chat         交互式 REPL
+haven              交互式 REPL（默认）
 haven run          单轮任务
 haven workflow     工作流管理
 haven skill        Skill 管理

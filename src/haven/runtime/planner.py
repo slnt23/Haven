@@ -316,7 +316,18 @@ class PlannerAgent:
             workflow_menu=workflow_menu,
         )
 
-        structured_llm = self.llm.with_structured_output(ExecutionPlan)
+        # DeepSeek thinking mode doesn't support tool_choice, which
+        # with_structured_output uses internally. Use a non-thinking copy.
+        llm_for_planning = self.llm
+        if getattr(self.llm, "_llm_type", "") == "chat-deepseek":
+            llm_for_planning = self.llm.model_copy(update={
+                "model_kwargs": {
+                    **getattr(self.llm, "model_kwargs", {}),
+                    "thinking": {"type": "disabled"},
+                }
+            })
+
+        structured_llm = llm_for_planning.with_structured_output(ExecutionPlan)
 
         try:
             plan: ExecutionPlan = await structured_llm.ainvoke(

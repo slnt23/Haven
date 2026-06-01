@@ -66,10 +66,14 @@ def main(
     json_output: Annotated[bool, typer.Option("--json", help="JSON 输出")] = False,
     no_color: Annotated[bool, typer.Option("--no-color", help="禁用彩色输出")] = False,
     config: Annotated[Optional[str], typer.Option("--config", "-c", help="指定配置文件")] = None,
+    model: Annotated[str | None, typer.Option("--model", "-m", help="指定模型")] = None,
+    session: Annotated[str | None, typer.Option("--session", "-s", help="恢复会话 ID")] = None,
+    task: Annotated[str | None, typer.Option("--task", "-t", help="启动后立即执行的任务")] = None,
+    no_memory: Annotated[bool, typer.Option("--no-memory", help="禁用长期记忆")] = False,
 ) -> None:
     """Haven — 基于 Python 3.14+ 和 LangChain 的多智能体交互框架。
 
-    默认命令为 chat（启动 REPL）。
+    默认启动交互式 REPL。
     """
     cli_ctx = CLIContext(
         verbose=verbose,
@@ -92,31 +96,16 @@ def main(
             render_error(f"配置文件不存在: {config}")
             raise typer.Exit(code=1)
 
-    # 默认 → chat
+    # 默认 → REPL
     if ctx.invoked_subcommand is None:
         from haven.cli.commands.chat import run_chat
 
-        run_chat(ctx, model=None, session=None, task=None, no_memory=False, verbose=verbose)
+        run_chat(ctx, model=model, task=task, verbose=verbose)
 
 
 # ====================================================================
 # 直接命令 (无二级子命令)
 # ====================================================================
-
-
-@app.command(name="chat", help="启动交互式 REPL 对话")
-def chat_cmd(
-    ctx: typer.Context,
-    model: Annotated[str | None, typer.Option("--model", "-m", help="指定模型")] = None,
-    session: Annotated[str | None, typer.Option("--session", "-s", help="恢复会话 ID")] = None,
-    task: Annotated[str | None, typer.Option("--task", "-t", help="启动后立即执行的任务")] = None,
-    no_memory: Annotated[bool, typer.Option("--no-memory", help="禁用长期记忆")] = False,
-    verbose: Annotated[bool, typer.Option("--verbose", "-v", help="详细模式")] = False,
-) -> None:
-    """启动交互式 REPL，持续读取-求值-输出循环。"""
-    from haven.cli.commands.chat import run_chat
-
-    run_chat(ctx, model=model, session=session, task=task, no_memory=no_memory, verbose=verbose)
 
 
 @app.command(name="run", help="单轮任务执行")

@@ -37,9 +37,8 @@
 |------|------|------|
 | `README.md` | 外部 | 项目简介 + CI badges |
 | `CLAUDE.md` | Claude Code | 开发指南、架构、行为准则 |
-| `ARCHITECTURE_AUDIT.md` | 内部 | 完整架构审计报告 |
-| `CURRENT_STATE.md` | 内部 | 当前状态快照 |
-| `runtime_audit.md` | 内部 | Runtime 深度分析 |
+
+内部审计/分析文档位于 `.docs/` 目录下。详见 `.docs/` 内文件列表。
 
 ## 约定
 

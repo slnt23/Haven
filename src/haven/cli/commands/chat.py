@@ -27,12 +27,10 @@ logger = logging.getLogger("haven.cli.chat")
 
 
 def run_chat(
-    ctx: typer.Context,
-    model: Annotated[str | None, typer.Option("--model", "-m", help="指定模型")] = None,
-    session: Annotated[str | None, typer.Option("--session", "-s", help="恢复会话 ID")] = None,
-    task: Annotated[str | None, typer.Option("--task", "-t", help="启动后立即执行的任务")] = None,
-    no_memory: Annotated[bool, typer.Option("--no-memory", help="禁用长期记忆")] = False,
-    verbose: Annotated[bool, typer.Option("--verbose", "-v", help="详细模式")] = False,
+        ctx: typer.Context,
+        model: Annotated[str | None, typer.Option("--model", "-m", help="指定模型")] = None,
+        task: Annotated[str | None, typer.Option("--task", "-t", help="启动后立即执行的任务")] = None,
+        verbose: Annotated[bool, typer.Option("--verbose", "-v", help="详细模式")] = False,
 ) -> None:
     """启动 Haven 交互式 REPL。运行一个持续的读取-求值-输出循环。"""
     cli_ctx = ctx.obj if isinstance(ctx.obj, CLIContext) else CLIContext()
@@ -133,6 +131,12 @@ async def _process_chat(user_input: str, cli_ctx: CLIContext) -> None:
         except Exception as exc:
             logger.error("chat error: %s", exc)
             response = f"[错误] {exc}"
+
+    # 持久化本轮对话到长期记忆 + 异步提取事实
+    rt = cli_ctx.runtime
+    if rt:
+        rt.save_turn(user_input, response)
+        asyncio.create_task(rt.extract_facts_async())
 
     blank()
     render_markdown(response)

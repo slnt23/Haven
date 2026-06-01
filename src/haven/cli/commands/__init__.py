@@ -1,7 +1,7 @@
 """CLI V2 命令模块。
 
 直接命令（注册在 main.py）:
-  chat, run, doctor
+  run, doctor
 
 子命令组（add_typer）:
   workflow, skill
@@ -13,4 +13,4 @@
 
 from haven.cli.commands import chat, doctor, run, skill, workflow
 
-__all__ = ["chat", "run", "doctor", "workflow", "skill"]
+__all__ = ["run", "doctor", "workflow", "skill"]
