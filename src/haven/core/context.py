@@ -28,6 +28,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
+
 # ============================================================================
 # ContextSource — 上下文来源枚举
 # ============================================================================
@@ -207,10 +208,10 @@ class ContextManager:
     """
 
     def __init__(
-        self,
-        memory: Any = None,
-        *,
-        max_system_tokens: int = 4000,
+            self,
+            memory: Any = None,
+            *,
+            max_system_tokens: int = 4000,
     ):
         self._memory = memory
         self._assembler = ContextAssembler(max_tokens=max_system_tokens)
@@ -221,14 +222,14 @@ class ContextManager:
     # ==================================================================
 
     def build(
-        self,
-        *,
-        personality_skills: list[Any] | None = None,
-        domain_skills: list[Any] | None = None,
-        workflow_state: Any = None,
-        tool_results: dict[str, str] | None = None,
-        rag_context: str = "",
-        use_memory: bool = True,
+            self,
+            *,
+            personality_skills: list[Any] | None = None,
+            domain_skills: list[Any] | None = None,
+            workflow_state: Any = None,
+            tool_results: dict[str, str] | None = None,
+            rag_context: str = "",
+            use_memory: bool = True,
     ) -> ContextBundle:
         """一站式收集 + 组装，返回 ContextBundle。
 
@@ -250,14 +251,14 @@ class ContextManager:
         )
 
     def collect(
-        self,
-        *,
-        personality_skills: list[Any] | None = None,
-        domain_skills: list[Any] | None = None,
-        workflow_state: Any = None,
-        tool_results: dict[str, str] | None = None,
-        rag_context: str = "",
-        use_memory: bool = True,
+            self,
+            *,
+            personality_skills: list[Any] | None = None,
+            domain_skills: list[Any] | None = None,
+            workflow_state: Any = None,
+            tool_results: dict[str, str] | None = None,
+            rag_context: str = "",
+            use_memory: bool = True,
     ) -> list[ContextItem]:
         """收集所有来源的 ContextItem 列表。
 
@@ -328,9 +329,9 @@ class ContextManager:
         return self._assembler.assemble(items)
 
     def register_collector(
-        self,
-        source: ContextSource,
-        collector: Any,
+            self,
+            source: ContextSource,
+            collector: Any,
     ) -> None:
         """注册扩展上下文收集器。
 
@@ -346,8 +347,8 @@ class ContextManager:
 
     @staticmethod
     def _collect_skills(
-        skills: list[Any] | None,
-        source: ContextSource,
+            skills: list[Any] | None,
+            source: ContextSource,
     ) -> list[ContextItem]:
         if not skills:
             return []
@@ -395,7 +396,7 @@ class ContextManager:
                 if output:
                     items.append(
                         ContextItem(
-                            content=(f"[工作流节点 '{node_name}' 输出]\n{str(output)[:600]}"),
+                            content=f"[工作流节点 '{node_name}' 输出]\n{str(output)[:600]}",
                             source=ContextSource.WORKFLOW,
                             metadata={"node_name": node_name},
                         )
@@ -410,7 +411,7 @@ class ContextManager:
             if result:
                 items.append(
                     ContextItem(
-                        content=(f"[工具 '{tool_name}' 执行结果]\n{str(result)[:800]}"),
+                        content=f"[工具 '{tool_name}' 执行结果]\n{str(result)[:800]}",
                         source=ContextSource.TOOL_RESULT,
                         metadata={"tool_name": tool_name},
                     )
