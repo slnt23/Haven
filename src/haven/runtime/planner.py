@@ -2,8 +2,6 @@
 
 在 AgentRuntime 之上，负责理解、拆解、规划任务。
 一次 LLM 调用完成：意图分类 + Skill 选择 + 任务拆解 + Workflow 匹配。
-
-替代 V1 的 OrchestratorAgent 硬编码 4 分类路由。
 """
 
 from __future__ import annotations
@@ -16,7 +14,6 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 
-from haven.runtime.runtime import AgentRuntime
 from haven.skills.registry import SkillRegistry
 
 logger = logging.getLogger("haven.planner")
@@ -124,19 +121,12 @@ class PlannerAgent:
       2. 拆解任务 — 将复杂任务分解为有序步骤
       3. 生成计划 — 输出 ExecutionPlan
       4. 选择 Skill — 内嵌到规划 LLM 调用中
-      5. 委托执行 — 调用 Runtime.run() 或 WorkflowEngine（后续阶段）
-
-    用法::
-
-        runtime = AgentRuntime()
-        runtime.init_llm()
-        planner = PlannerAgent(runtime)
-        result = await planner.execute("帮我写一个爬虫")
+      5. 委托执行 — 调用 Runtime.run() 或 LangGraph StateGraph
     """
 
     def __init__(
         self,
-        runtime: AgentRuntime,
+        runtime: Any,
         *,
         workflow_registry: Any = None,
     ):
@@ -385,63 +375,94 @@ class PlannerAgent:
     _WORKFLOW_STATE_MAP: dict[str, Any] = {}  # 延迟导入避免循环依赖
 
     async def _execute_via_workflow(self, plan: ExecutionPlan, task: str) -> str:
-        """通过 WorkflowGraph 执行多步工作流。
+        """通过 LangGraph StateGraph 执行工作流。
 
-        1. 从 WorkflowRegistry 获取对应 Graph
-        2. 构建 WorkflowState（按 workflow 类型选择正确的 State 子类）
-        3. 注入 Runtime 引用到 state
-        4. graph.run(state, runtime) → 返回最终输出
+        1. 从 WorkflowRegistry 获取编译后的图
+        2. 构建初始 State dict
+        3. graph.ainvoke(state, config) → 返回最终 State
         """
         wf_name = plan.workflow
         if not wf_name or self._workflow_registry is None:
             return await self.runtime.run(task, use_memory=True)
 
         try:
-            graph = self._workflow_registry.build(wf_name)
+            compiled_graph = self._workflow_registry.build(wf_name)
         except Exception as exc:
             logger.error("构建工作流 '%s' 失败: %s", wf_name, exc)
             return f"[错误] 工作流 '{wf_name}' 构建失败: {exc}"
 
-        # 按工作流名选择对应的 State 类型
         state = self._make_state(wf_name, task)
 
-        # 注入 Runtime
-        state._runtime = self.runtime
-        state.session_id = self.runtime.state.session_id
-
-        logger.info("执行工作流 '%s': %d 节点, task=%s", wf_name, len(graph._nodes), task[:60])
+        node_count = len(compiled_graph.nodes) if hasattr(compiled_graph, "nodes") else "?"
+        logger.info("执行工作流 '%s': %s 节点, task=%s", wf_name, node_count, task[:60])
 
         try:
-            result_state = await graph.run(state, runtime=self.runtime)
+            result = await compiled_graph.ainvoke(
+                state,
+                config={
+                    "configurable": {
+                        "thread_id": self.runtime.state.session_id,
+                        "runtime": self.runtime,
+                    }
+                },
+            )
         except Exception as exc:
             logger.error("工作流 '%s' 执行失败: %s", wf_name, exc)
             return f"[错误] 工作流执行失败: {exc}"
 
-        if result_state.status == "failed":
-            logger.warning("工作流 '%s' 失败: %s", wf_name, result_state.errors)
-            return "[工作流失败]\n" + "\n".join(result_state.errors)
+        if result.get("status") == "failed":
+            errors = result.get("errors", [])
+            logger.warning("工作流 '%s' 失败: %s", wf_name, errors)
+            return "[工作流失败]\n" + "\n".join(errors)
 
         logger.info("工作流 '%s' 完成", wf_name)
-        return result_state.final_output or "(工作流完成，无输出)"
+        return result.get("final_output") or "(工作流完成，无输出)"
 
-    def _make_state(self, wf_name: str, task: str) -> Any:
-        """按工作流类型构建对应的 WorkflowState 子类实例。"""
+    def _make_state(self, wf_name: str, task: str) -> dict:
+        """按工作流类型构建初始 State dict。"""
+        base = {
+            "task": task,
+            "session_id": self.runtime.state.session_id,
+            "messages": [],
+            "errors": [],
+            "completed_steps": [],
+            "current_step": "",
+            "node_outputs": {},
+            "node_retry_counts": {},
+            "max_retries_per_node": 3,
+            "status": "pending",
+            "final_output": "",
+            "started_at": 0.0,
+        }
         if "dev" in wf_name:
-            from haven.workflows.state import DevWorkflowState
-
-            return DevWorkflowState(task=task, session_id=self.runtime.state.session_id)
+            base.update({
+                "architecture_doc": "",
+                "source_code": "",
+                "code_language": "python",
+                "review_feedback": "",
+                "review_score": 0.0,
+                "review_blockers": [],
+                "test_report": "",
+                "test_passed": False,
+                "test_failures": [],
+            })
         elif "research" in wf_name:
-            from haven.workflows.state import ResearchWorkflowState
-
-            return ResearchWorkflowState(task=task, session_id=self.runtime.state.session_id)
+            base.update({
+                "research_topic": "",
+                "raw_findings": [],
+                "analyzed_insights": "",
+                "final_report": "",
+                "sources": [],
+            })
         elif "diagnosis" in wf_name:
-            from haven.workflows.state import DiagnosisWorkflowState
-
-            return DiagnosisWorkflowState(task=task, session_id=self.runtime.state.session_id)
-        else:
-            from haven.workflows.state import WorkflowState
-
-            return WorkflowState(task=task, session_id=self.runtime.state.session_id)
+            base.update({
+                "symptoms": "",
+                "collected_info": "",
+                "possible_causes": "",
+                "diagnosis": "",
+                "recommendations": "",
+            })
+        return base
 
     # ==================================================================
     # 执行路径 2: 自编排多步

@@ -21,7 +21,7 @@ from haven.cli.ui.console import (
     render_success,
     rule,
 )
-from haven.cli.ui.progress import spinner
+from haven.cli.ui.progress import StreamRenderer
 
 logger = logging.getLogger("haven.cli.chat")
 
@@ -125,22 +125,21 @@ async def _stop_service(cli_ctx: CLIContext) -> None:
 async def _process_chat(user_input: str, cli_ctx: CLIContext) -> None:
     svc: "RuntimeService" = cli_ctx._service  # noqa: F821
 
-    async with spinner("思考中"):
-        try:
-            response = await svc.chat(user_input)
-        except Exception as exc:
-            logger.error("chat error: %s", exc)
-            response = f"[错误] {exc}"
+    renderer = StreamRenderer()
+    try:
+        async for token in svc.chat_stream(user_input):
+            renderer.feed(token)
+    except Exception as exc:
+        logger.error("chat error: %s", exc)
+        renderer.feed(f"[错误] {exc}")
+
+    response = renderer.flush()
 
     # 持久化本轮对话到长期记忆 + 异步提取事实
     rt = cli_ctx.runtime
     if rt:
         rt.save_turn(user_input, response)
         asyncio.create_task(rt.extract_facts_async())
-
-    blank()
-    render_markdown(response)
-    blank()
 
 
 # ====================================================================

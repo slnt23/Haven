@@ -193,6 +193,14 @@ class MemoryManager:
             vector=_ok(results[3]),
         )
 
+    async def get_long_term_context(self, entity_name: str = "") -> str:
+        """获取格式化的长期记忆上下文（兼容 ContextManager 旧接口）。
+
+        委托给 retrieve()，调用 format_for_prompt() 格式化。
+        """
+        ctx = await self.retrieve(task=entity_name or self.entity_name)
+        return ctx.format_for_prompt()
+
     # ==================================================================
     # Consolidation
     # ==================================================================

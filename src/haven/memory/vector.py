@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from datetime import datetime
 import logging
+from pathlib import Path
 from typing import Any
 
 from haven.memory.base import BaseMemory, MemoryItem
@@ -37,7 +38,7 @@ class VectorMemory(BaseMemory):
         if persist_dir is None:
             from haven.config import settings
 
-            persist_dir = str(settings.project_root / ".data" / "chroma")
+            persist_dir = str(Path.cwd() / ".data" / "chroma")
 
         self._persist_dir = persist_dir
 

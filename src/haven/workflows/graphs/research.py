@@ -6,43 +6,131 @@ Graph: searcher → analyst ─┬→ synthesizer → END
                    └────────┘ (retry ≤ 3)
 """
 
-from haven.workflows.checkpoint import SQLiteCheckpointer
-from haven.workflows.edges import research_quality_router
-from haven.workflows.graph import WorkflowGraph
-from haven.workflows.nodes import AnalystNode, SearcherNode, SynthesizerNode
+from __future__ import annotations
+
+from langgraph.constants import END
+from langgraph.graph import StateGraph
+from langgraph.runtime import Runtime
+
+from haven.workflows.graph import create_checkpointer
 from haven.workflows.registry import WorkflowRegistry
-from haven.workflows.state import ResearchWorkflowState
+from haven.workflows.state import ResearchAgentState
 
 
-def create_research_workflow() -> WorkflowGraph:
-    """创建调研工作流。
+async def _searcher_node(state: ResearchAgentState, config: Runtime) -> dict:
+    rt = config["configurable"]["runtime"]
 
-    ┌──────────┐   ┌─────────┐   ┌─────────────┐
-    │ searcher │ → │ analyst │ → │ synthesizer │ → END
-    └──────────┘   └────┬────┘   └─────────────┘
-                    ▲    │
-                    │    │ quality check → 缺口
-                    └────┘
-    """
-    graph = WorkflowGraph(ResearchWorkflowState)
+    prompt = f"""## 任务：信息搜集
 
-    graph.add_node("searcher", SearcherNode())
-    graph.add_node("analyst", AnalystNode())
-    graph.add_node("synthesizer", SynthesizerNode())
+搜索以下主题的相关信息:
+
+{state.get("task", "")}
+
+要求: 从多个来源搜集信息，记录来源URL，提炼核心观点。"""
+
+    output = await rt.run(prompt, use_memory=True)
+    return {
+        "current_step": "searcher",
+        "completed_steps": ["searcher"],
+        "node_outputs": {"searcher": output},
+        "raw_findings": [output],
+    }
+
+
+async def _analyst_node(state: ResearchAgentState, config: Runtime) -> dict:
+    rt = config["configurable"]["runtime"]
+
+    findings = "\n---\n".join(state.get("raw_findings", []))
+    prompt = f"""## 任务：信息分析
+
+分析以下信息，识别关键洞察:
+
+{findings}
+
+原始主题: {state.get("task", "")}
+
+输出:
+1. 核心发现 (3-5条)
+2. 矛盾观点
+3. 数据可信度评估
+4. 仍存在的知识缺口"""
+
+    output = await rt.run(
+        prompt, active_skills=_skills(["data_analysis"]), use_memory=True
+    )
+    return {
+        "current_step": "analyst",
+        "completed_steps": ["analyst"],
+        "node_outputs": {"analyst": output},
+        "analyzed_insights": output,
+    }
+
+
+async def _synthesizer_node(state: ResearchAgentState, config: Runtime) -> dict:
+    rt = config["configurable"]["runtime"]
+
+    prompt = f"""## 任务：撰写报告
+
+基于分析撰写结构化报告。
+
+主题: {state.get("task", "")}
+
+分析结果: {state.get("analyzed_insights", "")}
+
+报告格式（Markdown）:
+# {state.get("task", "")} — 调研报告
+## 概述 / ## 核心发现 / ## 详细分析 / ## 结论与建议 / ## 信息来源"""
+
+    output = await rt.run(
+        prompt, active_skills=_skills(["summarization"]), use_memory=True
+    )
+    return {
+        "current_step": "synthesizer",
+        "completed_steps": ["synthesizer"],
+        "node_outputs": {"synthesizer": output},
+        "final_report": output,
+    }
+
+
+def _skills(names: list[str]) -> list:
+    from haven.skills.registry import SkillRegistry
+
+    skills = []
+    for n in names:
+        try:
+            skills.append(SkillRegistry.get(n))
+        except KeyError:
+            pass
+    return skills
+
+
+def _research_router(state: ResearchAgentState) -> str:
+    insights = state.get("analyzed_insights", "")
+    search_count = state.get("node_retry_counts", {}).get("searcher", 0)
+    if "知识缺口" in insights and search_count < 3:
+        return "searcher"
+    return "synthesizer"
+
+
+def _create_research_workflow() -> StateGraph:
+    graph = StateGraph(ResearchAgentState)
+
+    graph.add_node("searcher", _searcher_node)
+    graph.add_node("analyst", _analyst_node)
+    graph.add_node("synthesizer", _synthesizer_node)
 
     graph.add_edge("searcher", "analyst")
-    graph.add_conditional_edge("analyst", research_quality_router)
+    graph.add_conditional_edges("analyst", _research_router)
 
     graph.set_entry_point("searcher")
-    graph.set_checkpointer(SQLiteCheckpointer())
 
-    return graph
+    return graph.compile(checkpointer=create_checkpointer())
 
 
-create_research_workflow.description = (
+_create_research_workflow.description = (
     "调研工作流。信息搜集 → 分析 → 报告生成。存在知识缺口时自动补充搜索。"
 )
-create_research_workflow.use_cases = "技术调研、竞品分析、文献综述、市场研究"
-create_research_workflow.step_count = 3
+_create_research_workflow.use_cases = "技术调研、竞品分析、文献综述、市场研究"
+_create_research_workflow.step_count = 3
 
-WorkflowRegistry.register("research_flow")(create_research_workflow)
+WorkflowRegistry.register("research_flow")(_create_research_workflow)

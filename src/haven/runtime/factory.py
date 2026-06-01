@@ -1,4 +1,4 @@
-"""AgentFactory V2 — 使用 ToolManager + Provider 架构装配系统。"""
+"""AgentFactory V3 — 中间件管道 + ToolManager + Provider 架构装配系统。"""
 
 from __future__ import annotations
 
@@ -6,6 +6,12 @@ import logging
 from pathlib import Path
 
 from haven.config import find_user_path, settings
+from haven.middleware import MiddlewarePipeline
+from haven.middleware.filesystem import FilesystemMiddleware
+from haven.middleware.memory import MemoryMiddleware
+from haven.middleware.personality import PersonalityMiddleware
+from haven.middleware.skills import SkillsMiddleware
+from haven.middleware.summarization import SummarizationMiddleware
 from haven.runtime.planner import PlannerAgent
 from haven.runtime.runtime import AgentRuntime
 from haven.skills.loader import SkillLoader
@@ -23,8 +29,9 @@ async def create_agent(
     *,
     load_skills: bool = True,
     load_mcp: bool = True,
+    middlewares: list | None = None,
 ) -> PlannerAgent:
-    """创建完整的 Haven V2 系统。
+    """创建完整的 Haven V3 系统。
 
     Returns:
         PlannerAgent — ``planner.execute(task)`` 为唯一入口。
@@ -40,7 +47,7 @@ async def create_agent(
 
     # 2. Skills
     if load_skills:
-        _load_all_skills(runtime)
+        _load_all_skills()
 
     # 3. LLM
     runtime.init_llm()
@@ -51,11 +58,30 @@ async def create_agent(
     # 5. WorkflowRegistry
     from haven.workflows.registry import WorkflowRegistry
 
-    # 6. Planner
+    # 6. Middleware Pipeline
+    if middlewares is None:
+        # 加载系统人格 prompt
+        persona_prompt = ""
+        if _SYSTEM_PERSONA.is_file():
+            persona_prompt = _SYSTEM_PERSONA.read_text(encoding="utf-8")
+
+        pipeline = MiddlewarePipeline([
+            PersonalityMiddleware(skill_prompt=persona_prompt),
+            MemoryMiddleware(manager=runtime.memory),
+            SummarizationMiddleware(model=runtime.llm, max_tokens=8000),
+            FilesystemMiddleware(workspace=settings.project_root),
+            SkillsMiddleware(),
+        ])
+    else:
+        pipeline = MiddlewarePipeline(middlewares)
+
+    runtime._pipeline = pipeline
+
+    # 7. Planner
     planner = PlannerAgent(runtime, workflow_registry=WorkflowRegistry)
 
     logger.info(
-        "V2 system ready: %d skills, %d tools, %d workflows",
+        "V3 system ready: %d skills, %d tools, %d workflows",
         len(SkillRegistry.list_all()),
         len(runtime._tools),
         len(WorkflowRegistry.list_all()),
@@ -68,7 +94,7 @@ async def create_agent(
 # ==================================================================
 
 
-def _load_all_skills(runtime: AgentRuntime) -> None:
+def _load_all_skills() -> None:
     if _SYSTEM_PERSONA.is_file():
         persona = SkillLoader.load_single(_SYSTEM_PERSONA)
         if persona is not None:
@@ -110,13 +136,13 @@ async def _init_tools(runtime: AgentRuntime, load_mcp: bool) -> None:
     for tool in tm.list_all():
         runtime.register_tool(tool)
 
-    # ToolResolver — 动态解析层（Skill → Resolver → Manager → Provider）
+    # ToolResolver
     from haven.tools.resolver import ToolResolver
 
     runtime._tool_resolver = ToolResolver(tm)
     logger.info("ToolResolver: initialized with %d tools", len(tm.list_all()))
 
-    runtime.bind_tools_to_llm()
+    runtime.activate_all_tools()
     logger.info(
         "ToolManager: %d tools from %d provider(s)", len(tm.list_all()), len(tm.list_providers())
     )

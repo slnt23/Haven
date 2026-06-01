@@ -163,8 +163,8 @@ class RuntimeService:
             pass
 
         try:
-            mm = getattr(self._runtime.memory, "manager", None)
-            if mm:
+            mm = self._runtime.memory
+            if mm and hasattr(mm, "turn_count"):
                 status["memory_turns"] = mm.turn_count
         except Exception:
             pass
@@ -303,60 +303,78 @@ class RuntimeService:
                 "elapsed_ms": 0,
             }
 
-        # 按名称选择 State 类型
         state = self._make_workflow_state(workflow_name, task)
-        state._runtime = self._runtime
-        state.session_id = self._session_id
 
-        if not checkpoint:
-            graph._checkpointer = None
-
-        logger.info("Workflow '%s': %d nodes, task=%s", workflow_name, len(graph._nodes), task[:60])
+        nodes_count = len(graph.get_graph().nodes)
+        logger.info("Workflow '%s': %d nodes, task=%s", workflow_name, nodes_count, task[:60])
 
         try:
-            result_state = await graph.run(state, runtime=self._runtime)
+            config = {
+                "configurable": {
+                    "thread_id": self._session_id,
+                    "runtime": self._runtime,
+                }
+            }
+            result = await graph.ainvoke(state, config=config)
         except Exception as exc:
             logger.error("Workflow '%s' error: %s", workflow_name, exc)
             return {
                 "result": f"[错误] {exc}",
                 "workflow": workflow_name,
-                "nodes_executed": len(state.node_outputs),
+                "nodes_executed": len(state.get("node_outputs", {})),
                 "elapsed_ms": int((time.monotonic() - t0) * 1000),
             }
 
         elapsed_ms = int((time.monotonic() - t0) * 1000)
 
-        if result_state.status == "failed":
+        if result.get("status") == "failed":
             return {
-                "result": "[工作流失败]\n" + "\n".join(result_state.errors),
+                "result": "[工作流失败]\n" + "\n".join(result.get("errors", [])),
                 "workflow": workflow_name,
-                "nodes_executed": len(result_state.node_outputs),
+                "nodes_executed": len(result.get("node_outputs", {})),
                 "elapsed_ms": elapsed_ms,
             }
 
         return {
-            "result": result_state.final_output or "(完成)",
+            "result": result.get("final_output") or "(完成)",
             "workflow": workflow_name,
-            "nodes_executed": len(result_state.node_outputs),
+            "nodes_executed": len(result.get("node_outputs", {})),
             "elapsed_ms": elapsed_ms,
         }
 
     @staticmethod
-    def _make_workflow_state(wf_name: str, task: str) -> Any:
-        from haven.workflows.state import (
-            DevWorkflowState,
-            DiagnosisWorkflowState,
-            ResearchWorkflowState,
-            WorkflowState,
-        )
-
+    def _make_workflow_state(wf_name: str, task: str) -> dict:
+        base: dict = {
+            "task": task,
+            "session_id": "default",
+            "messages": [],
+            "errors": [],
+            "completed_steps": [],
+            "current_step": "",
+            "node_outputs": {},
+            "node_retry_counts": {},
+            "max_retries_per_node": 3,
+            "status": "pending",
+            "final_output": "",
+            "started_at": 0.0,
+        }
         if "dev" in wf_name:
-            return DevWorkflowState(task=task)
+            base.update({
+                "architecture_doc": "", "source_code": "", "code_language": "python",
+                "review_feedback": "", "review_score": 0.0, "review_blockers": [],
+                "test_report": "", "test_passed": False, "test_failures": [],
+            })
         elif "research" in wf_name:
-            return ResearchWorkflowState(task=task)
+            base.update({
+                "research_topic": "", "raw_findings": [], "analyzed_insights": "",
+                "final_report": "", "sources": [],
+            })
         elif "diagnosis" in wf_name:
-            return DiagnosisWorkflowState(task=task)
-        return WorkflowState(task=task)
+            base.update({
+                "symptoms": "", "collected_info": "", "possible_causes": "",
+                "diagnosis": "", "recommendations": "",
+            })
+        return base
 
     async def chat_stream(self, task: str) -> AsyncIterator[str]:
         """REPL 流式对话 — LLM.astream() 原生透传。

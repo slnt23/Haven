@@ -1,7 +1,4 @@
-"""BuiltinProvider — 内置工具自动发现。
-
-通过 importlib 加载 6 个内置工具模块，实例化后包装为 LangChain StructuredTool。
-"""
+"""BuiltinProvider — 内置工具加载。"""
 
 from __future__ import annotations
 
@@ -16,26 +13,16 @@ from haven.tools.providers.base import ToolProvider
 logger = logging.getLogger("haven.tools.builtin")
 
 _BUILTIN_MODULES: list[tuple[str, str, str]] = [
-    ("code_exec", "haven.tools.code_exec", "CodeExecTool"),
-    ("file_ops", "haven.tools.file_ops", "FileOpsTool"),
     ("web_search", "haven.tools.web_search", "WebSearchTool"),
-    ("rag_search", "haven.tools.rag_search", "RAGSearchTool"),
-    ("medical_kb", "haven.tools.medical", "MedicalKnowledgeTool"),
-    ("email", "haven.tools.email_tool", "EmailSenderTool"),
 ]
 
 _CATEGORY_MAP: dict[str, ToolCategory] = {
-    "code_exec": ToolCategory.CODE,
-    "file_ops": ToolCategory.FILE,
     "web_search": ToolCategory.SEARCH,
-    "rag_search": ToolCategory.KNOWLEDGE,
-    "medical_kb": ToolCategory.KNOWLEDGE,
-    "email": ToolCategory.COMMUNICATION,
 }
 
 
 class BuiltinProvider(ToolProvider):
-    """内置工具提供者。始终可用，零配置。"""
+    """内置工具提供者。"""
 
     def __init__(self, name: str = "builtin"):
         super().__init__(name, provider_type="builtin")

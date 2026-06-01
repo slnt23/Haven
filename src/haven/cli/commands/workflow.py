@@ -47,16 +47,16 @@ def list_workflows(
     for name in sorted(names):
         try:
             graph = registry.build(name)
-            nodes = list(graph._nodes.keys())
+            drawable = graph.get_graph()
+            nodelist = list(drawable.nodes)
         except Exception:
-            graph = None
-            nodes = []
+            nodelist = []
 
         rows.append(
             {
                 "Name": name,
-                "Nodes": len(nodes),
-                "Flow": " → ".join(nodes) if nodes else "?",
+                "Nodes": len(nodelist),
+                "Flow": " → ".join(nodelist) if nodelist else "?",
             }
         )
 
@@ -88,36 +88,33 @@ def info(
         render_error(f"构建工作流失败: {exc}")
         raise typer.Exit(code=1) from exc
 
-    nodes = list(wf._nodes.keys())
-    entry = wf._entry_point
-    edges_info: list[str] = []
-    for src, edge in wf._edges.items():
-        if hasattr(edge, "target"):
-            edges_info.append(f"{src} → {edge.target}")
-        else:
-            edges_info.append(f"{src} → [router]")
+    drawable = wf.get_graph()
+    nodelist = list(drawable.nodes)
+    edges_raw = list(drawable.edges)
+    entry = nodelist[0] if nodelist else "?"
+    edges_info: list[str] = [f"{s} → {t}" for s, t in edges_raw]
 
     if json_output:
         render_json(
             {
                 "name": name,
                 "entry": entry,
-                "nodes": nodes,
+                "nodes": nodelist,
                 "edges": edges_info,
             }
         )
     else:
         render_info(f"名称: {name}")
         render_info(f"入口: {entry}")
-        render_info(f"节点 ({len(nodes)}):")
-        render_list(nodes, bullet="○")
+        render_info(f"节点 ({len(nodelist)}):")
+        render_list(nodelist, bullet="○")
         blank()
         render_info("边:")
         render_list(edges_info, bullet="→")
         blank()
 
-        if graph and nodes:
-            _render_ascii_graph(nodes, edges_info)
+        if graph and nodelist:
+            _render_ascii_graph(nodelist, edges_info)
 
 
 def _render_ascii_graph(nodes: list[str], edges: list[str]) -> None:
@@ -154,7 +151,8 @@ def run_workflow(
     # ---- 获取 Graph 信息 ----
     try:
         graph = registry.build(name)
-        nodes = list(graph._nodes.keys())
+        drawable = graph.get_graph()
+        nodes = list(drawable.nodes)
     except Exception as exc:
         render_error(f"构建工作流失败: {exc}")
         raise typer.Exit(code=1) from exc
@@ -209,22 +207,25 @@ def run_workflow(
 @workflow_app.command("resume", help="从 checkpoint 恢复执行")
 def resume(
     ctx: typer.Context,
-    session_id: Annotated[str, typer.Argument(help="Checkpoint session ID")],
+    session_id: Annotated[str, typer.Argument(help="Checkpoint thread ID")],
     watch: Annotated[bool, typer.Option("--watch", "-w", help="实时观察")] = False,
 ) -> None:
     """从上次中断的 checkpoint 恢复执行。"""
     try:
-        from haven.workflows.checkpoint import SQLiteCheckpointer
+        from haven.workflows.graph import create_checkpointer
 
-        cp = SQLiteCheckpointer()
+        cp = create_checkpointer()
         import asyncio
 
-        state = asyncio.get_event_loop().run_until_complete(cp.load(session_id))
+        state = asyncio.get_event_loop().run_until_complete(
+            cp.aget_tuple({"configurable": {"thread_id": session_id}})
+        )
         if state:
-            render_success(f"已恢复 session: {session_id}")
-            render_info(f"  当前节点: {state.get('current_node', '?')}")
+            render_success(f"已恢复 thread: {session_id}")
+            checkpoint = state.config.get("configurable", {})
+            render_info(f"  checkpoint_id: {checkpoint.get('checkpoint_id', '?')}")
         else:
-            render_error(f"Session 不存在: {session_id}")
+            render_error(f"Checkpoint 不存在: {session_id}")
     except Exception as exc:
         render_error(str(exc))
 
@@ -236,26 +237,25 @@ def history(
 ) -> None:
     """列出所有可恢复的工作流执行。"""
     try:
-        from haven.workflows.checkpoint import SQLiteCheckpointer
+        from haven.workflows.graph import create_checkpointer
 
-        cp = SQLiteCheckpointer()
+        cp = create_checkpointer()
         import asyncio
 
-        sessions = asyncio.get_event_loop().run_until_complete(cp.list_sessions())
+        configs = asyncio.get_event_loop().run_until_complete(cp.alist())
     except Exception:
-        sessions = []
+        configs = []
 
     if json_output:
-        render_json(sessions)
-    elif not sessions:
+        render_json([dict(c.get("configurable", {})) for c in configs])
+    elif not configs:
         render_info("(无可用 checkpoint)")
     else:
         rows = [
             {
-                "Session": s.get("session_id", "?"),
-                "Node": s.get("node_name", "?"),
-                "Time": s.get("created_at", "?"),
+                "Thread": c.get("configurable", {}).get("thread_id", "?"),
+                "Checkpoint": c.get("configurable", {}).get("checkpoint_id", "?")[:12],
             }
-            for s in sessions
+            for c in configs
         ]
         render_table(rows)

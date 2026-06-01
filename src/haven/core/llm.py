@@ -7,7 +7,6 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
 
 from langchain_core.language_models import BaseChatModel
 
@@ -58,18 +57,3 @@ def create_llm(model_name: str | None = None) -> BaseChatModel:
         raise ValueError(f"Unknown provider: {provider}")
 
     return model
-
-
-def bind_tools(llm: BaseChatModel, tools: list[Any]) -> BaseChatModel:
-    """对 LLM 执行 ``bind_tools()``。
-
-    Args:
-        llm: LangChain 模型实例。
-        tools: BaseTool 列表。空列表时返回原 llm。
-
-    Returns:
-        已绑定工具的模型（或原模型，如果 tools 为空）。
-    """
-    if not tools:
-        return llm
-    return llm.bind_tools(tools)

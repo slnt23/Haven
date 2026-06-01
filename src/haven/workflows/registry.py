@@ -1,7 +1,6 @@
 """WorkflowRegistry — 工作流注册与发现。
 
-PlannerAgent 通过此注册表获取可用工作流列表，
-供 LLM 规划和选择。
+PlannerAgent 通过此注册表获取可用工作流列表，供 LLM 规划和选择。
 """
 
 from __future__ import annotations
@@ -14,13 +13,13 @@ from haven.core.registry import Registry
 class WorkflowRegistry(Registry):
     """工作流注册表。
 
+    注册的 factory 函数返回编译后的 LangGraph StateGraph 实例。
+
     用法::
 
         @WorkflowRegistry.register("dev_flow")
-        def create_dev_workflow() -> WorkflowGraph: ...
+        def create_dev_workflow() -> CompiledStateGraph: ...
 
-
-        # 供 Planner LLM 选择
         menu = WorkflowRegistry.get_selection_context()
     """
 
@@ -56,6 +55,6 @@ class WorkflowRegistry(Registry):
 
     @classmethod
     def build(cls, name: str) -> Any:
-        """调用注册的 factory 函数，返回 WorkflowGraph 实例。"""
+        """调用注册的 factory 函数，返回编译后的 LangGraph StateGraph。"""
         factory = cls.get(name)
         return factory()

@@ -1,8 +1,4 @@
-"""SkillLoader — 扫描 skills/*.md 文件并构建 BaseSkill 实例。
-
-支持 V2 新字段（description / tags / tools / dependencies / version）
-同时向后兼容 V1 旧字段（trigger_keywords）。
-"""
+"""SkillLoader — 扫描 skills/*.md 文件并构建 BaseSkill 实例。"""
 
 from __future__ import annotations
 
@@ -72,13 +68,10 @@ class SkillLoader:
             name=str(meta.get("name", filepath.stem)),
             description=str(meta.get("description", "")),
             prompt=body.strip(),
-            # V2 新字段
             tags=_ensure_str_list(meta.get("tags", [])),
             tools=_ensure_str_list(meta.get("tools", [])),
             dependencies=_ensure_str_list(meta.get("dependencies", [])),
             version=str(meta.get("version", "1.0")),
-            # 兼容字段
-            category=str(meta.get("category", "")),
             source_file=filepath,
             default=bool(meta.get("default", False)),
         )

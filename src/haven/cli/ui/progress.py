@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
-import sys
 
 from rich.console import Console
 from rich.live import Live
@@ -34,25 +33,17 @@ class StreamRenderer:
 
     def __init__(self):
         self._buffer: list[str] = []
-        self._line_start = True
         self._first_token = True
 
     def feed(self, token: str) -> None:
         if self._first_token:
             _console.print()
             self._first_token = False
-
-        sys.stdout.write(token)
-        sys.stdout.flush()
+        _console.out(token, end="")
         self._buffer.append(token)
-        if "\n" in token:
-            self._line_start = True
-        else:
-            self._line_start = False
 
     def flush(self) -> str:
-        sys.stdout.write("\n\n")
-        sys.stdout.flush()
+        _console.out("\n\n", end="")
         result = "".join(self._buffer)
         self._buffer.clear()
         self._first_token = True

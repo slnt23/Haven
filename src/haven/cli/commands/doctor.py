@@ -98,9 +98,7 @@ def _check_skills_dir() -> tuple[bool, str]:
 
 def _check_db_accessible() -> tuple[bool, str]:
     try:
-        from haven.config import settings
-
-        db = settings.project_root / ".data" / "memory.db"
+        db = Path.cwd() / ".data" / "memory.db"
         if db.parent.exists():
             return True, ".data/ accessible"
         db.parent.mkdir(parents=True, exist_ok=True)

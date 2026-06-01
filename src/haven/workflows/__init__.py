@@ -1,61 +1,29 @@
-# V2 State
-# V2 Checkpoint
-from .checkpoint import Checkpointer, SQLiteCheckpointer
+"""Haven Workflows — LangGraph StateGraph 工作流引擎。"""
 
-# V2 Edges
-from .edges import ConditionalEdge, Edge, research_quality_router, test_router
+from __future__ import annotations
 
-# V2 Graph
-from .graph import WorkflowGraph
+from langgraph.constants import END
 
-# 导入 graph 模块触发 WorkflowRegistry 自动注册
-from .graphs import dev as _dev  # noqa: F401
-from .graphs import diagnosis as _diagnosis  # noqa: F401
-from .graphs import research as _research  # noqa: F401
-
-# V2 Nodes
-from .nodes import (
-    AdviserNode,
-    AnalystNode,
-    AnalyzerNode,
-    ArchitectNode,
-    CoderNode,
-    CollectorNode,
-    PlannerNode,
-    ReviewerNode,
-    SearcherNode,
-    SynthesizerNode,
-    TesterNode,
-    WorkflowNode,
+from .graph import create_checkpointer
+from .registry import WorkflowRegistry
+from .state import (
+    AgentState,
+    DevAgentState,
+    DiagnosisAgentState,
+    ResearchAgentState,
 )
 
-# V2 Registry
-from .registry import WorkflowRegistry
-from .state import DevWorkflowState, DiagnosisWorkflowState, ResearchWorkflowState, WorkflowState
+# 图定义在 graphs/ 目录中，需要时取消注释即可触发 WorkflowRegistry 自动注册
+# from .graphs import dev as _dev  # noqa: F401
+# from .graphs import diagnosis as _diagnosis  # noqa: F401
+# from .graphs import research as _research  # noqa: F401
 
 __all__ = [
-    "WorkflowState",
-    "DevWorkflowState",
-    "ResearchWorkflowState",
-    "DiagnosisWorkflowState",
-    "WorkflowNode",
-    "PlannerNode",
-    "ArchitectNode",
-    "CoderNode",
-    "ReviewerNode",
-    "TesterNode",
-    "SearcherNode",
-    "AnalystNode",
-    "SynthesizerNode",
-    "CollectorNode",
-    "AnalyzerNode",
-    "AdviserNode",
-    "Edge",
-    "ConditionalEdge",
-    "test_router",
-    "research_quality_router",
-    "Checkpointer",
-    "SQLiteCheckpointer",
-    "WorkflowGraph",
+    "AgentState",
+    "DevAgentState",
+    "ResearchAgentState",
+    "DiagnosisAgentState",
+    "END",
     "WorkflowRegistry",
+    "create_checkpointer",
 ]

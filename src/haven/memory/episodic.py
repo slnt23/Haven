@@ -25,9 +25,7 @@ class EpisodicMemory(BaseMemory):
 
     def __init__(self, db_path: str | Path | None = None):
         if db_path is None:
-            from haven.config import settings
-
-            db_path = settings.project_root / ".data" / "memory.db"
+            db_path = Path.cwd() / ".data" / "memory.db"
         db_path = Path(db_path)
         db_path.parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(str(db_path), check_same_thread=False)

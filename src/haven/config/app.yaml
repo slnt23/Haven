@@ -7,16 +7,6 @@ agent:
 web_search:
   engine: bing
 
-# ==================== Email ====================
-email:
-  smtp_host: smtp.qq.com
-  smtp_port: 587
-  use_tls: true
-  imap_host: imap.qq.com
-  imap_port: 993
-  poll_interval: 60     # 每隔 60 秒查一次新邮件
-  digest_time: "08:00"  # 早上8点汇总邮件
-
 # ==================== RAG ====================
 rag:
   embedding_model: text-embedding-3-small
@@ -34,12 +24,6 @@ mcp:
 # ==================== Daemon ====================
 daemon:
   channels:
-    socket:
-      enabled: false
-      host: "127.0.0.1"
-      port: 9020
-    email:
-      enabled: false
     feishu:
       enabled: true
       app_id: ""
