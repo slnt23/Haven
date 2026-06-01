@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import logging
 from typing import Any
 
@@ -15,8 +14,7 @@ class EmailChannel(BaseChannel):
     """邮件通道——轮询 IMAP 收件箱，经 PlannerAgent 处理后通过 SMTP 回复。"""
 
     def __init__(self) -> None:
-        super().__init__("email",
-                         enabled=getattr(settings, "daemon_email_enabled", False) or False)
+        super().__init__("email", enabled=getattr(settings, "daemon_email_enabled", False) or False)
 
     async def start(self, agent: Any) -> None:
         await super().start(agent)

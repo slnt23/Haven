@@ -1,17 +1,17 @@
 from __future__ import annotations
 
 import asyncio
-import email
-import imaplib
-import json
-import logging
-import re
-import smtplib
 from datetime import datetime, timedelta
+import email
 from email.header import decode_header
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+import imaplib
+import json
+import logging
 from pathlib import Path
+import re
+import smtplib
 from typing import Any, Callable, Optional
 
 from haven.config import settings
@@ -153,15 +153,17 @@ class EmailService:
                         else:
                             body_text = payload.decode("utf-8", errors="replace")
 
-                messages.append({
-                    "msg_id": msg_id_str,
-                    "sender": sender,
-                    "sender_addr": sender_addr,
-                    "subject": subject,
-                    "date": date_str,
-                    "body_text": body_text,
-                    "body_html": body_html,
-                })
+                messages.append(
+                    {
+                        "msg_id": msg_id_str,
+                        "sender": sender,
+                        "sender_addr": sender_addr,
+                        "subject": subject,
+                        "date": date_str,
+                        "body_text": body_text,
+                        "body_html": body_html,
+                    }
+                )
                 self.processed_ids.add(msg_id_str)
 
             mail.logout()
@@ -258,7 +260,9 @@ class EmailService:
             return
 
         if not self.smtp_username or not self.smtp_password:
-            raise RuntimeError("Email SMTP credentials not configured. Set EMAIL_SMTP_USERNAME and EMAIL_SMTP_PASSWORD.")
+            raise RuntimeError(
+                "Email SMTP credentials not configured. Set EMAIL_SMTP_USERNAME and EMAIL_SMTP_PASSWORD."
+            )
 
         self._running = True
         self._load_state()

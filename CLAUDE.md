@@ -23,54 +23,55 @@ uv run pytest tests/path  # 运行单个测试文件
 
 ## 架构
 
-**入口**：`AgentFactory.create_agent()` 创建一个 `OrchestratorAgent` + 4 个 specialist 子 agent（`CoderAgent`、`MedicalAgent`、`CompanionAgent`、`PracticalAgent`），共享内存、Skills 和 MCP 工具。
+**入口**：`factory.create_agent()` 创建单个 `PlannerAgent`（持有 `AgentRuntime`），无子 agent。系统通过 LLM 结构化输出动态选择 Skill 和 Workflow，替代 V1 硬编码的 4 分类路由。
 
-**两种 Agent 类型，无数种能力：**
+**V2 执行模型（3 条路径）：**
 
 ```
-Agent（管怎么跑）         Skill（管怎么想）            MCP（管外部能力）
-─────────────────      ─────────────────────        ────────────────────
-OrchestratorAgent ←──  haven.md      （默认人格）    filesystem   ← stdio
-  ├─ CoderAgent     ←── code_review.md（按需激活）    web_fetch    ← HTTP SSE
-  ├─ MedicalAgent   ←── *.md          （零代码）     ...          ← WebSocket
-  ├─ CompanionAgent
-  └─ PracticalAgent
+用户输入 → PlannerAgent.plan() → ExecutionPlan
+  ├─ 路径 1: 简单对话 → AgentRuntime.run() 直通（无工具/单轮）
+  ├─ 路径 2: 多步任务 → PlannerAgent._execute_steps() 顺序编排（拓扑排序）
+  └─ 路径 3: 匹配工作流 → WorkflowGraph.run() DAG 引擎执行
 ```
 
-- **人格** = 默认 Skill（`haven.md`）注入 system prompt
-- **领域能力** = 按需 Skill，用户输入关键词触发匹配后临时注入
-- **外部能力** = `mcp.json` 中配置的标准 MCP 服务器
-
-**路由流程**：用户输入 → `OrchestratorAgent._classify_intent()`（LLM 分类为 code/medical/practical/chat）→ 路由到对应 specialist → specialist 执行 `run()`（含工具调用循环）→ 返回结果
+- **PlannerAgent** = 任务规划层。一次 LLM 调用（`with_structured_output(ExecutionPlan)`）完成意图分类 + Skill 选择 + 步骤拆解 + Workflow 匹配。输出 `ExecutionPlan` Pydantic 模型（`goal`、`intent`、`complexity`、`skills`、`workflow`、`steps`）。
+- **AgentRuntime** = 纯执行引擎。组合 LLM + Tool + Memory + State + Prompt，含工具调用循环（`_invoke_with_tool_loop`，最多 `max_iterations` 轮）。
+- **WorkflowGraph** = DAG 工作流引擎（LangGraph 风格）。`add_node()` / `add_edge()` / `add_conditional_edge()` 构建图，`graph.run(state, runtime)` 执行。内置 3 个工作流：`dev_flow`、`research_flow`、`diagnosis_flow`，定义在 `workflows/graphs/` 中。
 
 **核心分层（自底向上）：**
 
 | 层 | 目录 | 职责 |
 |-------|-----------|------|
 | Config | `src/haven/config/` | YAML + env vars，OmegaConf deep-merge |
-| Core | `src/haven/core/` | `BaseAgent`、`AgentMemory`、`RAGEngine`、`SQLiteMemoryStore` |
-| Skills | `src/haven/skills/` | `.md` 文件加载，YAML frontmatter 解析 |
-| User | CWD | 用户可扩展内容（Skills `.md`、`mcp.json`、`haven.yaml`、`models.yaml`），拖入即用 |
-| MCP | `src/haven/mcp/` | MCP 服务器生命周期管理 + 工具发现 |
-| Agents | `src/haven/agents/` | `GeneralAgent`（单agent）+ `OrchestratorAgent`（编排） |
-| Tools | `src/haven/tools/` | 内置工具（搜索、文件、代码执行、邮件、RAG） |
-| Workflows | `src/haven/workflows/` | 多 agent 流水线（调研、开发、诊断） |
-| CLI | `src/haven/cli/` | `main.py` 入口 + `HavenApp` REPL 循环 |
-| Services | `src/haven/services/` | 守护进程 + 渠道（TCP socket、邮件、飞书） |
+| Core | `src/haven/core/` | `AgentMemory`（V1 facade）、`PromptBuilder`、`RuntimeState`、`Registry` |
+| Memory | `src/haven/memory/` | 四层记忆：Working / Episodic / Semantic / Vector，`MemoryManager` 统一编排 |
+| Skills | `src/haven/skills/` | `.md` 文件加载，YAML frontmatter 解析，`SkillRegistry` 依赖解析 |
+| Tools | `src/haven/tools/` | `ToolManager` + Provider 架构（Builtin + MCP），MCP 配置解析 |
+| Runtime | `src/haven/runtime/` | `PlannerAgent`（规划）+ `AgentRuntime`（执行）+ `factory.create_agent()`（装配） |
+| Workflows | `src/haven/workflows/` | DAG 引擎 + 3 个预定义工作流 + SQLite checkpoint |
+| CLI | `src/haven/cli/` | `main.py` 入口 + REPL 循环 + `RuntimeService` 桥梁 |
+| Services | `src/haven/services/` | 守护进程 + 渠道（TCP socket、邮件 IMAP/SMTP、飞书 WebSocket） |
 
 ## 关键约定
 
 - **包名与项目名**：pip 包名为 `haven`（命令：`haven`），Python 包名也为 `haven`（导入：`from haven...`）。源码位于 `src/haven/`。
 - **配置优先级**：内置 YAML < 用户 YAML（CWD）< 环境变量。用户 YAML deep-merge 覆盖内置默认值。`_find_user_config()` 在 CWD 中查找用户配置文件。
 - **配置目录**：`src/haven/config/` 包含 `app.yaml`（框架默认参数）、`models.yaml`（内置模型定义）、`haven.md`（系统人格 prompt）。用户可在 CWD 下放置 `haven.yaml` 或 `models.yaml` 覆盖。
-- **模型 Key 解析**：`models.yaml` 中每模型声明 `api_key_env` 字段（如 `DEEPSEEK_API_KEY`），loader 从系统环境变量动态读取。`settings.py` 中不硬编码任何 Key。环境变量模板参考 `dist/.env`。
-- **Skill 文件**：Skill 通过 CWD 下 `skills/` 目录中的 `.md` 文件加载，包含 YAML frontmatter（`name`、`trigger_keywords`、`default`、`prompt_extension`）。`default: true` = 始终激活的人格 skill，其余按关键词匹配按需激活。
-- **Agent 工具绑定**：先 `register_lc_tool()` 注册，再调用 `bind_tools_to_llm()` 执行 `llm.bind_tools()`。`switch_model()` 切换模型后工具自动重绑。
-- **记忆系统**：双层 —— 短期记忆（`deque[BaseMessage]`，max 100）+ 长期记忆（SQLite，`SQLiteMemoryStore`）。每轮对话后 LLM 自动提取事实信息。`save_turn()` 持久化一轮对话，`extract_facts_async()` 异步提取事实。
+- **模型 Key 解析**：`models.yaml` 中每模型声明 `api_key_env` 字段（如 `DEEPSEEK_API_KEY`），`loader.py:get_model_config()` 从 `os.environ` 动态读取。`settings.py` 中不硬编码任何 Key。
+- **Skill 文件**：Skill 通过 `skills/` 目录（CWD 相对，由 `app.yaml` 的 `skill_directory` 配置）中的 `.md` 文件加载，包含 YAML frontmatter（`name`、`description`、`tags`、`tools`、`dependencies`、`default`）。`default: true` = 系统人格 skill（`haven.md`），始终注入 system prompt。V2 中 PlannerAgent 通过 LLM 语义匹配选择领域 Skill（而非 V1 的 `trigger_keywords` 关键词匹配）。
+- **工具绑定**：通过 `AgentRuntime.register_tool()` 注册，`activate_tools()` 选择子集，`bind_tools_to_llm()` 执行 `llm.bind_tools()`。`switch_model()` 切换模型后工具自动重绑。
+- **ToolManager + Provider 架构**：`ToolManager` 编排所有 `ToolProvider` 生命周期。`BuiltinProvider` 扫描内置工具（6 个模块），`MCPProvider` 管理单个 MCP 服务器连接。支持 stdio / HTTP SSE / WebSocket 传输。MCP 工具以 `{server_name}__{tool_name}` 命名避免冲突。Provider 状态机：UNINITIALIZED → CONNECTING → CONNECTED / DEGRADED / ERROR → DISCONNECTED。
+- **记忆系统**：V2 四层记忆，`MemoryManager` 统一编排 —— `WorkingMemory`（滑动窗口 + LLM 摘要，进程内存）、`EpisodicMemory`（完整对话记录，SQLite）、`SemanticMemory`（实体-事实知识图，SQLite）、`VectorMemory`（语义检索，ChromaDB，默认关闭）。`AgentMemory`（`core/memory.py`）保留 V1 兼容 facade，内部委托给 `MemoryManager`。`record_turn()` 持久化一轮对话 + 异步触发事实提取；`retrieve()` 多路并行检索合并去重；`consolidate()` 后台衰减清理。
 - **MCP 工具**：从 CWD 下的 `mcp.json` 加载，标准 `mcpServers` 格式。`${VAR}` 语法自动解析环境变量。`"enabled": false` 的服务器跳过不加载。单服务器故障不影响其他。
 - **用户扩展**：所有用户可扩展内容统一放在 CWD 下（`skills/`、`mcp.json`、`haven.yaml`、`models.yaml`），拖入即用。
-- **Registry 模式**：`Registry` 基类提供 `register()` / `get()` / `list_all()` 类方法。`ToolRegistry` 和 `SkillRegistry` 均继承自此基类。新建可注册组件时继承 `Registry` 并设置 `_label`。
+- **Registry 模式**：`Registry` 基类提供 `register()` / `get()` / `list_all()` 类方法。`SkillRegistry`、`WorkflowRegistry` 均继承自此基类。新建可注册组件时继承 `Registry` 并设置 `_label`。
 - **运行时数据**：守护进程 PID 文件写入 `.data/haven.pid`，由 `core/pidfile.py` 管理。
+
+## 已知问题
+
+- **测试全部损坏**：`tests/` 下 3 个测试文件导入的 V1 模块（`haven.agents.GeneralAgent`、`haven.tools.WebSearchTool.search()`、`haven.workflows.ResearchFlow`）在 V2 中不存在，需按新 API 重写。
+- **无 CI/CD**：无 `.github/` 目录，无 linting（ruff/flake8/mypy）或 pre-commit 配置。
+- **`pyproject.toml` 版本不一致**：文件声明 `0.1.0`，但 banner 和代码中硬编码 `"2.0.0"`。
 
 ---
 

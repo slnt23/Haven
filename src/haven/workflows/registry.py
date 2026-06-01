@@ -6,6 +6,8 @@ PlannerAgent 通过此注册表获取可用工作流列表，
 
 from __future__ import annotations
 
+from typing import Any
+
 from haven.core.registry import Registry
 
 
@@ -15,8 +17,8 @@ class WorkflowRegistry(Registry):
     用法::
 
         @WorkflowRegistry.register("dev_flow")
-        def create_dev_workflow() -> WorkflowGraph:
-            ...
+        def create_dev_workflow() -> WorkflowGraph: ...
+
 
         # 供 Planner LLM 选择
         menu = WorkflowRegistry.get_selection_context()

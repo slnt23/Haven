@@ -9,17 +9,12 @@
 ```
 haven/
 ├── pyproject.toml                    # 项目元信息，haven 命令入口
-├── mcp.json                          # MCP + OpenAPI Provider 配置
+├── mcp.json                          # MCP Provider 配置
 ├── haven.yaml                        # 用户配置覆盖（deep-merge app.yaml）
 ├── models.yaml                       # 用户模型定义（可选）
 ├── CLAUDE.md                         # Claude Code 项目指令
 │
 ├── skills/                           # 【零代码扩展】Skill 定义 (.md)
-│   ├── haven.md                      #   核心人格 (灵笼·健健) — default: true
-│   ├── coder.md                      #   软件工程
-│   ├── medical.md                    #   医疗健康
-│   ├── companion.md                  #   日常陪伴
-│   ├── practical.md                  #   技术排障
 │   ├── code_review.md                #   代码审查 — 按需激活
 │   ├── data_analysis.md              #   数据分析 — 按需激活
 │   ├── summarization.md              #   摘要总结 — 按需激活
@@ -38,7 +33,7 @@ haven/
     │   ├── loader.py                 #   OmegaConf YAML 加载 + deep-merge
     │   ├── app.yaml                  #   框架默认参数
     │   ├── models.yaml               #   LLM 模型定义（内置默认）
-    │   └── haven.md                  #   核心人格 Skill（随包分发）
+    │   └── haven.md                  #   核心人格 Skill（随包分发，default: true）
     │
     ├── core/                         # 2. 核心基础设施
     │   ├── __init__.py               #
@@ -46,11 +41,8 @@ haven/
     │   ├── prompt.py                 #   PromptBuilder + TokenBudget
     │   ├── state.py                  #   RuntimeState 会话状态
     │   ├── registry.py               #   通用 Registry 基类
-    │   ├── session.py                #   ChatSession (REPL/socket共用)
     │   ├── memory.py                 #   AgentMemory（V1 facade，委托 V2 MemoryManager）
-    │   ├── pidfile.py               #   守护进程 PID 文件管理
-    │   ├── base_agent.py             #   BaseAgent（V1，保留兼容）
-    │   └── rag.py                    #   RAGEngine 检索增强生成
+    │   └── pidfile.py                #   守护进程 PID 文件管理
     │
     ├── runtime/                      # 3. 运行时层 ★ 核心 ★
     │   ├── __init__.py               #   统一导出
@@ -62,7 +54,6 @@ haven/
     │   ├── __init__.py               #
     │   ├── base_skill.py             #   BaseSkill dataclass (V2 Schema)
     │   ├── loader.py                 #   SkillLoader — .md 扫描 + YAML 解析
-    │   ├── selector.py               #   SkillSelector — LLM 三阶段选择
     │   └── registry.py               #   SkillRegistry — 查询 + 依赖解析
     │
     ├── memory/                       # 5. Memory 系统
@@ -78,73 +69,49 @@ haven/
     │   ├── __init__.py               #
     │   ├── base.py                   #   HavenTool + ToolMetadata + ToolCategory
     │   ├── manager.py                #   ToolManager — Provider 编排
+    │   ├── mcp_config.py             #   MCPServerConfig + load_mcp_servers()
     │   │
     │   ├── providers/                #   Provider 实现层
     │   │   ├── __init__.py           #
     │   │   ├── base.py               #   ToolProvider ABC
     │   │   ├── builtin.py            #   BuiltinProvider — 自动发现内置工具
-    │   │   ├── mcp.py                #   MCPProvider — MCP 服务器适配
-    │   │   ├── openapi.py            #   OpenAPIProvider — REST API → Tool
-    │   │   └── custom.py             #   CustomProvider — 装饰器注册
+    │   │   └── mcp.py                #   MCPProvider — MCP 服务器适配
     │   │
     │   ├── code_exec.py              #   Python/Shell 沙箱执行
     │   ├── file_ops.py               #   文件读写
     │   ├── web_search.py             #   网络搜索
     │   ├── email_tool.py             #   邮件发送
     │   ├── medical.py                #   医学知识查询
-    │   ├── rag_search.py             #   RAG 知识库检索
-    │   └── tool_registry.py          #   ToolRegistry（V1，保留兼容）
+    │   └── rag_search.py             #   RAG 知识库检索
     │
-    ├── mcp/                          # 7. MCP 协议层
-    │   ├── __init__.py               #
-    │   ├── config.py                 #   MCPServerConfig + load_mcp_servers()
-    │   └── manager.py                #   MCPManager（V1，保留兼容）
-    │
-    ├── workflows/                    # 8. Workflow 引擎
+    ├── workflows/                    # 7. Workflow 引擎
     │   ├── __init__.py               #
     │   ├── graph.py                  #   WorkflowGraph — DAG 执行引擎
     │   ├── state.py                  #   WorkflowState + 领域特化 States
-    │   ├── nodes.py                  #   WorkflowNode 基类 + 11 个内置节点
+    │   ├── nodes.py                  #   WorkflowNode 基类 + 12 个内置节点
     │   ├── edges.py                  #   Edge + ConditionalEdge + Router 函数
-    │   ├── checkpoint.py            #   Checkpointer + SQLiteCheckpointer
+    │   ├── checkpoint.py             #   Checkpointer + SQLiteCheckpointer
     │   ├── registry.py               #   WorkflowRegistry
     │   │
-    │   ├── graphs/                   #   预定义工作流图
-    │   │   ├── __init__.py           #
-    │   │   ├── dev.py                #   软件开发工作流 (5 节点)
-    │   │   ├── research.py           #   调研工作流 (3 节点)
-    │   │   └── diagnosis.py          #   诊断工作流 (3 节点)
-    │   │
-    │   ├── research_flow.py          #   ResearchFlow（V1，保留兼容）
-    │   ├── dev_flow.py               #   DevFlow（V1，保留兼容）
-    │   └── diagnosis_flow.py         #   DiagnosisFlow（V1，保留兼容）
+    │   └── graphs/                   #   预定义工作流图
+    │       ├── __init__.py           #
+    │       ├── dev.py                #   软件开发工作流 (5 节点)
+    │       ├── research.py           #   调研工作流 (3 节点)
+    │       └── diagnosis.py          #   诊断工作流 (3 节点)
     │
-    ├── middleware/                   # 9. 中间件层
-    │   ├── __init__.py               #
-    │   └── pipeline.py               #   HookPipeline — pre/post/error hooks
-    │
-    ├── agents/                       # 10. Agent 层（V1 + V2 兼容）
-    │   ├── __init__.py               #   统一导出
-    │   ├── base_agent.py             #   BaseAgent（core/ 中定义）
-    │   ├── general.py                #   GeneralAgent（V1）
-    │   ├── orchestrator.py           #   OrchestratorAgent（V1）
-    │   ├── factory.py                #   AgentFactory V1
-    │   ├── coder.py                  #   CoderAgent（V1）
-    │   ├── medical.py                #   MedicalAgent（V1）
-    │   ├── companion.py              #   CompanionAgent（V1）
-    │   └── practical.py              #   PracticalAgent（V1）
-    │
-    ├── cli/                          # 11. CLI 交互层 (Typer + Rich)
+    ├── cli/                          # 8. CLI 交互层 (Typer + Rich)
     │   ├── __init__.py               #   模块导出
     │   ├── main.py                   #   Typer 入口 + 命令注册 + global callback
+    │   ├── validators.py             #   validate_task / validate_model_name
     │   │
     │   ├── commands/                 #   命令实现
     │   │   ├── __init__.py           #   命令注册表
     │   │   ├── chat.py               #   haven chat — REPL (RuntimeService.chat)
     │   │   ├── run.py                #   haven run  — 单轮 (RuntimeService.run_task)
     │   │   ├── skill.py              #   haven skill {list,info,search,add,remove,reload}
+    │   │   ├── tool.py               #   haven tool {list,info}
     │   │   ├── workflow.py           #   haven workflow {list,info,run,resume,history}
-    │   │   └── doctor.py             #   haven doctor — 6 项环境诊断
+    │   │   └── doctor.py             #   haven doctor — 环境诊断
     │   │
     │   ├── ui/                       #   终端渲染 (Rich)
     │   │   ├── __init__.py           #
@@ -152,17 +119,12 @@ haven/
     │   │   ├── banner.py             #   print_banner() — V2 启动横幅
     │   │   └── progress.py           #   spinner / StreamRenderer / NodeWatcher
     │   │
-    │   ├── services/                 #   CLI 服务
-    │   │   ├── __init__.py           #
-    │   │   ├── cli_service.py        #   CLIContext / HistoryManager / TabCompleter
-    │   │   └── runtime_service.py    #   RuntimeService — CLI ↔ Runtime 唯一桥梁
-    │   │
-    │   └── utils/                    #   工具函数
+    │   └── services/                 #   CLI 服务
     │       ├── __init__.py           #
-    │       ├── format.py             #   format_table / format_kv / format_duration / truncate
-    │       └── validators.py         #   validate_task / validate_model_name / validate_skill_name
+    │       ├── cli_service.py        #   CLIContext / HistoryManager / TabCompleter
+    │       └── runtime_service.py    #   RuntimeService — CLI ↔ Runtime 唯一桥梁
     │
-    └── services/                     # 12. 服务层 (Daemon + Channels)
+    └── services/                     # 9. 服务层 (Daemon + Channels)
         ├── __init__.py               #
         ├── base_channel.py           #   BaseChannel 渠道抽象
         ├── daemon.py                 #   HavenDaemon 守护进程
@@ -206,12 +168,12 @@ haven/
         │             │             │
   ┌─────▼─────┐ ┌─────▼─────┐ ┌─────▼─────┐
   │ Skill     │ │ Memory    │ │ Tool      │
-  │ Selector  │ │ Manager   │ │ Manager   │
+  │ Registry  │ │ Manager   │ │ Manager   │
   │           │ │           │ │           │
-  │ LLM 选择  │ │ Working   │ │ Builtin   │
+  │ 注册/查询 │ │ Working   │ │ Builtin   │
   │ 依赖解析  │ │ Episodic  │ │ MCP       │
-  │           │ │ Semantic  │ │ OpenAPI   │
-  │           │ │ Vector    │ │ Custom    │
+  │           │ │ Semantic  │ │           │
+  │           │ │ Vector    │ │           │
   └───────────┘ └───────────┘ └───────────┘
 ```
 
@@ -227,7 +189,7 @@ haven/
 | `models.yaml` | `src/haven/config/` | LLM 模型定义（内置默认） |
 | `haven.yaml` | CWD | 用户覆盖框架参数（optional） |
 | `models.yaml` | CWD | 用户追加/覆盖模型定义（optional） |
-| `mcp.json` | CWD | MCP + OpenAPI Provider 配置 |
+| `mcp.json` | CWD | MCP Provider 配置 |
 
 ### 2. 核心基础设施 `core/`
 
@@ -238,6 +200,7 @@ haven/
 | `state.py` | `RuntimeState` dataclass — 会话状态（session_id, active_skills, active_tools, turn_count） |
 | `registry.py` | 通用 Registry 基类 — `register()` / `get()` / `list_all()` 类方法 |
 | `memory.py` | `AgentMemory` — V1 facade，内部委托到 V2 `MemoryManager` |
+| `pidfile.py` | 守护进程 PID 文件管理 |
 
 ### 3. 运行时层 `runtime/` ★ 核心 ★
 
@@ -245,7 +208,7 @@ haven/
 |------|------|
 | `runtime.py` | `AgentRuntime` — 纯执行引擎。五职责：LLM + Tool + Memory + State + Prompt。零业务逻辑 |
 | `planner.py` | `PlannerAgent` — 一次 LLM 调用完成：意图分类 + 任务拆解 + Skill 选择 + Workflow 匹配。`ExecutionPlan` + `PlanStep` |
-| `factory.py` | `create_agent()` — 创建 Runtime → 加载 Skills → 初始化 LLM → 装配 Planner → 返回 |
+| `factory.py` | `create_agent()` — 创建 Runtime → 加载 Skills → 初始化 LLM → 装配 ToolManager → 创建 Planner → 返回 |
 
 ### 4. Skill 系统 `skills/`
 
@@ -253,8 +216,9 @@ haven/
 |------|------|
 | `base_skill.py` | `BaseSkill` dataclass：name, description, tags, tools, dependencies, version, prompt |
 | `loader.py` | `SkillLoader` — 扫描 `skills/*.md`，解析 YAML frontmatter |
-| `selector.py` | `SkillSelector` — Phase 0(快速路径) → Phase 1(标签过滤) → Phase 2(LLM Structured Output) → Phase 3(依赖解析) |
 | `registry.py` | `SkillRegistry` — `get_defaults()`, `get_domain_skills()`, `resolve_dependencies()`, `get_selection_context()` |
+
+Skill 选择由 `PlannerAgent.plan()` 内嵌完成：LLM 根据 Skill 的 `description` 和 `tags` 语义匹配，无需独立的 Selector 模块。`SkillRegistry.resolve_dependencies()` 自动补全传递依赖。
 
 ### 5. Memory 系统 `memory/`
 
@@ -275,12 +239,14 @@ haven/
 
 | Provider | 工具来源 | 发现方式 |
 |----------|---------|---------|
-| `BuiltinProvider` | 内置工具 (code_exec, file_ops, web_search 等) | 自动扫描 `tools/` 目录 |
+| `BuiltinProvider` | 内置工具 (code_exec, file_ops, web_search 等 6 个) | 自动扫描 `tools/` 目录 |
 | `MCPProvider` | MCP 服务器 (stdio/HTTP/WebSocket) | 连接 → discover → 适配 |
-| `OpenAPIProvider` | REST API (OpenAPI 3.x spec) | 解析 spec → 端点 → Tool |
-| `CustomProvider` | 用户自定义 | `@provider.register()` 装饰器 |
 
-`ToolManager` 编排 Provider 生命周期：注册 → start → discover → 全局注册表 → 按 skill/tag/category 检索 → stop
+`ToolManager` 编排 Provider 生命周期：注册 → start → discover → 全局注册表 → 按 skill/tag/category 检索 → stop。
+
+Provider 状态机：UNINITIALIZED → CONNECTING → CONNECTED / DEGRADED / ERROR → DISCONNECTED。
+
+MCP 工具以 `{server_name}__{tool_name}` 命名空间注册，避免冲突。MCP 配置从 CWD 下的 `mcp.json` 加载（标准 `mcpServers` 格式），`MCPServerConfig` Pydantic 模型校验。
 
 ### 7. Workflow 引擎 `workflows/`
 
@@ -292,21 +258,20 @@ DAG 执行引擎，支持条件路由 + 失败重试 + Checkpoint 持久化：
 | `research_flow` | 3 | searcher → analyst → synthesizer（analyst 缺口 → searcher 重试） | 调研报告 |
 | `diagnosis_flow` | 3 | collector → analyzer → adviser | 症状诊断 |
 
-**内置 Router：** `review_router`, `test_router`, `quality_gate_router`, `research_quality_router`
-
 ### 8. CLI 层 `cli/` — Typer + Rich
 
 **命令体系：**
 
 ```
-haven chat             交互式 REPL [默认]
-haven run -t "..."     单轮任务执行
-haven workflow         工作流管理 {list,info,run,resume,history}
-haven skill            Skill 管理 {list,info,search,add,remove,reload}
-haven doctor           环境诊断 (6 项检查)
+haven                   交互式 REPL [默认]
+haven run -t "..."      单轮任务执行
+haven workflow          工作流管理 {list,info,run,resume,history}
+haven skill             Skill 管理 {list,info,search,add,remove,reload}
+haven tool              工具管理 {list,info}
+haven doctor            环境诊断
 ```
 
-**架构原则：CLI → Service → Runtime**
+**架构原则：CLI → RuntimeService → Runtime**
 
 ```
 ┌──────────────────────────────────────────────┐
@@ -340,8 +305,8 @@ haven doctor           环境诊断 (6 项检查)
 
 | 模块 | 职责 |
 |------|------|
-| `main.py` | Typer 应用 + argparse 命令树 + 全局异常处理 |
-| `commands/chat.py` | REPL 循环 + slash 命令（`/help /model /skills /tools /memory /workflows /clear /exit`） |
+| `main.py` | Typer 应用 + 命令注册 + 全局异常处理 |
+| `commands/chat.py` | REPL 循环 + slash 命令（`/help /model /models /skills /tools /memory /workflows /clear /exit`） |
 | `commands/run.py` | `--task` / `--file` / `--stream` / `--json` / `--no-plan` / `--no-memory` |
 | `services/runtime_service.py` | `RuntimeService` — `start()` / `chat()` / `run_task()` / `chat_stream()` / `stop()` |
 | `ui/console.py` | 统一输出渲染器（text / JSON / table / status / code / markdown） |
@@ -395,16 +360,16 @@ User: "帮我写一个房价爬虫并做趋势分析"
 
 | 维度 | V1 | V2 |
 |------|----|----|
-| **Agent** | 6 个类 (Orchestrator + 4 Specialist + General) | 2 个类 (AgentRuntime + PlannerAgent) |
+| **Agent** | 6 个类 (Orchestrator + 4 Specialist + General) | 2 个类 (PlannerAgent + AgentRuntime) |
 | **领域知识** | 硬编码在 Agent 类 PROMPT 常量 | `.md` Skill 文件（零代码） |
 | **意图分类** | 硬编码 4 类 + 正则回退 | LLM Structured Output + 动态标签 |
-| **Skill 选择** | `str.lower()` 子串匹配 | LLM 语义选择（三阶段 Pipeline） |
+| **Skill 选择** | `str.lower()` 子串匹配 | LLM 语义选择（内嵌于 PlannerAgent） |
 | **Workflow** | 3 个串行类（A→B） | DAG 引擎 + 条件路由 + 重试 + Checkpoint |
 | **Memory** | deque + SQLite KV | 四层（Working/Episodic/Semantic/Vector） |
-| **Tool 注册** | 双重注册 (register_tool + register_lc_tool) | Provider 统一架构（HavenTool 单一入口） |
-| **新增工具源** | 仅 MCP | MCP + OpenAPI + Custom（统一 Provider 接口） |
-| **CLI** | 简单入口 + HavenApp REPL | Typer + Rich 三级命令树 + RuntimeService 桥梁 |
-| **中间件** | 无 | HookPipeline（pre/post/error） |
+| **Tool 注册** | 分散注册 (register_tool + register_lc_tool) | Provider 统一架构（ToolManager 单一入口） |
+| **新增工具源** | 仅 MCP | MCP + Provider 接口（可扩展） |
+| **CLI** | 简单入口 + HavenApp REPL | Typer + Rich 多级命令树 + RuntimeService 桥梁 |
+| **MCP 集成** | 独立 `mcp/` 模块 | 集成在 `tools/providers/` 中，统一 Provider 接口 |
 
 ## 扩展方式
 
@@ -412,9 +377,9 @@ User: "帮我写一个房价爬虫并做趋势分析"
 |------|------|--------|
 | 新领域能力 | `skills/` 下新建 `.md` 文件 | 零代码 |
 | 新人格 | 新建 `.md`，设 `default: true` | 零代码 |
-| 新外部工具 | `mcp.json` 添加 MCP / OpenAPI 条目 | 一段 JSON |
+| 新外部工具 | `mcp.json` 添加 MCP 条目 | 一段 JSON |
 | 新对话渠道 | 实现 `BaseChannel` 接口，注册到 daemon | 一个文件 |
-| 新工具 | `tools/` 下新建 HavenTool 子类 | 一个文件 |
+| 新内置工具 | `tools/` 下新建 HavenTool 子类 | 一个文件 |
 | 新模型 | `models.yaml` 加条目 + 环境变量设 Key | 两行配置 |
 | 新工作流 | `workflows/graphs/` 下定义 DAG | 一个文件 |
 | 新 Provider | 实现 `ToolProvider` 接口 | 一个类 |
@@ -427,15 +392,13 @@ config/
   ↓
 core/
   ↓
-skills/  memory/  tools/  middleware/
+skills/  memory/  tools/  workflows/
   ↓        ↓        ↓         ↓
   └────────┴────────┴─────────┘
-               ↓
-          mcp/  workflows/
                ↓
           runtime/
                ↓
           cli/  services/
 ```
 
-依赖规则：上层依赖下层，不可反向。`skills/`、`memory/`、`tools/` 互不依赖，通过 `runtime/` 组合。
+依赖规则：上层依赖下层，不可反向。`skills/`、`memory/`、`tools/`、`workflows/` 互不依赖，通过 `runtime/` 组合。

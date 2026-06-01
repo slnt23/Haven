@@ -95,7 +95,7 @@ class SkillLoader:
             return None, raw
 
         frontmatter = raw[3:end].strip()
-        body = raw[end + 3:].strip()
+        body = raw[end + 3 :].strip()
         return frontmatter, body
 
 

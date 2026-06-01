@@ -39,12 +39,14 @@ class WorkingMemory(BaseMemory):
     async def retrieve(self, query: str = "", top_k: int = 20, **filters: Any) -> list[MemoryItem]:
         items: list[MemoryItem] = list(self.pinned_items)
         for msg in list(self.sliding_window)[-top_k:]:
-            items.append(MemoryItem(
-                id=f"wm_{id(msg)}",
-                content=msg.content if hasattr(msg, "content") else str(msg),
-                memory_type="working",
-                importance=0.8,
-            ))
+            items.append(
+                MemoryItem(
+                    id=f"wm_{id(msg)}",
+                    content=msg.content if hasattr(msg, "content") else str(msg),
+                    memory_type="working",
+                    importance=0.8,
+                )
+            )
         return items
 
     async def forget(self, item_id: str) -> None:
@@ -82,8 +84,7 @@ class WorkingMemory(BaseMemory):
             return self.summary
 
         buffer_content = "\n".join(
-            m.content if hasattr(m, "content") else str(m)
-            for m in self._summary_buffer
+            m.content if hasattr(m, "content") else str(m) for m in self._summary_buffer
         )
 
         prompt = (
@@ -94,6 +95,7 @@ class WorkingMemory(BaseMemory):
 
         try:
             from langchain_core.messages import HumanMessage
+
             response = await llm.ainvoke([HumanMessage(content=prompt)])
             self.summary = (
                 response.content if hasattr(response, "content") else str(response)

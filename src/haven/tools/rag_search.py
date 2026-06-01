@@ -1,5 +1,3 @@
-
-
 class RAGSearchTool:
     """Explicit knowledge-base search tool — the LLM can call this when it needs
     to look up domain knowledge that wasn't already injected into context."""

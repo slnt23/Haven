@@ -11,12 +11,17 @@ from typing import Annotated, Optional
 
 import typer
 
+from haven.cli.services.cli_service import CLIContext
 from haven.cli.ui.console import (
-    get_console, render_markdown, render_error, render_info,
-    render_success, render_json, dim, blank,
+    blank,
+    dim,
+    render_error,
+    render_info,
+    render_json,
+    render_markdown,
+    render_success,
 )
 from haven.cli.ui.progress import spinner
-from haven.cli.services.cli_service import CLIContext
 from haven.cli.validators import validate_task
 
 logger = logging.getLogger("haven.cli.run")
@@ -48,7 +53,7 @@ def run_task(
                 task_text = f.read().strip()
         except FileNotFoundError:
             render_error(f"文件不存在: {file}")
-            raise typer.Exit(code=1)
+            raise typer.Exit(code=1) from None
 
     valid, msg = validate_task(task_text)
     if not valid:
@@ -59,8 +64,10 @@ def run_task(
     svc = asyncio.run(_init_service(model))
 
     if verbose:
-        render_info(f"[config] model={model or 'default'} stream={stream} "
-                     f"no_plan={no_plan} no_memory={no_memory}")
+        render_info(
+            f"[config] model={model or 'default'} stream={stream} "
+            f"no_plan={no_plan} no_memory={no_memory}"
+        )
 
     # ---- 执行 ----
     async def _exec():
@@ -78,24 +85,25 @@ def run_task(
 
     # ---- 输出 ----
     if json_output:
-        import json
-        render_json({
-            "task": task_text,
-            "plan": plan_info,
-            "result": result_text,
-            "elapsed_ms": elapsed_ms,
-        })
+        render_json(
+            {
+                "task": task_text,
+                "plan": plan_info,
+                "result": result_text,
+                "elapsed_ms": elapsed_ms,
+            }
+        )
     else:
         # 显示计划（如启用）
         if verbose and plan_info:
             render_info(
-                f"[plan] intent={plan_info.get('intent','?')} "
-                f"skills={plan_info.get('skills',[])} "
+                f"[plan] intent={plan_info.get('intent', '?')} "
+                f"skills={plan_info.get('skills', [])} "
                 f"workflow={plan_info.get('workflow') or 'none'}"
             )
             if plan_info.get("steps"):
                 for s in plan_info["steps"]:
-                    render_info(f"  step{s['order']}: {s['description']} [{s.get('skill','')}]")
+                    render_info(f"  step{s['order']}: {s['description']} [{s.get('skill', '')}]")
             blank()
 
         blank()
@@ -126,4 +134,4 @@ async def _init_service(model: str | None):
         return svc
     except Exception as exc:
         render_error(f"启动 Runtime 失败: {exc}")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from exc

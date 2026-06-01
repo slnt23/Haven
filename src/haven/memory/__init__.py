@@ -8,12 +8,12 @@
 MemoryManager 统一编排四层，提供 store/retrieve/consolidate 生命周期。
 """
 
-from haven.memory.base import BaseMemory, MemoryItem, MemoryContext
-from haven.memory.working import WorkingMemory
+from haven.memory.base import BaseMemory, MemoryContext, MemoryItem
 from haven.memory.episodic import EpisodicMemory
+from haven.memory.manager import MemoryManager
 from haven.memory.semantic import SemanticMemory
 from haven.memory.vector import VectorMemory
-from haven.memory.manager import MemoryManager
+from haven.memory.working import WorkingMemory
 
 __all__ = [
     "BaseMemory",

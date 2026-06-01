@@ -9,17 +9,17 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import uuid
 from typing import Any
+import uuid
 
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import HumanMessage, AIMessage
+from langchain_core.messages import AIMessage, HumanMessage
 
-from haven.memory.base import BaseMemory, MemoryContext, MemoryItem
-from haven.memory.working import WorkingMemory
+from haven.memory.base import MemoryContext, MemoryItem
 from haven.memory.episodic import EpisodicMemory
 from haven.memory.semantic import SemanticMemory
 from haven.memory.vector import VectorMemory
+from haven.memory.working import WorkingMemory
 
 logger = logging.getLogger("haven.memory")
 
@@ -103,19 +103,21 @@ class MemoryManager:
 
         # 3. Vector — embed
         if self.vector:
-            await self.vector.store([
-                MemoryItem(
-                    id=f"vec_{self.session_id}_{self.turn_count}_{uuid.uuid4().hex[:8]}",
-                    content=f"用户: {user_message}\nAI: {assistant_message}",
-                    memory_type="episodic",
-                    importance=importance,
-                    metadata={
-                        "session_id": self.session_id,
-                        "turn_number": self.turn_count,
-                        "entity_name": self.entity_name,
-                    },
-                )
-            ])
+            await self.vector.store(
+                [
+                    MemoryItem(
+                        id=f"vec_{self.session_id}_{self.turn_count}_{uuid.uuid4().hex[:8]}",
+                        content=f"用户: {user_message}\nAI: {assistant_message}",
+                        memory_type="episodic",
+                        importance=importance,
+                        metadata={
+                            "session_id": self.session_id,
+                            "turn_number": self.turn_count,
+                            "entity_name": self.entity_name,
+                        },
+                    )
+                ]
+            )
 
         # 4. Semantic — 异步提取事实
         asyncio.create_task(self._extract_facts(user_message, assistant_message))
@@ -145,27 +147,39 @@ class MemoryManager:
         """多路并行检索，合并去重。"""
         tasks: list[asyncio.Task] = []
 
-        tasks.append(asyncio.create_task(
-            self.working.retrieve(query="", top_k=20)
-        ))
-        tasks.append(asyncio.create_task(
-            self.semantic.retrieve(
-                query=task if task else self.entity_name,
-                top_k=10, entity_name=self.entity_name, min_confidence=0.3,
+        tasks.append(asyncio.create_task(self.working.retrieve(query="", top_k=20)))
+        tasks.append(
+            asyncio.create_task(
+                self.semantic.retrieve(
+                    query=task if task else self.entity_name,
+                    top_k=10,
+                    entity_name=self.entity_name,
+                    min_confidence=0.3,
+                )
+                if search_semantic
+                else self._empty()
             )
-            if search_semantic else self._empty()
-        ))
-        tasks.append(asyncio.create_task(
-            self.episodic.retrieve(
-                query=task, top_k=top_k,
-                time_range="30d", min_importance=0.3, search_mode="hybrid",
+        )
+        tasks.append(
+            asyncio.create_task(
+                self.episodic.retrieve(
+                    query=task,
+                    top_k=top_k,
+                    time_range="30d",
+                    min_importance=0.3,
+                    search_mode="hybrid",
+                )
+                if search_episodic
+                else self._empty()
             )
-            if search_episodic else self._empty()
-        ))
-        tasks.append(asyncio.create_task(
-            self.vector.retrieve(query=task, top_k=top_k, min_importance=0.3)
-            if (search_vector and self.vector and task) else self._empty()
-        ))
+        )
+        tasks.append(
+            asyncio.create_task(
+                self.vector.retrieve(query=task, top_k=top_k, min_importance=0.3)
+                if (search_vector and self.vector and task)
+                else self._empty()
+            )
+        )
 
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
@@ -207,9 +221,7 @@ class MemoryManager:
         return self.working.summary
 
     async def get_entity_profile(self, entity_name: str | None = None) -> list[MemoryItem]:
-        return await self.semantic.retrieve_entity_facts(
-            entity_name or self.entity_name
-        )
+        return await self.semantic.retrieve_entity_facts(entity_name or self.entity_name)
 
     # ==================================================================
     # 内部
@@ -221,10 +233,10 @@ class MemoryManager:
 
         prompt = (
             f'从对话中提取关于"{self.entity_name}"的结构化信息。\n'
-            f'规则: 只提取明确陈述的事实。key用英文snake_case，value保留原始语言。\n'
-            f'confidence: 0.9=明确, 0.5=暗示。tags: personal/preference/health/skill/contact/goal\n'
-            f'无新事实返回空数组。\n\n'
-            f'对话:\n用户: {user_message}\nAI: {assistant_message}\n\n'
+            f"规则: 只提取明确陈述的事实。key用英文snake_case，value保留原始语言。\n"
+            f"confidence: 0.9=明确, 0.5=暗示。tags: personal/preference/health/skill/contact/goal\n"
+            f"无新事实返回空数组。\n\n"
+            f"对话:\n用户: {user_message}\nAI: {assistant_message}\n\n"
             f'仅返回JSON: {{"facts":[{{"key":"...","value":"...","confidence":0.9,"tags":["..."]}}]}}'
         )
 
@@ -264,6 +276,7 @@ class MemoryManager:
     @staticmethod
     def _parse_facts(raw: str) -> list[dict]:
         import json
+
         raw = raw.strip()
         if raw.startswith("```"):
             lines = raw.split("\n")
@@ -282,8 +295,18 @@ class MemoryManager:
     @staticmethod
     def _estimate_importance(user: str, assistant: str) -> float:
         keywords = [
-            "记住", "我叫", "我是", "我喜欢", "我住在", "我的电话",
-            "偏好", "总是", "从不", "重要", "过敏", "紧急",
+            "记住",
+            "我叫",
+            "我是",
+            "我喜欢",
+            "我住在",
+            "我的电话",
+            "偏好",
+            "总是",
+            "从不",
+            "重要",
+            "过敏",
+            "紧急",
         ]
         combined = (user + " " + assistant).lower()
         hits = sum(1 for kw in keywords if kw in combined)

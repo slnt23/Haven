@@ -7,31 +7,30 @@ from __future__ import annotations
 
 import importlib
 import logging
-from typing import Any
 
 from langchain_core.tools import StructuredTool
 
-from haven.tools.base import HavenTool, ToolMetadata, ToolCategory, ToolPermission
+from haven.tools.base import HavenTool, ToolCategory, ToolMetadata, ToolPermission
 from haven.tools.providers.base import ToolProvider
 
 logger = logging.getLogger("haven.tools.builtin")
 
 _BUILTIN_MODULES: list[tuple[str, str, str]] = [
-    ("code_exec",  "haven.tools.code_exec",  "CodeExecTool"),
-    ("file_ops",   "haven.tools.file_ops",   "FileOpsTool"),
+    ("code_exec", "haven.tools.code_exec", "CodeExecTool"),
+    ("file_ops", "haven.tools.file_ops", "FileOpsTool"),
     ("web_search", "haven.tools.web_search", "WebSearchTool"),
     ("rag_search", "haven.tools.rag_search", "RAGSearchTool"),
-    ("medical_kb", "haven.tools.medical",    "MedicalKnowledgeTool"),
-    ("email",      "haven.tools.email_tool", "EmailSenderTool"),
+    ("medical_kb", "haven.tools.medical", "MedicalKnowledgeTool"),
+    ("email", "haven.tools.email_tool", "EmailSenderTool"),
 ]
 
 _CATEGORY_MAP: dict[str, ToolCategory] = {
-    "code_exec":  ToolCategory.CODE,
-    "file_ops":   ToolCategory.FILE,
+    "code_exec": ToolCategory.CODE,
+    "file_ops": ToolCategory.FILE,
     "web_search": ToolCategory.SEARCH,
     "rag_search": ToolCategory.KNOWLEDGE,
     "medical_kb": ToolCategory.KNOWLEDGE,
-    "email":      ToolCategory.COMMUNICATION,
+    "email": ToolCategory.COMMUNICATION,
 }
 
 
@@ -68,7 +67,7 @@ class BuiltinProvider(ToolProvider):
                     permissions=[ToolPermission.READ],
                     tags=[tool_name, "builtin"],
                 )
-                setattr(lc_tool, "metadata", meta)
+                lc_tool.metadata = meta
 
                 tools.append(lc_tool)
                 logger.debug("Registered builtin: %s", tool_name)

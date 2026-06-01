@@ -6,8 +6,8 @@ ChromaDB 后端。embedding 相似性检索，跨 session 模式匹配。
 
 from __future__ import annotations
 
-import logging
 from datetime import datetime
+import logging
 from typing import Any
 
 from haven.memory.base import BaseMemory, MemoryItem
@@ -36,6 +36,7 @@ class VectorMemory(BaseMemory):
 
         if persist_dir is None:
             from haven.config import settings
+
             persist_dir = str(settings.project_root / ".data" / "chroma")
 
         self._persist_dir = persist_dir
@@ -47,6 +48,7 @@ class VectorMemory(BaseMemory):
             return self._client is not False
         try:
             import chromadb
+
             self._client = chromadb.PersistentClient(path=self._persist_dir)
             self._collection = self._client.get_or_create_collection(
                 name=self._collection_name,
@@ -67,7 +69,9 @@ class VectorMemory(BaseMemory):
             return self._embedding_fn is not False
         try:
             from langchain_openai import OpenAIEmbeddings
+
             from haven.config import settings
+
             self._embedding_fn = OpenAIEmbeddings(
                 model=settings.rag_embedding_model,
                 openai_api_base=settings.rag_embedding_api_base,
@@ -103,7 +107,9 @@ class VectorMemory(BaseMemory):
 
         try:
             embeddings = await self._embedding_fn.aembed_documents(texts)
-            self._collection.add(ids=ids, embeddings=embeddings, documents=texts, metadatas=metadatas)
+            self._collection.add(
+                ids=ids, embeddings=embeddings, documents=texts, metadatas=metadatas
+            )
         except Exception as exc:
             logger.warning("VectorMemory store failed: %s", exc)
 
@@ -118,7 +124,8 @@ class VectorMemory(BaseMemory):
         try:
             query_emb = await self._embedding_fn.aembed_query(query)
             results = self._collection.query(
-                query_embeddings=[query_emb], n_results=top_k,
+                query_embeddings=[query_emb],
+                n_results=top_k,
                 where=where if where else None,
             )
         except Exception as exc:
@@ -137,13 +144,16 @@ class VectorMemory(BaseMemory):
                 if "created_at" in meta:
                     try:
                         created = datetime.fromisoformat(meta["created_at"])
-                    except (ValueError, TypeError):
+                    except ValueError, TypeError:
                         pass
 
                 item = MemoryItem(
-                    id=doc_id, content=doc, memory_type="vector",
+                    id=doc_id,
+                    content=doc,
+                    memory_type="vector",
                     importance=meta.get("importance", 0.5),
-                    metadata=meta, created_at=created,
+                    metadata=meta,
+                    created_at=created,
                 )
                 item.metadata["_score"] = score
                 items.append(item)
@@ -164,7 +174,8 @@ class VectorMemory(BaseMemory):
             try:
                 self._client.delete_collection(self._collection_name)
                 self._collection = self._client.get_or_create_collection(
-                    name=self._collection_name, metadata={"hnsw:space": "cosine"},
+                    name=self._collection_name,
+                    metadata={"hnsw:space": "cosine"},
                 )
             except Exception:
                 pass

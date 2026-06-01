@@ -5,12 +5,15 @@
 
 from __future__ import annotations
 
-import logging
 from abc import ABC, abstractmethod
+import logging
 from typing import Any
 
 from haven.workflows.state import (
-    WorkflowState, DevWorkflowState, ResearchWorkflowState, DiagnosisWorkflowState,
+    DevWorkflowState,
+    DiagnosisWorkflowState,
+    ResearchWorkflowState,
+    WorkflowState,
 )
 
 logger = logging.getLogger("haven.workflow.node")
@@ -55,8 +58,7 @@ class WorkflowNode(ABC):
         return updates
 
     @abstractmethod
-    def _build_prompt(self, state: WorkflowState) -> str:
-        ...
+    def _build_prompt(self, state: WorkflowState) -> str: ...
 
     def _process_output(self, output: str, state: WorkflowState) -> dict[str, Any]:
         return {}
@@ -64,6 +66,7 @@ class WorkflowNode(ABC):
     @staticmethod
     def _resolve_skills(state: WorkflowState, names: list[str]) -> list[Any]:
         from haven.skills.registry import SkillRegistry
+
         skills = []
         for name in names:
             try:
@@ -84,6 +87,7 @@ class WorkflowNode(ABC):
 # ====================================================================
 # 软件开发工作流节点
 # ====================================================================
+
 
 class PlannerNode(WorkflowNode):
     name = "planner"
@@ -138,7 +142,7 @@ class CoderNode(WorkflowNode):
         review_feedback = state.node_outputs.get("reviewer", "")
         test_failures = state.test_failures
 
-        parts = [f"## 任务：编写代码\n", f"需求: {state.task}", f"架构设计: {arch}"]
+        parts = ["## 任务：编写代码\n", f"需求: {state.task}", f"架构设计: {arch}"]
 
         if state.node_retry_counts.get("coder", 0) > 0:
             parts.append("\n## 这是重新编码，以下是你上次的问题:")
@@ -216,6 +220,7 @@ class TesterNode(WorkflowNode):
 # 研究工作流节点
 # ====================================================================
 
+
 class SearcherNode(WorkflowNode):
     name = "searcher"
     skill_name = None
@@ -284,6 +289,7 @@ class SynthesizerNode(WorkflowNode):
 # 诊断工作流节点
 # ====================================================================
 
+
 class CollectorNode(WorkflowNode):
     name = "collector"
     skill_name = "medical"
@@ -348,6 +354,7 @@ class AdviserNode(WorkflowNode):
 # 辅助函数
 # ====================================================================
 
+
 def _extract_code_block(text: str) -> str:
     if "```" in text:
         parts = text.split("```")
@@ -355,9 +362,23 @@ def _extract_code_block(text: str) -> str:
             if i % 2 == 1:
                 lines = part.split("\n")
                 if lines[0].strip() in (
-                    "", "python", "js", "go", "rust", "shell", "bash",
-                    "sql", "json", "yaml", "html", "css", "java", "ts",
-                    "typescript", "cpp", "c",
+                    "",
+                    "python",
+                    "js",
+                    "go",
+                    "rust",
+                    "shell",
+                    "bash",
+                    "sql",
+                    "json",
+                    "yaml",
+                    "html",
+                    "css",
+                    "java",
+                    "ts",
+                    "typescript",
+                    "cpp",
+                    "c",
                 ):
                     return "\n".join(lines[1:]).strip()
                 return part.strip()
@@ -366,6 +387,7 @@ def _extract_code_block(text: str) -> str:
 
 def _parse_score(text: str) -> float:
     import re
+
     match = re.search(r"总分[：:]\s*(\d+)/?\s*100", text)
     return float(match.group(1)) if match else 0.0
 

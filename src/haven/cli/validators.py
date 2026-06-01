@@ -12,7 +12,7 @@ def validate_model_name(name: str) -> bool:
 def validate_skill_name(name: str) -> bool:
     if not name or not name.strip():
         return False
-    invalid = set("<>:\"/\\|?*")
+    invalid = set('<>:"/\\|?*')
     return not any(c in invalid for c in name) and len(name) <= 128
 
 

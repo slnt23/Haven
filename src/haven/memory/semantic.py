@@ -5,10 +5,10 @@
 
 from __future__ import annotations
 
-import json
-import sqlite3
 from datetime import datetime
+import json
 from pathlib import Path
+import sqlite3
 from typing import Any
 
 from haven.memory.base import BaseMemory, MemoryItem
@@ -28,6 +28,7 @@ class SemanticMemory(BaseMemory):
     def __init__(self, db_path: str | Path | None = None):
         if db_path is None:
             from haven.config import settings
+
             db_path = settings.project_root / ".data" / "memory.db"
         db_path = Path(db_path)
         db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -91,7 +92,9 @@ class SemanticMemory(BaseMemory):
                 self._record_history(entity_id, key, old_value, value)
 
             self._upsert_fact(
-                entity_id, key, value,
+                entity_id,
+                key,
+                value,
                 confidence=item.metadata.get("confidence", item.importance),
                 source_session=item.metadata.get("source_session", ""),
                 source_turn=item.metadata.get("source_turn", 0),
@@ -191,7 +194,8 @@ class SemanticMemory(BaseMemory):
             self._conn.commit()
 
     def _upsert_fact(self, entity_id: int, key: str, value: str, **kw: Any) -> None:
-        self._conn.execute("""
+        self._conn.execute(
+            """
             INSERT INTO memory_facts
                 (entity_id, key, value, confidence, source_session, source_turn, tags)
             VALUES (?,?,?,?,?,?,?)
@@ -199,9 +203,17 @@ class SemanticMemory(BaseMemory):
                 value=excluded.value, confidence=excluded.confidence,
                 source_session=excluded.source_session, source_turn=excluded.source_turn,
                 tags=excluded.tags, created_at=CURRENT_TIMESTAMP
-        """, (entity_id, key, value, kw.get("confidence", 0.9),
-              kw.get("source_session", ""), kw.get("source_turn", 0),
-              kw.get("tags", "[]")))
+        """,
+            (
+                entity_id,
+                key,
+                value,
+                kw.get("confidence", 0.9),
+                kw.get("source_session", ""),
+                kw.get("source_turn", 0),
+                kw.get("tags", "[]"),
+            ),
+        )
         self._conn.commit()
         self._conn.execute(
             "UPDATE memory_entities SET updated_at=CURRENT_TIMESTAMP WHERE id=?",
@@ -219,7 +231,8 @@ class SemanticMemory(BaseMemory):
             metadata={
                 "entity_name": row["entity_name"],
                 "entity_type": row["entity_type"],
-                "key": row["key"], "value": row["value"],
+                "key": row["key"],
+                "value": row["value"],
                 "confidence": row["confidence"],
                 "source_session": row["source_session"],
                 "source_turn": row["source_turn"],

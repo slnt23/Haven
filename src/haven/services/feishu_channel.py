@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import threading
+from typing import Any
 
 from haven.config import settings
 from haven.services.base_channel import BaseChannel
@@ -16,32 +17,34 @@ logger = logging.getLogger("haven.feishu_channel")
 # 避免阻塞主事件循环
 # ------------------------------------------------------------------
 
+
 async def _send_reply(
-    app_id: str, app_secret: str, open_id: str, text: str,
+    app_id: str,
+    app_secret: str,
+    open_id: str,
+    text: str,
 ) -> None:
     """在线程中通过飞书 CreateMessage API 发送文本回复。"""
 
     def _sync() -> None:
         from lark_oapi.api.im.v1 import (
-            CreateMessageRequest, CreateMessageRequestBody,
+            CreateMessageRequest,
+            CreateMessageRequestBody,
         )
 
-        body = CreateMessageRequestBody.builder() \
-            .receive_id(open_id) \
-            .msg_type("text") \
-            .content(json.dumps({"text": text}, ensure_ascii=False)) \
+        body = (
+            CreateMessageRequestBody.builder()
+            .receive_id(open_id)
+            .msg_type("text")
+            .content(json.dumps({"text": text}, ensure_ascii=False))
             .build()
+        )
 
-        req = CreateMessageRequest.builder() \
-            .receive_id_type("open_id") \
-            .request_body(body) \
-            .build()
+        req = CreateMessageRequest.builder().receive_id_type("open_id").request_body(body).build()
 
         from lark_oapi import Client
-        client = Client.builder() \
-            .app_id(app_id) \
-            .app_secret(app_secret) \
-            .build()
+
+        client = Client.builder().app_id(app_id).app_secret(app_secret).build()
 
         resp = client.im.v1.message.create(req)
         if not resp.success():
@@ -53,6 +56,7 @@ async def _send_reply(
 # ------------------------------------------------------------------
 # FeishuChannel
 # ------------------------------------------------------------------
+
 
 class FeishuChannel(BaseChannel):
     """飞书 / Lark 消息通道。
@@ -82,9 +86,7 @@ class FeishuChannel(BaseChannel):
         await super().start(agent)
 
         if not self.app_id or not self.app_secret:
-            logger.warning(
-                "FeishuChannel: app_id/app_secret not configured, channel disabled"
-            )
+            logger.warning("FeishuChannel: app_id/app_secret not configured, channel disabled")
             self.enabled = False
             return
 
@@ -97,7 +99,9 @@ class FeishuChannel(BaseChannel):
         # 避免阻塞守护进程的 asyncio 循环。
         self._running = True
         self._ws_thread = threading.Thread(
-            target=self._run_ws, args=(loop,), daemon=True,
+            target=self._run_ws,
+            args=(loop,),
+            daemon=True,
         )
         self._ws_thread.start()
         logger.info("FeishuChannel started (app_id=%s…)", self.app_id[:8])
@@ -127,15 +131,17 @@ class FeishuChannel(BaseChannel):
         def _on_message(event) -> None:
             try:
                 asyncio.run_coroutine_threadsafe(
-                    self._handle_event(event), main_loop,
+                    self._handle_event(event),
+                    main_loop,
                 )
             except Exception:
                 logger.exception("FeishuChannel: event dispatch failed")
 
-        handler = (EventDispatcherHandler
-                   .builder("", "")
-                   .register_p2_im_message_receive_v1(_on_message)
-                   .build())
+        handler = (
+            EventDispatcherHandler.builder("", "")
+            .register_p2_im_message_receive_v1(_on_message)
+            .build()
+        )
 
         from lark_oapi.ws import Client as WsClient
 
@@ -190,7 +196,9 @@ class FeishuChannel(BaseChannel):
 
         logger.info(
             "FeishuChannel: message open_id=%s chat=%s: %s",
-            open_id, chat_id, text[:100],
+            open_id,
+            chat_id,
+            text[:100],
         )
 
         # 将 agent 记忆标记为按用户身份隔离

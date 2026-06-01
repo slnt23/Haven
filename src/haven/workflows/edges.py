@@ -6,9 +6,9 @@
 
 from __future__ import annotations
 
-from typing import Any, Callable, Awaitable
+from typing import Awaitable, Callable
 
-from haven.workflows.state import WorkflowState, DevWorkflowState
+from haven.workflows.state import WorkflowState
 
 # Router 函数签名
 RouterFunc = Callable[[WorkflowState], str | Awaitable[str]]
@@ -80,10 +80,6 @@ def research_quality_router(state: WorkflowState) -> str:
     rs = state  # type: Any  # ResearchWorkflowState
     search_count = state.node_retry_counts.get("searcher", 0)
 
-    if (
-        hasattr(rs, "analyzed_insights")
-        and "知识缺口" in rs.analyzed_insights
-        and search_count < 3
-    ):
+    if hasattr(rs, "analyzed_insights") and "知识缺口" in rs.analyzed_insights and search_count < 3:
         return "searcher"
     return "synthesizer"

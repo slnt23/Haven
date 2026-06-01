@@ -1,111 +1,54 @@
-"""PromptBuilder — 统一 system prompt 组装。
+"""PromptBuilder — system prompt 最终组装。
 
-负责按优先级合并：
-  1. 人格 skill (default=true)
-  2. 领域 skill (Planner 激活)
-  3. 长期记忆上下文
-  4. RAG 检索上下文
-
-控制 token 预算，超出时从低优先级裁剪。
+简化后不再直接访问 MemoryManager / SkillRegistry / Workflow。
+只接收 ContextManager.build() 返回的 ContextBundle，进行最终校验和格式化。
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from haven.skills.base_skill import BaseSkill
-
-
-class TokenBudget:
-    """简单的 token 预算估算器。
-
-    按 1 token ≈ 3 个字符估算（中文约 1 token ≈ 1.5 字符）。
-    """
-
-    def __init__(self, max_tokens: int = 4000):
-        self.max_tokens = max_tokens
-
-    def estimate(self, text: str) -> int:
-        """估算文本的 token 数。"""
-        if not text:
-            return 0
-        chinese_chars = sum(1 for c in text if "一" <= c <= "鿿")
-        other_chars = len(text) - chinese_chars
-        return int(chinese_chars * 1.5 + other_chars / 3)
-
-    def fits(self, text: str) -> bool:
-        return self.estimate(text) <= self.max_tokens
+from haven.core.context import ContextBundle, TokenBudget
 
 
 class PromptBuilder:
-    """统一 system prompt 组装器。
+    """System prompt 组装器（薄层）。
+
+    职责缩减为：
+      1. 接收 ContextManager.build() 返回的 ContextBundle
+      2. 最终 token 预算校验
+      3. 添加系统级包装（如有需要）
 
     用法::
 
+        cm = ContextManager(memory=runtime.memory)
+        bundle = cm.build(personality_skills=[...], domain_skills=[...])
         builder = PromptBuilder(max_system_tokens=4000)
-        system = builder.build(
-            personality_skills=[haven_skill],
-            domain_skills=[coder_skill],
-            memory_context="[长期记忆] ...",
-            rag_context="[参考知识] ...",
-        )
+        system_prompt = builder.build(bundle)
     """
 
     def __init__(self, max_system_tokens: int = 4000):
         self._budget = TokenBudget(max_system_tokens)
 
-    def build(
-        self,
-        personality_skills: list["BaseSkill"] | None = None,
-        domain_skills: list["BaseSkill"] | None = None,
-        memory_context: str = "",
-        rag_context: str = "",
-    ) -> str:
-        """按优先级组装 system prompt。
+    def build(self, context: ContextBundle | str) -> str:
+        """对 ContextManager.build() 的结果进行最终校验。
 
-        优先级：人格 > 领域 > 记忆 > RAG
-        预算不足时从 RAG 开始裁剪。
+        Args:
+            context: ContextBundle（ContextManager.build() 的输出）
+                     或纯字符串（兼容旧调用）。
+
+        Returns:
+            最终 system prompt 字符串。
         """
-        sections: list[tuple[int, str]] = []
+        if isinstance(context, str):
+            prompt = context
+        else:
+            prompt = context.system_prompt
 
-        # 1. 人格 skill — 最高优先级
-        for skill in (personality_skills or []):
-            prompt = getattr(skill, "prompt_extension", "") or skill.prompt
-            if prompt.strip():
-                sections.append((0, prompt.strip()))
+        if not prompt:
+            return ""
 
-        # 2. 领域 skill
-        for skill in (domain_skills or []):
-            prompt = getattr(skill, "prompt_extension", "") or skill.prompt
-            if prompt.strip():
-                sections.append((1, prompt.strip()))
+        if not self._budget.fits(prompt):
+            # 硬截断——正常路径下 ContextAssembler 已处理预算
+            max_chars = self._budget.max_tokens * 3
+            prompt = prompt[:max_chars] + "\n...[已截断]"
 
-        # 3. 长期记忆
-        if memory_context.strip():
-            sections.append((2, memory_context.strip()))
-
-        # 4. RAG
-        if rag_context.strip():
-            sections.append((3, rag_context.strip()))
-
-        # 排序 + 预算裁剪
-        sections.sort(key=lambda x: x[0])
-
-        result_parts: list[str] = []
-        used = 0
-
-        for _, text in sections:
-            est = self._budget.estimate(text)
-            if used + est <= self._budget.max_tokens:
-                result_parts.append(text)
-                used += est
-            else:
-                # 超出预算：尝试截断当前段
-                remaining = self._budget.max_tokens - used
-                if remaining > 100:
-                    truncated = text[: remaining * 3] + "\n...[已截断]"
-                    result_parts.append(truncated)
-                break
-
-        return "\n\n".join(result_parts)
+        return prompt

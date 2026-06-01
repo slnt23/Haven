@@ -7,7 +7,10 @@ import sys
 from typing import Any
 
 from haven.config import settings
-from haven.core.pidfile import is_running, read as pid_read, remove as pid_remove, write as pid_write
+from haven.core.pidfile import is_running
+from haven.core.pidfile import read as pid_read
+from haven.core.pidfile import remove as pid_remove
+from haven.core.pidfile import write as pid_write
 from haven.services.base_channel import BaseChannel
 from haven.services.email_channel import EmailChannel
 from haven.services.feishu_channel import FeishuChannel
@@ -110,10 +113,13 @@ class HavenDaemon:
         socket_host = getattr(settings, "daemon_socket_host", "127.0.0.1")
         socket_port = getattr(settings, "daemon_socket_port", 9020)
         if socket_enabled:
-            self.channels.append(SocketChannel(
-                host=socket_host, port=socket_port,
-                shutdown_callback=self._shutdown_event.set,
-            ))
+            self.channels.append(
+                SocketChannel(
+                    host=socket_host,
+                    port=socket_port,
+                    shutdown_callback=self._shutdown_event.set,
+                )
+            )
 
         email_enabled = getattr(settings, "daemon_email_enabled", False)
         if email_enabled:
@@ -121,10 +127,12 @@ class HavenDaemon:
 
         feishu_enabled = getattr(settings, "daemon_feishu_enabled", False)
         if feishu_enabled:
-            self.channels.append(FeishuChannel(
-                app_id=getattr(settings, "daemon_feishu_app_id", ""),
-                app_secret=getattr(settings, "daemon_feishu_app_secret", ""),
-            ))
+            self.channels.append(
+                FeishuChannel(
+                    app_id=getattr(settings, "daemon_feishu_app_id", ""),
+                    app_secret=getattr(settings, "daemon_feishu_app_secret", ""),
+                )
+            )
 
     async def _start_channels(self) -> None:
         for ch in self.channels:
@@ -158,7 +166,7 @@ class HavenDaemon:
         lines = [
             BANNER,
             f"  Model   : {model}",
-            f"  Channels:",
+            "  Channels:",
         ]
         for ch in self.channels:
             detail = ch.status_detail

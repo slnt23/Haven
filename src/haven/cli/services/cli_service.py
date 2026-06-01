@@ -55,7 +55,7 @@ class HistoryManager:
     def add(self, command: str) -> None:
         self._entries.append(command.strip())
         if len(self._entries) > self._max:
-            self._entries = self._entries[-self._max:]
+            self._entries = self._entries[-self._max :]
         self._save()
 
     def search(self, prefix: str) -> list[str]:
@@ -67,7 +67,7 @@ class HistoryManager:
     def _load(self) -> None:
         try:
             if self._path.is_file():
-                self._entries = self._path.read_text("utf-8").splitlines()[-self._max:]
+                self._entries = self._path.read_text("utf-8").splitlines()[-self._max :]
         except Exception:
             pass
 

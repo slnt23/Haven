@@ -1,7 +1,8 @@
+from pathlib import Path
 import subprocess
 import sys
 import tempfile
-from pathlib import Path
+
 
 class CodeExecTool:
     def __init__(self):
@@ -13,14 +14,19 @@ class CodeExecTool:
             filepath.write_text(code, encoding="utf-8")
             result = subprocess.run(
                 [sys.executable, str(filepath)],
-                capture_output=True, text=True, timeout=self.timeout,
+                capture_output=True,
+                text=True,
+                timeout=self.timeout,
             )
             return result.stdout + result.stderr
 
     async def run_shell(self, command: str) -> str:
         result = subprocess.run(
-            command, capture_output=True, text=True,
-            timeout=self.timeout, shell=True,
+            command,
+            capture_output=True,
+            text=True,
+            timeout=self.timeout,
+            shell=True,
         )
         return result.stdout + result.stderr
 

@@ -6,14 +6,18 @@ Graph: planner → architect → coder → reviewer → tester
                                      └──────────────┘ (retry ≤ 3)
 """
 
-from haven.workflows.graph import WorkflowGraph
-from haven.workflows.state import DevWorkflowState
-from haven.workflows.nodes import (
-    PlannerNode, ArchitectNode, CoderNode, ReviewerNode, TesterNode,
-)
-from haven.workflows.edges import test_router
 from haven.workflows.checkpoint import SQLiteCheckpointer
+from haven.workflows.edges import test_router
+from haven.workflows.graph import WorkflowGraph
+from haven.workflows.nodes import (
+    ArchitectNode,
+    CoderNode,
+    PlannerNode,
+    ReviewerNode,
+    TesterNode,
+)
 from haven.workflows.registry import WorkflowRegistry
+from haven.workflows.state import DevWorkflowState
 
 
 def create_dev_workflow() -> WorkflowGraph:
@@ -48,7 +52,9 @@ def create_dev_workflow() -> WorkflowGraph:
 
 
 # Set metadata for WorkflowRegistry
-create_dev_workflow.description = "软件开发工作流。需求分析 → 架构设计 → 编码 → 审查 → 测试。支持失败重试（最多3次）。"
+create_dev_workflow.description = (
+    "软件开发工作流。需求分析 → 架构设计 → 编码 → 审查 → 测试。支持失败重试（最多3次）。"
+)
 create_dev_workflow.use_cases = "代码生成、Bug修复、架构设计、功能开发"
 create_dev_workflow.step_count = 5
 

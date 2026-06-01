@@ -5,11 +5,11 @@
 
 from __future__ import annotations
 
-import logging
 from collections import deque
+import logging
 from typing import Any
 
-from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 
 logger = logging.getLogger("haven.memory")
 
@@ -44,6 +44,7 @@ class AgentMemory:
     def manager(self) -> Any:
         if self._manager is None:
             from haven.memory.manager import MemoryManager
+
             self._manager = MemoryManager(
                 session_id=self._session_id,
                 entity_name=self._entity_name or "user",
@@ -118,7 +119,6 @@ class AgentMemory:
         此方法保留以支持逐条写入的场景。
         """
         try:
-            import asyncio
             if role == "human":
                 self.manager.working.add_message(HumanMessage(content=content))
             elif role == "ai":
@@ -179,7 +179,7 @@ class AgentMemory:
             if not user_msg:
                 return
 
-            snippet = f"用户: {user_msg}\nAI: {ai_msg}" if ai_msg else f"用户: {user_msg}"
+            _snippet = f"用户: {user_msg}\nAI: {ai_msg}" if ai_msg else f"用户: {user_msg}"  # noqa: F841
             await self.manager._extract_facts(user_msg, ai_msg or "")
         except Exception as exc:
             logger.warning("extract_facts failed: %s", exc)

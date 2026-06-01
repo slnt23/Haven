@@ -1,7 +1,15 @@
+from .context import (
+    ContextAssembler,
+    ContextBundle,
+    ContextItem,
+    ContextManager,
+    ContextSource,
+    TokenBudget,
+)
+from .llm import bind_tools, create_llm
 from .memory import AgentMemory
-from .llm import create_llm, bind_tools
-from .state import RuntimeState
 from .prompt import PromptBuilder
+from .state import RuntimeState
 
 __all__ = [
     "AgentMemory",
@@ -9,4 +17,10 @@ __all__ = [
     "bind_tools",
     "RuntimeState",
     "PromptBuilder",
+    "ContextItem",
+    "ContextSource",
+    "ContextBundle",
+    "ContextAssembler",
+    "ContextManager",
+    "TokenBudget",
 ]

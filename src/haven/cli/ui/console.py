@@ -10,12 +10,11 @@ import json as json_mod
 from typing import Any
 
 from rich.console import Console as RichConsole
-from rich.table import Table
+from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.syntax import Syntax
-from rich.markdown import Markdown
+from rich.table import Table
 from rich.tree import Tree
-from rich.text import Text
 
 _console = RichConsole(highlight=False)
 

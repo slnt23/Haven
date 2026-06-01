@@ -5,10 +5,10 @@ SQLite 后端。每轮对话完整保留，支持关键词检索 + 时间衰减 
 
 from __future__ import annotations
 
-import json
-import sqlite3
 from datetime import datetime, timedelta
+import json
 from pathlib import Path
+import sqlite3
 from typing import Any
 from uuid import uuid4
 
@@ -26,6 +26,7 @@ class EpisodicMemory(BaseMemory):
     def __init__(self, db_path: str | Path | None = None):
         if db_path is None:
             from haven.config import settings
+
             db_path = settings.project_root / ".data" / "memory.db"
         db_path = Path(db_path)
         db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -57,21 +58,24 @@ class EpisodicMemory(BaseMemory):
 
     async def store(self, items: list[MemoryItem]) -> None:
         for item in items:
-            self._conn.execute("""
+            self._conn.execute(
+                """
                 INSERT OR REPLACE INTO episodes
                     (id, session_id, turn_number, user_message, assistant_response,
                      summary, importance, metadata_json)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                item.id,
-                item.metadata.get("session_id", "default"),
-                item.metadata.get("turn_number", 0),
-                item.metadata.get("user_message", ""),
-                item.content,
-                item.metadata.get("summary", ""),
-                item.importance,
-                json.dumps(item.metadata, ensure_ascii=False),
-            ))
+            """,
+                (
+                    item.id,
+                    item.metadata.get("session_id", "default"),
+                    item.metadata.get("turn_number", 0),
+                    item.metadata.get("user_message", ""),
+                    item.content,
+                    item.metadata.get("summary", ""),
+                    item.importance,
+                    json.dumps(item.metadata, ensure_ascii=False),
+                ),
+            )
         self._conn.commit()
 
     async def store_turn(
@@ -164,9 +168,14 @@ class EpisodicMemory(BaseMemory):
         for row in rows:
             try:
                 from langchain_core.messages import HumanMessage
-                resp = await llm.ainvoke([HumanMessage(
-                    content=f"用一句话总结这段对话:\n用户:{row['user_message'][:200]}\nAI:{row['assistant_response'][:200]}\n总结:"
-                )])
+
+                resp = await llm.ainvoke(
+                    [
+                        HumanMessage(
+                            content=f"用一句话总结这段对话:\n用户:{row['user_message'][:200]}\nAI:{row['assistant_response'][:200]}\n总结:"
+                        )
+                    ]
+                )
                 summary = (resp.content if hasattr(resp, "content") else str(resp)).strip()
                 self._conn.execute("UPDATE episodes SET summary=? WHERE id=?", (summary, row["id"]))
                 count += 1
@@ -187,9 +196,12 @@ class EpisodicMemory(BaseMemory):
             f"AI: {row['summary'] or row['assistant_response'][:200]}"
         )
         return MemoryItem(
-            id=row["id"], content=content, memory_type="episodic",
+            id=row["id"],
+            content=content,
+            memory_type="episodic",
             created_at=datetime.fromisoformat(row["created_at"]),
-            importance=row["importance"], metadata=meta,
+            importance=row["importance"],
+            metadata=meta,
         )
 
 

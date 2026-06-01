@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
-from typing import Any
+from typing import Any, AsyncIterator
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -30,9 +30,7 @@ class PlanStep(BaseModel):
     """执行计划中的单步。"""
 
     order: int = Field(description="步骤序号，从 1 开始")
-    description: str = Field(
-        description="这一步要完成什么，自然语言描述"
-    )
+    description: str = Field(description="这一步要完成什么，自然语言描述")
     skill: str | None = Field(
         default=None, description="此步骤需要的 skill 名。null = 使用默认人格"
     )
@@ -40,9 +38,7 @@ class PlanStep(BaseModel):
         default_factory=list,
         description="依赖的步骤序号列表。空列表 = 可立即执行",
     )
-    expected_output: str = Field(
-        default="", description="预期产出描述"
-    )
+    expected_output: str = Field(default="", description="预期产出描述")
 
 
 class ExecutionPlan(BaseModel):
@@ -51,7 +47,7 @@ class ExecutionPlan(BaseModel):
     goal: str = Field(description="用户目标的简洁概括，一句话")
     intent: str = Field(
         description="意图分类标签。从 skill tags 中动态获取："
-                    "development, medical, technical, chat, data, devops, writing"
+        "development, medical, technical, chat, data, devops, writing"
     )
     complexity: str = Field(
         default="simple",
@@ -69,9 +65,7 @@ class ExecutionPlan(BaseModel):
         default_factory=list,
         description="执行步骤。单步任务 = 1 个元素；简单对话 = 空列表",
     )
-    reasoning: str = Field(
-        default="", description="规划理由，用于日志和调试"
-    )
+    reasoning: str = Field(default="", description="规划理由，用于日志和调试")
 
 
 # ============================================================================
@@ -193,7 +187,11 @@ class PlannerAgent:
 
         logger.info(
             "Plan: intent=%s complexity=%s skills=%s workflow=%s steps=%d",
-            plan.intent, plan.complexity, plan.skills, plan.workflow, len(plan.steps),
+            plan.intent,
+            plan.complexity,
+            plan.skills,
+            plan.workflow,
+            len(plan.steps),
         )
         return plan
 
@@ -215,13 +213,82 @@ class PlannerAgent:
             use_memory=True,
         )
 
+    async def execute_stream(self, task: str) -> AsyncIterator[str]:
+        """流式规划+执行。规划非流式，执行阶段逐 token 输出。
+
+        三路径流式支持：
+          - 简单对话 → Runtime.astream() 直通
+          - 多步任务 → 每步 Runtime.astream()
+          - 工作流 → 首节点 Runtime.astream()
+        """
+        plan = await self.plan(task)
+
+        # 路径 1: 工作流（非流式 DAG 执行，yield 最终结果）
+        if plan.workflow and self._workflow_registry:
+            try:
+                result = await self._execute_via_workflow(plan, task)
+                yield result
+            except Exception as exc:
+                yield f"[错误] 工作流执行失败: {exc}"
+            return
+
+        # 路径 2: 多步编排
+        if plan.steps:
+            ordered = self._topological_sort(plan.steps)
+            step_outputs: dict[int, str] = {}
+            for step in ordered:
+                skill_objs = self._load_skills([step.skill] if step.skill else [])
+                prev_results: dict[str, str] = {}
+                for dep in step.depends_on:
+                    if dep in step_outputs:
+                        prev_results[f"step_{dep}"] = step_outputs[dep]
+
+                step_task = f"原始任务: {task}\n当前步骤: {step.description}"
+                if step.expected_output:
+                    step_task += f"\n预期产出: {step.expected_output}"
+
+                # 最后一步流式输出，前面的步骤非流式
+                if step.order == ordered[-1].order:
+                    collected: list[str] = []
+                    async for chunk in self.runtime.astream(
+                        step_task,
+                        active_skills=skill_objs,
+                        use_memory=True,
+                        tool_results=prev_results or None,
+                    ):
+                        collected.append(chunk)
+                        yield chunk
+                    step_outputs[step.order] = "".join(collected)
+                else:
+                    result = await self.runtime.run(
+                        step_task,
+                        active_skills=skill_objs,
+                        use_memory=True,
+                        tool_results=prev_results or None,
+                    )
+                    step_outputs[step.order] = result
+            return
+
+        # 路径 3: 简单对话 → 流式直通
+        async for chunk in self.runtime.astream(task, use_memory=True):
+            yield chunk
+
     # ==================================================================
     # 快速路径
     # ==================================================================
 
     _TRIVIAL: set[str] = {
-        "你好", "hi", "hello", "谢谢", "thanks", "再见", "bye", "拜拜",
-        "在吗", "你是谁", "你能做什么",
+        "你好",
+        "hi",
+        "hello",
+        "谢谢",
+        "thanks",
+        "再见",
+        "bye",
+        "拜拜",
+        "在吗",
+        "你是谁",
+        "你能做什么",
     }
 
     @classmethod
@@ -252,10 +319,12 @@ class PlannerAgent:
         structured_llm = self.llm.with_structured_output(ExecutionPlan)
 
         try:
-            plan: ExecutionPlan = await structured_llm.ainvoke([
-                SystemMessage(content=system),
-                HumanMessage(content=f"User request: {task}"),
-            ])
+            plan: ExecutionPlan = await structured_llm.ainvoke(
+                [
+                    SystemMessage(content=system),
+                    HumanMessage(content=f"User request: {task}"),
+                ]
+            )
         except Exception as exc:
             logger.warning("LLM planning failed: %s, falling back to chat", exc)
             return ExecutionPlan(
@@ -339,7 +408,7 @@ class PlannerAgent:
 
         if result_state.status == "failed":
             logger.warning("工作流 '%s' 失败: %s", wf_name, result_state.errors)
-            return f"[工作流失败]\n" + "\n".join(result_state.errors)
+            return "[工作流失败]\n" + "\n".join(result_state.errors)
 
         logger.info("工作流 '%s' 完成", wf_name)
         return result_state.final_output or "(工作流完成，无输出)"
@@ -348,15 +417,19 @@ class PlannerAgent:
         """按工作流类型构建对应的 WorkflowState 子类实例。"""
         if "dev" in wf_name:
             from haven.workflows.state import DevWorkflowState
+
             return DevWorkflowState(task=task, session_id=self.runtime.state.session_id)
         elif "research" in wf_name:
             from haven.workflows.state import ResearchWorkflowState
+
             return ResearchWorkflowState(task=task, session_id=self.runtime.state.session_id)
         elif "diagnosis" in wf_name:
             from haven.workflows.state import DiagnosisWorkflowState
+
             return DiagnosisWorkflowState(task=task, session_id=self.runtime.state.session_id)
         else:
             from haven.workflows.state import WorkflowState
+
             return WorkflowState(task=task, session_id=self.runtime.state.session_id)
 
     # ==================================================================
@@ -369,27 +442,25 @@ class PlannerAgent:
         final = ""
 
         for step in ordered:
-            skill_objs = self._load_skills(
-                [step.skill] if step.skill else []
-            )
+            skill_objs = self._load_skills([step.skill] if step.skill else [])
 
-            # 构建带有上下文的 prompt
-            prompt_parts = [f"原始任务: {task}"]
+            # 前置步骤输出 → ContextManager 作为 tool_results 注入
+            prev_results: dict[str, str] = {}
             for dep in step.depends_on:
                 if dep in step_outputs:
-                    prompt_parts.append(
-                        f"前置步骤 {dep} 的输出:\n{step_outputs[dep][:500]}"
-                    )
-            prompt_parts.append(f"当前步骤: {step.description}")
-            if step.expected_output:
-                prompt_parts.append(f"预期产出: {step.expected_output}")
+                    prev_results[f"step_{dep}"] = step_outputs[dep]
 
-            step_prompt = "\n".join(prompt_parts)
+            # 任务 prompt（不含前置输出，前置输出通过 ContextManager 注入 system prompt）
+            step_task_parts = [f"原始任务: {task}", f"当前步骤: {step.description}"]
+            if step.expected_output:
+                step_task_parts.append(f"预期产出: {step.expected_output}")
+            step_task = "\n".join(step_task_parts)
 
             result = await self.runtime.run(
-                step_prompt,
+                step_task,
                 active_skills=skill_objs,
                 use_memory=True,
+                tool_results=prev_results or None,
             )
             step_outputs[step.order] = result
             final = result

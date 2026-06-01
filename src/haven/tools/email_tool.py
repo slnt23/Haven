@@ -1,8 +1,9 @@
-import smtplib
-from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+import smtplib
 
 from haven.config import settings
+
 
 class EmailSenderTool:
     def __init__(self):

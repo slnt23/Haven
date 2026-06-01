@@ -2,20 +2,28 @@
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
+import sys
 from typing import Annotated
 
 import typer
 
 from haven.cli.ui.console import (
-    get_console, render_status, render_error, render_info,
-    render_success, render_panel, render_json, blank,
+    blank,
+    render_error,
+    render_json,
+    render_panel,
+    render_status,
+    render_success,
 )
 
 _CHECKS = [
-    "python_version", "dependencies", "config_valid",
-    "skills_dir", "db_accessible", "disk_space",
+    "python_version",
+    "dependencies",
+    "config_valid",
+    "skills_dir",
+    "db_accessible",
+    "disk_space",
 ]
 
 
@@ -73,6 +81,7 @@ def _check_dependencies() -> tuple[bool, str]:
 def _check_config_valid() -> tuple[bool, str]:
     try:
         from haven.config import settings
+
         _ = settings.agent_max_iterations
         return True, "app.yaml loaded"
     except Exception as exc:
@@ -90,6 +99,7 @@ def _check_skills_dir() -> tuple[bool, str]:
 def _check_db_accessible() -> tuple[bool, str]:
     try:
         from haven.config import settings
+
         db = settings.project_root / ".data" / "memory.db"
         if db.parent.exists():
             return True, ".data/ accessible"
@@ -102,6 +112,7 @@ def _check_db_accessible() -> tuple[bool, str]:
 def _check_disk_space() -> tuple[bool, str]:
     try:
         import shutil
+
         usage = shutil.disk_usage(Path.cwd())
         gb = usage.free / (1024**3)
         if gb < 0.1:

@@ -2,16 +2,13 @@
 
 from __future__ import annotations
 
-import asyncio
-import sys
 from contextlib import asynccontextmanager
-from typing import AsyncIterator
+import sys
 
 from rich.console import Console
 from rich.live import Live
 from rich.spinner import Spinner
 from rich.text import Text
-
 
 _console = Console(highlight=False)
 
@@ -73,10 +70,10 @@ class NodeWatcher:
     """
 
     _STATUS_ICONS = {
-        "pending":  "[dim]○[/]",
-        "running":  "[cyan]◉[/]",
-        "done":     "[green]●[/]",
-        "failed":   "[red]✕[/]",
+        "pending": "[dim]○[/]",
+        "running": "[cyan]◉[/]",
+        "done": "[green]●[/]",
+        "failed": "[red]✕[/]",
         "retrying": "[yellow]↻[/]",
     }
 

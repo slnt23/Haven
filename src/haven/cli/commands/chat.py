@@ -11,13 +11,17 @@ from typing import Annotated
 
 import typer
 
-from haven.cli.ui.console import (
-    get_console, render_markdown, render_error, render_info,
-    render_success, dim, blank, rule,
-)
-from haven.cli.ui.banner import print_banner
-from haven.cli.ui.progress import spinner, StreamRenderer
 from haven.cli.services.cli_service import CLIContext, HistoryManager
+from haven.cli.ui.banner import print_banner
+from haven.cli.ui.console import (
+    blank,
+    render_error,
+    render_info,
+    render_markdown,
+    render_success,
+    rule,
+)
+from haven.cli.ui.progress import spinner
 
 logger = logging.getLogger("haven.cli.chat")
 
@@ -62,7 +66,7 @@ def run_chat(
     while True:
         try:
             user_input = typer.prompt(">", prompt_suffix=" ", show_default=False)
-        except (KeyboardInterrupt, EOFError):
+        except KeyboardInterrupt, EOFError:
             rule()
             asyncio.run(_stop_service(cli_ctx))
             render_info("再见。")
@@ -102,7 +106,7 @@ async def _start_service(cli_ctx: CLIContext, model: str | None) -> None:
         )
     except Exception as exc:
         render_error(f"启动 Runtime 失败: {exc}")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from exc
 
     cli_ctx._service = svc
     cli_ctx.planner = svc.get_planner()
@@ -168,6 +172,7 @@ def _handle_slash(text: str, cli_ctx: CLIContext) -> bool:
     if cmd == "/skills":
         try:
             from haven.skills.registry import SkillRegistry
+
             all_s = SkillRegistry.list_all()
             if not all_s:
                 render_info("(未加载 skill)")
@@ -191,11 +196,15 @@ def _handle_slash(text: str, cli_ctx: CLIContext) -> bool:
             tm = getattr(rt, "_tool_manager", None)
             if tm:
                 tools = tm.list_all()
-                lines = [f"已加载 {len(tools)} 个工具 (来自 {len(tm.list_providers())} 个 provider):"]
+                lines = [
+                    f"已加载 {len(tools)} 个工具 (来自 {len(tm.list_providers())} 个 provider):"
+                ]
                 for t in sorted(tools, key=lambda x: x.name):
                     provider = tm._tool_to_provider.get(t.name, "?")
                     desc = getattr(t, "description", "") or ""
-                    lines.append(f"  {t.name} [{provider}] — {desc}" if desc else f"  {t.name} [{provider}]")
+                    lines.append(
+                        f"  {t.name} [{provider}] — {desc}" if desc else f"  {t.name} [{provider}]"
+                    )
                 render_info("\n".join(lines))
             else:
                 tools = getattr(rt, "_tools", {})
@@ -242,6 +251,7 @@ def _handle_slash(text: str, cli_ctx: CLIContext) -> bool:
     if cmd == "/workflows":
         try:
             from haven.workflows.registry import WorkflowRegistry
+
             ctx_wf = WorkflowRegistry.get_selection_context()
             if "(无可用" in ctx_wf:
                 render_info("(未注册工作流)")
@@ -272,6 +282,7 @@ def _handle_slash(text: str, cli_ctx: CLIContext) -> bool:
     if cmd == "/models":
         try:
             from haven.config import load_models_config
+
             models = load_models_config()
             lines = ["可用模型:"]
             for name in sorted(models.keys()):

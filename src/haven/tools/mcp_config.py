@@ -6,7 +6,6 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
-
 # 标准 MCP "type" → 内部 transport 映射
 _TYPE_MAP: dict[str, str] = {
     "stdio": "stdio",
@@ -48,12 +47,12 @@ class MCPServerConfig(BaseModel):
         ``"sse"`` / ``"streamableHttp"``::
 
             {
-              "type": "stdio",
-              "command": "npx",
-              "args": ["-y", "package"],
-              "env": {"KEY": "value"},
-              "enabled": true,
-              "description": "..."
+                "type": "stdio",
+                "command": "npx",
+                "args": ["-y", "package"],
+                "env": {"KEY": "value"},
+                "enabled": true,
+                "description": "...",
             }
         """
         raw_type = entry.get("type", "stdio")
@@ -94,6 +93,7 @@ def load_mcp_servers(path: str | Path | None = None) -> list[dict[str, Any]]:
     """
     if path is None:
         from haven.config import find_user_path
+
         path = find_user_path("mcp/mcp.json")
 
     config_file = Path(path)

@@ -19,7 +19,7 @@ class MemoryItem:
 
     id: str
     content: str
-    memory_type: str = ""                   # working | episodic | semantic | vector
+    memory_type: str = ""  # working | episodic | semantic | vector
     created_at: datetime = field(default_factory=datetime.now)
     importance: float = 0.5
     access_count: int = 0

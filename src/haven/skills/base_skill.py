@@ -19,11 +19,11 @@ class BaseSkill:
     """
 
     name: str
-    description: str = ""                       # LLM 选 skill 的核心依据
-    prompt: str = ""                            # 正文（注入 system prompt）
-    tags: list[str] = field(default_factory=list)            # 分类标签
-    tools: list[str] = field(default_factory=list)            # 需要的工具名列表
-    dependencies: list[str] = field(default_factory=list)     # 依赖的其他 skill 名
+    description: str = ""  # LLM 选 skill 的核心依据
+    prompt: str = ""  # 正文（注入 system prompt）
+    tags: list[str] = field(default_factory=list)  # 分类标签
+    tools: list[str] = field(default_factory=list)  # 需要的工具名列表
+    dependencies: list[str] = field(default_factory=list)  # 依赖的其他 skill 名
     version: str = "1.0"
     default: bool = False
     category: str = ""

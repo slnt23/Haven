@@ -6,12 +6,12 @@ Graph: searcher → analyst ─┬→ synthesizer → END
                    └────────┘ (retry ≤ 3)
 """
 
-from haven.workflows.graph import WorkflowGraph
-from haven.workflows.state import ResearchWorkflowState
-from haven.workflows.nodes import SearcherNode, AnalystNode, SynthesizerNode
-from haven.workflows.edges import research_quality_router
 from haven.workflows.checkpoint import SQLiteCheckpointer
+from haven.workflows.edges import research_quality_router
+from haven.workflows.graph import WorkflowGraph
+from haven.workflows.nodes import AnalystNode, SearcherNode, SynthesizerNode
 from haven.workflows.registry import WorkflowRegistry
+from haven.workflows.state import ResearchWorkflowState
 
 
 def create_research_workflow() -> WorkflowGraph:
@@ -39,7 +39,9 @@ def create_research_workflow() -> WorkflowGraph:
     return graph
 
 
-create_research_workflow.description = "调研工作流。信息搜集 → 分析 → 报告生成。存在知识缺口时自动补充搜索。"
+create_research_workflow.description = (
+    "调研工作流。信息搜集 → 分析 → 报告生成。存在知识缺口时自动补充搜索。"
+)
 create_research_workflow.use_cases = "技术调研、竞品分析、文献综述、市场研究"
 create_research_workflow.step_count = 3
 

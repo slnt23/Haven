@@ -1,7 +1,8 @@
 import os
 from pathlib import Path
 from typing import Any
-from omegaconf import OmegaConf, DictConfig, ListConfig
+
+from omegaconf import DictConfig, ListConfig, OmegaConf
 
 from haven.config.settings import _find_user_config
 

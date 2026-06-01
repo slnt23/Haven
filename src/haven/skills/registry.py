@@ -9,7 +9,6 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
 
 from haven.core.registry import Registry
 from haven.skills.base_skill import BaseSkill
@@ -46,10 +45,7 @@ class SkillRegistry(Registry):
     def get(cls, name: str) -> BaseSkill:
         """按名称获取 skill。不存在时抛出 KeyError。"""
         if name not in cls._items:
-            raise KeyError(
-                f"{cls._label} '{name}' not found. "
-                f"Available: {list(cls._items.keys())}"
-            )
+            raise KeyError(f"{cls._label} '{name}' not found. Available: {list(cls._items.keys())}")
         return cls._items[name]
 
     @classmethod
@@ -65,9 +61,7 @@ class SkillRegistry(Registry):
     def get_defaults(cls) -> dict[str, BaseSkill]:
         """返回所有 ``default=True`` 的人格 skill。"""
         return {
-            name: skill
-            for name, skill in cls._items.items()
-            if getattr(skill, "default", False)
+            name: skill for name, skill in cls._items.items() if getattr(skill, "default", False)
         }
 
     @classmethod
@@ -83,9 +77,7 @@ class SkillRegistry(Registry):
     def get_by_tag(cls, tag: str) -> dict[str, BaseSkill]:
         """按标签过滤。"""
         return {
-            name: skill
-            for name, skill in cls._items.items()
-            if tag in getattr(skill, "tags", [])
+            name: skill for name, skill in cls._items.items() if tag in getattr(skill, "tags", [])
         }
 
     @classmethod
@@ -134,7 +126,8 @@ class SkillRegistry(Registry):
             if skill is None:
                 logger.warning(
                     "依赖 skill 未注册: %s (被 %s 依赖)",
-                    name, chain[-1] if chain else "?",
+                    name,
+                    chain[-1] if chain else "?",
                 )
                 return
             for dep in getattr(skill, "dependencies", []):

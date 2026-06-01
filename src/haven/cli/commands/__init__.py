@@ -11,6 +11,6 @@
   2. 在 main.py 中注册
 """
 
-from haven.cli.commands import chat, run, doctor, workflow, skill
+from haven.cli.commands import chat, doctor, run, skill, workflow
 
 __all__ = ["chat", "run", "doctor", "workflow", "skill"]

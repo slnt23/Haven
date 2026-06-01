@@ -6,9 +6,8 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
-from typing import Any
 
 from haven.tools.base import HavenTool
 
@@ -85,17 +84,15 @@ class ToolProvider(ABC):
     # ==================================================================
 
     @abstractmethod
-    async def discover(self) -> list[HavenTool]:
-        ...
+    async def discover(self) -> list[HavenTool]: ...
 
     @abstractmethod
-    async def health_check(self) -> bool:
-        ...
+    async def health_check(self) -> bool: ...
 
-    async def _on_start(self) -> None:
+    async def _on_start(self) -> None:  # noqa: B027
         pass
 
-    async def _on_stop(self) -> None:
+    async def _on_stop(self) -> None:  # noqa: B027
         pass
 
     # ==================================================================
@@ -112,7 +109,9 @@ class ToolProvider(ABC):
     def list_tools(self) -> list[HavenTool]:
         return list(self._tools.values())
 
-    def filter_tools(self, *, category: str | None = None, tag: str | None = None) -> list[HavenTool]:
+    def filter_tools(
+        self, *, category: str | None = None, tag: str | None = None
+    ) -> list[HavenTool]:
         result = self.list_tools()
         if category:
             result = [t for t in result if t.metadata.category.value == category]

@@ -13,7 +13,7 @@ from typing import Any
 
 from langchain_core.tools import BaseTool as LCBaseTool
 
-from haven.tools.base import HavenTool, ToolMetadata, ToolCategory, ToolPermission
+from haven.tools.base import HavenTool, ToolCategory, ToolMetadata, ToolPermission
 from haven.tools.providers.base import ToolProvider
 
 logger = logging.getLogger("haven.tools.mcp")
@@ -31,10 +31,13 @@ class MCPProvider(ToolProvider):
         self._config = server_config
         self._session: Any = None
         self._exit_stack: Any = None
-        self.info.description = getattr(server_config, "description", "") or f"MCP: {server_config.name}"
+        self.info.description = (
+            getattr(server_config, "description", "") or f"MCP: {server_config.name}"
+        )
 
     async def _on_start(self) -> None:
         from contextlib import AsyncExitStack
+
         self._exit_stack = AsyncExitStack()
 
     async def _on_stop(self) -> None:
@@ -70,14 +73,16 @@ class MCPProvider(ToolProvider):
             return []
 
     async def _load_stdio(self) -> list[LCBaseTool]:
+        from langchain_mcp_adapters.tools import load_mcp_tools
         from mcp import ClientSession, StdioServerParameters
         from mcp.client.stdio import stdio_client
-        from langchain_mcp_adapters.tools import load_mcp_tools
 
         params = StdioServerParameters(
             command=self._config.command,
             args=getattr(self._config, "args", []),
-            env=self._resolve_env(getattr(self._config, "env", {})) if getattr(self._config, "env", None) else None,
+            env=self._resolve_env(getattr(self._config, "env", {}))
+            if getattr(self._config, "env", None)
+            else None,
         )
         transport = await self._exit_stack.enter_async_context(stdio_client(params))
         read, write = transport
@@ -87,12 +92,18 @@ class MCPProvider(ToolProvider):
         return await load_mcp_tools(session)
 
     async def _load_http(self) -> list[LCBaseTool]:
+        from langchain_mcp_adapters.tools import load_mcp_tools
         from mcp import ClientSession
         from mcp.client.sse import sse_client
-        from langchain_mcp_adapters.tools import load_mcp_tools
 
-        headers = self._resolve_env(getattr(self._config, "headers", {})) if getattr(self._config, "headers", None) else {}
-        transport = await self._exit_stack.enter_async_context(sse_client(self._config.url, headers=headers))
+        headers = (
+            self._resolve_env(getattr(self._config, "headers", {}))
+            if getattr(self._config, "headers", None)
+            else {}
+        )
+        transport = await self._exit_stack.enter_async_context(
+            sse_client(self._config.url, headers=headers)
+        )
         read, write = transport
         session = await self._exit_stack.enter_async_context(ClientSession(read, write))
         await session.initialize()
@@ -100,9 +111,9 @@ class MCPProvider(ToolProvider):
         return await load_mcp_tools(session)
 
     async def _load_websocket(self) -> list[LCBaseTool]:
+        from langchain_mcp_adapters.tools import load_mcp_tools
         from mcp import ClientSession
         from mcp.client.websocket import websocket_client
-        from langchain_mcp_adapters.tools import load_mcp_tools
 
         transport = await self._exit_stack.enter_async_context(websocket_client(self._config.url))
         read, write = transport
@@ -128,7 +139,10 @@ class MCPProvider(ToolProvider):
                 category=category,
                 permissions=self._infer_permissions(original, desc),
                 requires_confirmation=(category == ToolCategory.FILE),
-                tags=[f"mcp:{self.info.name}", f"transport:{getattr(self._config, 'transport', 'stdio')}"],
+                tags=[
+                    f"mcp:{self.info.name}",
+                    f"transport:{getattr(self._config, 'transport', 'stdio')}",
+                ],
             ),
             _raw=raw,
         )

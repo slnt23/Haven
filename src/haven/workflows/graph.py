@@ -4,6 +4,7 @@ LangGraph 风格的最小实现:
   - add_node() / add_edge() / add_conditional_edge()
   - run(state, runtime) → state
   - Checkpointer 集成
+  - V3: 执行追踪通过 state.execution (ExecutionState) 读写
 
 用法::
 
@@ -21,12 +22,11 @@ LangGraph 风格的最小实现:
 from __future__ import annotations
 
 import logging
-import time
 from typing import Any
 
-from haven.workflows.state import WorkflowState
-from haven.workflows.edges import Edge, ConditionalEdge
 from haven.workflows.checkpoint import Checkpointer
+from haven.workflows.edges import ConditionalEdge, Edge
+from haven.workflows.state import WorkflowState
 
 logger = logging.getLogger("haven.workflow.graph")
 
@@ -50,6 +50,7 @@ class WorkflowGraph:
         self._entry_point: str = ""
         self._checkpointer: Checkpointer | None = None
         self._max_iterations: int = 20
+        self._exec_ctx: Any = None
 
     # ==================================================================
     # 图构建 API
@@ -61,15 +62,15 @@ class WorkflowGraph:
 
     def add_edge(self, source: str, target: str) -> "WorkflowGraph":
         if source in self._edges:
-            raise ValueError(
-                f"节点 '{source}' 已有一条出边。"
-                f"使用 add_conditional_edge 代替。"
-            )
+            raise ValueError(f"节点 '{source}' 已有一条出边。使用 add_conditional_edge 代替。")
         self._edges[source] = Edge(source, target)
         return self
 
     def add_conditional_edge(
-        self, source: str, router, route_map: dict[str, str] | None = None,
+        self,
+        source: str,
+        router,
+        route_map: dict[str, str] | None = None,
     ) -> "WorkflowGraph":
         if source in self._edges:
             raise ValueError(f"节点 '{source}' 已有一条出边。")
@@ -86,6 +87,17 @@ class WorkflowGraph:
         self._checkpointer = cp
         return self
 
+    def set_context(self, ctx: Any) -> "WorkflowGraph":
+        """注入 ExecutionContext 以支持外部取消。"""
+        self._exec_ctx = ctx
+        return self
+
+    @property
+    def cancelled(self) -> bool:
+        if self._exec_ctx is None:
+            return False
+        return self._exec_ctx.cancelled
+
     # ==================================================================
     # 执行
     # ==================================================================
@@ -99,6 +111,8 @@ class WorkflowGraph:
     ) -> WorkflowState:
         """执行工作流图。
 
+        V3: 所有执行追踪通过 state.execution (ExecutionState) 读写。
+
         Args:
             state: 初始状态（或从 checkpoint 恢复的状态）。
             runtime: AgentRuntime 实例。每个 node 通过 state._runtime 访问。
@@ -107,41 +121,58 @@ class WorkflowGraph:
         Returns:
             执行完成后的最终状态。
         """
+        es = state.execution
+
         # 恢复 checkpoint
         if resume_from and self._checkpointer:
             saved = await self._checkpointer.load(resume_from)
             if saved:
-                state = saved
-                logger.info("从 checkpoint 恢复: %s → %s", resume_from, getattr(state, "current_node", "?"))
+                # 从 ExecutionState 快照恢复执行位置
+                if saved.get("execution") is not None:
+                    state.execution = saved["execution"]
+                    es = state.execution
+                    logger.info("从 checkpoint 恢复: %s → %s", resume_from, es.current_step)
 
         # 注入运行时
         if runtime is not None:
             state._runtime = runtime
+            es._runtime = runtime
+            # 传递取消上下文
+            if self._exec_ctx is not None and hasattr(runtime, "set_context"):
+                runtime.set_context(self._exec_ctx)
 
-        state.status = "running"
-        state.started_at = time.time()
+        # 启动执行追踪（若未恢复则新建计时）
+        if es.status != "paused":
+            es.start()
 
-        current = resume_from or self._entry_point
+        current = (
+            es.current_step if es.current_step and resume_from else resume_from or self._entry_point
+        )
         iteration = 0
 
         while iteration < self._max_iterations:
             iteration += 1
 
+            # 取消检查
+            if self.cancelled:
+                logger.info("Workflow cancelled at node '%s'", current)
+                es.status = "cancelled"
+                es._touch()
+                break
+
             # 终止
             if current == self.END:
-                state.status = "completed"
-                state.final_output = self._final_output(state)
+                es.finish(self._final_output(state))
                 break
 
             # 查找节点
             node = self._nodes.get(current)
             if node is None:
-                state.errors.append(f"节点 '{current}' 未注册")
-                state.status = "failed"
+                es.fail(f"节点 '{current}' 未注册")
                 break
 
             # 执行节点
-            state.current_node = current
+            es.current_step = current
             logger.info("Workflow[%d]: %s", iteration, current)
 
             try:
@@ -149,28 +180,27 @@ class WorkflowGraph:
             except Exception as exc:
                 logger.error("节点 '%s' 异常: %s", current, exc)
                 updates = {
-                    "errors": [*state.errors, f"[{current}] {exc}"],
+                    "errors": [f"[{current}] {exc}"],
                     "status": "failed",
                 }
 
             self._apply_updates(state, updates)
 
-            if state.status == "failed":
+            if es.status == "failed":
                 break
 
             # 更新重试计数
-            prev = state.node_retry_counts.get(current, 0)
-            state.node_retry_counts[current] = prev + 1
+            prev = es.node_retry_counts.get(current, 0)
+            es.node_retry_counts[current] = prev + 1
 
-            # Checkpoint
+            # Checkpoint — 从 ExecutionState 持久化
             if self._checkpointer:
                 await self._checkpointer.save(state.session_id, current, state)
 
             # 确定下一个节点
             edge = self._edges.get(current)
             if edge is None:
-                state.status = "completed"
-                state.final_output = self._final_output(state)
+                es.finish(self._final_output(state))
                 break
             elif isinstance(edge, ConditionalEdge):
                 next_node = await edge.resolve(state)
@@ -179,21 +209,18 @@ class WorkflowGraph:
 
             # RETRY
             if next_node == ConditionalEdge.RETRY:
-                retries = state.node_retry_counts.get(current, 0)
-                if retries < state.max_retries_per_node:
+                retries = es.node_retry_counts.get(current, 0)
+                if retries < es.max_retries:
                     next_node = current
-                    logger.info("重试节点 '%s' (%d/%d)", current, retries + 1, state.max_retries_per_node)
+                    logger.info("重试节点 '%s' (%d/%d)", current, retries + 1, es.max_retries)
                 else:
-                    state.status = "failed"
-                    state.errors.append(
-                        f"节点 '{current}' 超过最大重试次数 {state.max_retries_per_node}"
-                    )
+                    es.fail(f"节点 '{current}' 超过最大重试次数 {es.max_retries}")
                     break
 
             current = next_node
 
         # 最终 checkpoint
-        if self._checkpointer and state.status in ("completed", "failed"):
+        if self._checkpointer and es.is_terminal:
             await self._checkpointer.save(state.session_id, self.END, state)
 
         return state
@@ -202,9 +229,29 @@ class WorkflowGraph:
     # 内部
     # ==================================================================
 
-    @staticmethod
-    def _apply_updates(state: WorkflowState, updates: dict) -> None:
+    # 需要同步到 ExecutionState 的键
+    _EXECUTION_KEYS: dict[str, str] = {
+        "current_node": "current_step",
+        "node_outputs": "step_outputs",
+        "node_retry_counts": "node_retry_counts",
+        "status": "status",
+        "errors": "errors",
+        "final_output": "final_output",
+    }
+
+    @classmethod
+    def _apply_updates(cls, state: WorkflowState, updates: dict) -> None:
+        """将节点返回的 updates 合并到 state 和 state.execution。
+
+        执行类字段（current_node / node_outputs / status / errors）
+        同时写入 state.execution.*（权威）和 state.*（向后兼容）。
+
+        领域字段（architecture_doc 等）仅写入 state.*。
+        """
+        es = state.execution
+
         for key, value in updates.items():
+            # 写入 state（保持向后兼容）
             if hasattr(state, key):
                 current_val = getattr(state, key)
                 if isinstance(current_val, dict) and isinstance(value, dict):
@@ -214,11 +261,23 @@ class WorkflowGraph:
                 else:
                     setattr(state, key, value)
 
+            # 同步到 ExecutionState
+            if key in cls._EXECUTION_KEYS:
+                es_key = cls._EXECUTION_KEYS[key]
+                es_val = getattr(es, es_key, None)
+                if isinstance(es_val, dict) and isinstance(value, dict):
+                    es_val.update(value)
+                elif isinstance(es_val, list) and isinstance(value, list):
+                    es_val.extend(value)
+                else:
+                    setattr(es, es_key, value)
+
     @staticmethod
     def _final_output(state: WorkflowState) -> str:
-        if state.status == "failed":
-            return "\n".join(state.errors)
-        outputs = state.node_outputs
+        es = state.execution
+        if es.status == "failed":
+            return "\n".join(es.errors)
+        outputs = es.step_outputs
         if outputs:
             keys = list(outputs.keys())
             return outputs[keys[-1]]

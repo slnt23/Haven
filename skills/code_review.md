@@ -1,14 +1,12 @@
 ---
 name: code_review
 description: 审查代码中的 bug、安全漏洞和最佳实践违规
-category: development
-trigger_keywords:
+tags:
+  - development
   - review
-  - code review
-  - 审查
-  - 代码审查
-  - check code
-  - cr
+tools: []
+dependencies: []
+version: "2.0"
 ---
 
 ## 角色：高级代码审查员

@@ -5,9 +5,9 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from haven.config import settings, find_user_path
-from haven.runtime.runtime import AgentRuntime
+from haven.config import find_user_path, settings
 from haven.runtime.planner import PlannerAgent
+from haven.runtime.runtime import AgentRuntime
 from haven.skills.loader import SkillLoader
 from haven.skills.registry import SkillRegistry
 
@@ -67,6 +67,7 @@ async def create_agent(
 # Skill 加载
 # ==================================================================
 
+
 def _load_all_skills(runtime: AgentRuntime) -> None:
     if _SYSTEM_PERSONA.is_file():
         persona = SkillLoader.load_single(_SYSTEM_PERSONA)
@@ -83,6 +84,7 @@ def _load_all_skills(runtime: AgentRuntime) -> None:
 # ToolManager + Provider 初始化
 # ==================================================================
 
+
 async def _init_tools(runtime: AgentRuntime, load_mcp: bool) -> None:
     from haven.tools.manager import ToolManager
     from haven.tools.providers.builtin import BuiltinProvider
@@ -97,6 +99,7 @@ async def _init_tools(runtime: AgentRuntime, load_mcp: bool) -> None:
         mcp_configs = _load_mcp_configs()
         if mcp_configs:
             from haven.tools.providers.mcp import MCPProvider
+
             for cfg in mcp_configs:
                 tm.add_provider(MCPProvider(cfg))
 
@@ -107,8 +110,16 @@ async def _init_tools(runtime: AgentRuntime, load_mcp: bool) -> None:
     for tool in tm.list_all():
         runtime.register_tool(tool)
 
+    # ToolResolver — 动态解析层（Skill → Resolver → Manager → Provider）
+    from haven.tools.resolver import ToolResolver
+
+    runtime._tool_resolver = ToolResolver(tm)
+    logger.info("ToolResolver: initialized with %d tools", len(tm.list_all()))
+
     runtime.bind_tools_to_llm()
-    logger.info("ToolManager: %d tools from %d provider(s)", len(tm.list_all()), len(tm.list_providers()))
+    logger.info(
+        "ToolManager: %d tools from %d provider(s)", len(tm.list_all()), len(tm.list_providers())
+    )
 
 
 def _load_mcp_configs() -> list:

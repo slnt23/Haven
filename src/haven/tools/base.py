@@ -9,7 +9,6 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Any
 
 from langchain_core.tools import BaseTool as LCBaseTool
 from pydantic import BaseModel, Field
@@ -40,7 +39,7 @@ class ToolMetadata(BaseModel):
     permissions: list[ToolPermission] = Field(default_factory=list)
     requires_confirmation: bool = False
     rate_limit_per_minute: int = 0
-    cost_estimate: str = ""                     # low / medium / high
+    cost_estimate: str = ""  # low / medium / high
     timeout_seconds: int = 30
     tags: list[str] = Field(default_factory=list)
     version: str = "1.0"

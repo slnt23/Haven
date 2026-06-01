@@ -7,7 +7,13 @@ from typing import Annotated
 import typer
 
 from haven.cli.ui.console import (
-    render_table, render_json, render_error, render_info, dim, blank, render_kv,
+    blank,
+    dim,
+    render_error,
+    render_info,
+    render_json,
+    render_kv,
+    render_table,
 )
 
 tool_app = typer.Typer(help="工具查询")
@@ -16,6 +22,7 @@ tool_app = typer.Typer(help="工具查询")
 def _get_tool_manager():
     """获取 ToolManager（Standalone: 仅加载 BuiltinProvider）。"""
     import asyncio
+
     from haven.tools.manager import ToolManager
     from haven.tools.providers.builtin import BuiltinProvider
 
@@ -34,17 +41,34 @@ def list_tools(
 ) -> None:
     """列出已注册的工具。"""
     tm = _get_tool_manager()
-    tools = tm.filter_tools(category=category, provider=provider) if (provider or category) else tm.list_all()
+    tools = (
+        tm.filter_tools(category=category, provider=provider)
+        if (provider or category)
+        else tm.list_all()
+    )
 
     if json_output:
-        render_json([{"name": t.name, "provider": tm._tool_to_provider.get(t.name, "?"),
-                       "description": getattr(t, "description", "")} for t in tools])
+        render_json(
+            [
+                {
+                    "name": t.name,
+                    "provider": tm._tool_to_provider.get(t.name, "?"),
+                    "description": getattr(t, "description", ""),
+                }
+                for t in tools
+            ]
+        )
     elif not tools:
         render_info("(未加载任何工具)")
     else:
-        rows = [{"Name": t.name, "Provider": tm._tool_to_provider.get(t.name, "?"),
-                  "Description": (getattr(t, "description", "") or "")[:60]}
-                 for t in sorted(tools, key=lambda x: x.name)]
+        rows = [
+            {
+                "Name": t.name,
+                "Provider": tm._tool_to_provider.get(t.name, "?"),
+                "Description": (getattr(t, "description", "") or "")[:60],
+            }
+            for t in sorted(tools, key=lambda x: x.name)
+        ]
         render_table(rows, headers=["Name", "Provider", "Description"])
         blank()
         dim(f"共 {len(tools)} 个工具  (来自 {len(tm.list_providers())} 个 provider)")
@@ -64,11 +88,18 @@ def info(
         raise typer.Exit(code=1)
 
     if json_output:
-        render_json({"name": tool.name, "description": getattr(tool, "description", ""),
-                      "provider": tm._tool_to_provider.get(tool.name, "?")})
+        render_json(
+            {
+                "name": tool.name,
+                "description": getattr(tool, "description", ""),
+                "provider": tm._tool_to_provider.get(tool.name, "?"),
+            }
+        )
     else:
-        render_kv([
-            ("名称", tool.name),
-            ("描述", getattr(tool, "description", "") or "(无)"),
-            ("Provider", tm._tool_to_provider.get(tool.name, "?")),
-        ])
+        render_kv(
+            [
+                ("名称", tool.name),
+                ("描述", getattr(tool, "description", "") or "(无)"),
+                ("Provider", tm._tool_to_provider.get(tool.name, "?")),
+            ]
+        )

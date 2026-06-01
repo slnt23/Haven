@@ -7,8 +7,15 @@ from typing import Annotated, Optional
 import typer
 
 from haven.cli.ui.console import (
-    get_console, render_table, render_json, render_error,
-    render_success, render_info, render_list, render_markdown, dim, blank,
+    blank,
+    dim,
+    render_error,
+    render_info,
+    render_json,
+    render_list,
+    render_markdown,
+    render_success,
+    render_table,
 )
 
 workflow_app = typer.Typer(help="工作流管理 + 执行")
@@ -16,6 +23,7 @@ workflow_app = typer.Typer(help="工作流管理 + 执行")
 
 def _get_registry():
     from haven.workflows.registry import WorkflowRegistry
+
     return WorkflowRegistry
 
 
@@ -44,11 +52,13 @@ def list_workflows(
             graph = None
             nodes = []
 
-        rows.append({
-            "Name": name,
-            "Nodes": len(nodes),
-            "Flow": " → ".join(nodes) if nodes else "?",
-        })
+        rows.append(
+            {
+                "Name": name,
+                "Nodes": len(nodes),
+                "Flow": " → ".join(nodes) if nodes else "?",
+            }
+        )
 
     if json_output:
         render_json([{"name": r["Name"], "nodes": r["Nodes"], "flow": r["Flow"]} for r in rows])
@@ -76,7 +86,7 @@ def info(
         wf = registry.build(name)
     except Exception as exc:
         render_error(f"构建工作流失败: {exc}")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from exc
 
     nodes = list(wf._nodes.keys())
     entry = wf._entry_point
@@ -88,9 +98,14 @@ def info(
             edges_info.append(f"{src} → [router]")
 
     if json_output:
-        render_json({
-            "name": name, "entry": entry, "nodes": nodes, "edges": edges_info,
-        })
+        render_json(
+            {
+                "name": name,
+                "entry": entry,
+                "nodes": nodes,
+                "edges": edges_info,
+            }
+        )
     else:
         render_info(f"名称: {name}")
         render_info(f"入口: {entry}")
@@ -107,6 +122,7 @@ def info(
 
 def _render_ascii_graph(nodes: list[str], edges: list[str]) -> None:
     from haven.cli.ui.console import render_info
+
     lines = ["  " + " → ".join(nodes)]
     for e in edges:
         if "router" in e:
@@ -141,10 +157,11 @@ def run_workflow(
         nodes = list(graph._nodes.keys())
     except Exception as exc:
         render_error(f"构建工作流失败: {exc}")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from exc
 
     # ---- 初始化 RuntimeService ----
     import asyncio
+
     from haven.cli.services.runtime_service import RuntimeService
 
     async def _exec():
@@ -153,6 +170,7 @@ def run_workflow(
 
         if watch:
             from haven.cli.ui.progress import NodeWatcher
+
             watcher = NodeWatcher(nodes)
             watcher.start()
 
@@ -172,7 +190,9 @@ def run_workflow(
         render_json(result)
     else:
         blank()
-        render_success(f"工作流: {name}  ({result['nodes_executed']} 个节点, {result['elapsed_ms']}ms)")
+        render_success(
+            f"工作流: {name}  ({result['nodes_executed']} 个节点, {result['elapsed_ms']}ms)"
+        )
         blank()
         render_markdown(result["result"])
         blank()
@@ -195,8 +215,10 @@ def resume(
     """从上次中断的 checkpoint 恢复执行。"""
     try:
         from haven.workflows.checkpoint import SQLiteCheckpointer
+
         cp = SQLiteCheckpointer()
         import asyncio
+
         state = asyncio.get_event_loop().run_until_complete(cp.load(session_id))
         if state:
             render_success(f"已恢复 session: {session_id}")
@@ -215,8 +237,10 @@ def history(
     """列出所有可恢复的工作流执行。"""
     try:
         from haven.workflows.checkpoint import SQLiteCheckpointer
+
         cp = SQLiteCheckpointer()
         import asyncio
+
         sessions = asyncio.get_event_loop().run_until_complete(cp.list_sessions())
     except Exception:
         sessions = []
@@ -226,6 +250,12 @@ def history(
     elif not sessions:
         render_info("(无可用 checkpoint)")
     else:
-        rows = [{"Session": s.get("session_id", "?"), "Node": s.get("node_name", "?"),
-                  "Time": s.get("created_at", "?")} for s in sessions]
+        rows = [
+            {
+                "Session": s.get("session_id", "?"),
+                "Node": s.get("node_name", "?"),
+                "Time": s.get("created_at", "?"),
+            }
+            for s in sessions
+        ]
         render_table(rows)

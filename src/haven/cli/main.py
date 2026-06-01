@@ -6,15 +6,15 @@
 from __future__ import annotations
 
 import logging
-import sys
 from pathlib import Path
+import sys
 from typing import Annotated, Optional
 
-import typer
 from rich.logging import RichHandler
+import typer
 
 from haven.cli.services.cli_service import CLIContext
-from haven.cli.ui.console import render_error, dim, blank
+from haven.cli.ui.console import dim, render_error
 
 # ---------------------------------------------------------------------------
 # 日志
@@ -43,9 +43,9 @@ app = typer.Typer(
 )
 
 # ---- 注册子命令组 (有二级命令的) ----
-from haven.cli.commands.workflow import workflow_app
-from haven.cli.commands.skill import skill_app
-from haven.cli.commands.tool import tool_app
+from haven.cli.commands.skill import skill_app  # noqa: E402
+from haven.cli.commands.tool import tool_app  # noqa: E402
+from haven.cli.commands.workflow import workflow_app  # noqa: E402
 
 app.add_typer(workflow_app, name="workflow")
 app.add_typer(skill_app, name="skill")
@@ -72,8 +72,10 @@ def main(
     默认命令为 chat（启动 REPL）。
     """
     cli_ctx = CLIContext(
-        verbose=verbose, quiet=quiet,
-        json_output=json_output, no_color=no_color,
+        verbose=verbose,
+        quiet=quiet,
+        json_output=json_output,
+        no_color=no_color,
     )
     ctx.obj = cli_ctx
 
@@ -93,12 +95,14 @@ def main(
     # 默认 → chat
     if ctx.invoked_subcommand is None:
         from haven.cli.commands.chat import run_chat
+
         run_chat(ctx, model=None, session=None, task=None, no_memory=False, verbose=verbose)
 
 
 # ====================================================================
 # 直接命令 (无二级子命令)
 # ====================================================================
+
 
 @app.command(name="chat", help="启动交互式 REPL 对话")
 def chat_cmd(
@@ -111,6 +115,7 @@ def chat_cmd(
 ) -> None:
     """启动交互式 REPL，持续读取-求值-输出循环。"""
     from haven.cli.commands.chat import run_chat
+
     run_chat(ctx, model=model, session=session, task=task, no_memory=no_memory, verbose=verbose)
 
 
@@ -129,9 +134,19 @@ def run_cmd(
 ) -> None:
     """执行单轮任务，输出结果后退出。"""
     from haven.cli.commands.run import run_task
-    run_task(ctx, task=task, file=file, model=model, stream=stream,
-             json_output=json_output, no_memory=no_memory, no_plan=no_plan,
-             output=output, verbose=verbose)
+
+    run_task(
+        ctx,
+        task=task,
+        file=file,
+        model=model,
+        stream=stream,
+        json_output=json_output,
+        no_memory=no_memory,
+        no_plan=no_plan,
+        output=output,
+        verbose=verbose,
+    )
 
 
 @app.command(name="doctor", help="环境诊断")
@@ -142,6 +157,7 @@ def doctor_cmd(
 ) -> None:
     """运行环境诊断，检查依赖和配置完整性。"""
     from haven.cli.commands.doctor import run_doctor
+
     run_doctor(ctx, check=check, json_output=json_output)
 
 

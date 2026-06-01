@@ -2,10 +2,9 @@ from __future__ import annotations
 
 import logging
 import os
-import signal
+from pathlib import Path
 import subprocess
 import sys
-from pathlib import Path
 
 logger = logging.getLogger("haven.pidfile")
 
@@ -23,7 +22,7 @@ def read(path: Path) -> int | None:
         return None
     try:
         return int(path.read_text().strip())
-    except (ValueError, OSError):
+    except ValueError, OSError:
         return None
 
 
@@ -32,7 +31,8 @@ def is_running(pid: int) -> bool:
     if sys.platform == "win32":
         result = subprocess.run(
             ["tasklist", "/fi", f"PID eq {pid}", "/nh"],
-            capture_output=True, text=True,
+            capture_output=True,
+            text=True,
         )
         return str(pid) in result.stdout
     else:
@@ -49,5 +49,3 @@ def remove(path: Path) -> None:
         path.unlink(missing_ok=True)
     except OSError:
         pass
-
-

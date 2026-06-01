@@ -6,7 +6,6 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
 
-
 HAVEN_ASCII = r"""[bold cyan]
           _   _
          | | | | __ ___   _____ _ __
@@ -41,5 +40,6 @@ def print_banner(
     right.append(f"\n  Channel:  [dim]{channel}[/]")
 
     from rich.columns import Columns
+
     console.print(Panel(Columns([left, right]), border_style="cyan"))
     console.print()

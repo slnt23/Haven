@@ -12,10 +12,7 @@ from haven.services.base_channel import BaseChannel
 logger = logging.getLogger("haven.socket_channel")
 
 BANNER = (
-    "\r\n"
-    "  Haven V2  Multi-Agent Runtime\r\n"
-    "  Type /exit to disconnect, /help for commands\r\n"
-    "\r\n"
+    "\r\n  Haven V2  Multi-Agent Runtime\r\n  Type /exit to disconnect, /help for commands\r\n\r\n"
 )
 
 
@@ -26,8 +23,7 @@ class SocketChannel(BaseChannel):
     通过 PlannerAgent.execute() 与 LLM 交互。
     """
 
-    def __init__(self, host: str = "127.0.0.1", port: int = 9020,
-                 shutdown_callback=None) -> None:
+    def __init__(self, host: str = "127.0.0.1", port: int = 9020, shutdown_callback=None) -> None:
         super().__init__(
             "socket",
             enabled=getattr(settings, "daemon_socket_enabled", True),
@@ -39,9 +35,7 @@ class SocketChannel(BaseChannel):
 
     async def start(self, agent: Any) -> None:
         await super().start(agent)
-        self._server = await asyncio.start_server(
-            self._handle_connection, self.host, self.port
-        )
+        self._server = await asyncio.start_server(self._handle_connection, self.host, self.port)
         logger.info("SocketChannel listening on %s:%d", self.host, self.port)
 
     async def stop(self) -> None:
@@ -70,7 +64,7 @@ class SocketChannel(BaseChannel):
                 writer.write("> ".encode("utf-8"))
                 await writer.drain()
                 line = await reader.readline()
-            except (ConnectionResetError, BrokenPipeError):
+            except ConnectionResetError, BrokenPipeError:
                 break
 
             if not line:
@@ -132,8 +126,7 @@ class SocketChannel(BaseChannel):
                 "  /model      show current model\r\n"
                 "  /models     list available models\r\n"
                 "  /shutdown   stop the daemon\r\n"
-                "  /exit       disconnect\r\n"
-                .encode("utf-8")
+                "  /exit       disconnect\r\n".encode("utf-8")
             )
             await writer.drain()
             return True
@@ -148,6 +141,7 @@ class SocketChannel(BaseChannel):
 
         if cmd == "/models":
             from haven.config import load_models_config
+
             names = list(load_models_config().keys())
             writer.write(f"  models: {', '.join(names)}\r\n".encode("utf-8"))
             await writer.drain()

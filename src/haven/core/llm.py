@@ -11,7 +11,7 @@ from typing import Any
 
 from langchain_core.language_models import BaseChatModel
 
-from haven.config import get_model_config, get_default_model
+from haven.config import get_default_model, get_model_config
 
 logger = logging.getLogger("haven.core.llm")
 

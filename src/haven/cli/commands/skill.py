@@ -7,8 +7,14 @@ from typing import Annotated
 import typer
 
 from haven.cli.ui.console import (
-    render_table, render_json, render_error,
-    render_success, render_info, dim, blank,
+    blank,
+    dim,
+    render_error,
+    render_info,
+    render_json,
+    render_success,
+    render_table,
+    render_warning,
 )
 
 skill_app = typer.Typer(help="Skill 增删查 + 热加载")
@@ -17,16 +23,19 @@ skill_app = typer.Typer(help="Skill 增删查 + 热加载")
 def _ensure_skills_loaded() -> None:
     """按需加载 skills/ 目录（如尚未加载）。"""
     from haven.skills.registry import SkillRegistry
+
     if SkillRegistry.list_all():
         return
-    from haven.config import settings, find_user_path
+    from haven.config import find_user_path, settings
     from haven.skills.loader import SkillLoader
+
     user_dir = find_user_path(settings.skill_directory)
     if user_dir.is_dir():
         for skill in SkillLoader.load_from_dir(user_dir):
             SkillRegistry.register_instance(skill)
     # 系统人格
     from pathlib import Path
+
     sys_persona = Path(__file__).resolve().parent.parent.parent / "config" / "haven.md"
     if sys_persona.is_file():
         persona = SkillLoader.load_single(sys_persona)
@@ -46,10 +55,11 @@ def list_skills(
     _ensure_skills_loaded()
     try:
         from haven.skills.registry import SkillRegistry
+
         all_skills = SkillRegistry.list_all()
     except Exception as exc:
         render_error(f"无法获取 Skill: {exc}")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from exc
 
     rows: list[dict] = []
     for name, s in sorted(all_skills.items()):
@@ -60,19 +70,30 @@ def list_skills(
             continue
         if tag and tag.lower() not in " ".join(s.tags).lower():
             continue
-        rows.append({
-            "Name": name,
-            "Type": skill_type,
-            "Tags": ", ".join(s.tags) if s.tags else "—",
-            "Tools": ", ".join(s.tools) if s.tools else "—",
-            "Deps": ", ".join(s.dependencies) if s.dependencies else "—",
-            "Version": s.version,
-        })
+        rows.append(
+            {
+                "Name": name,
+                "Type": skill_type,
+                "Tags": ", ".join(s.tags) if s.tags else "—",
+                "Tools": ", ".join(s.tools) if s.tools else "—",
+                "Deps": ", ".join(s.dependencies) if s.dependencies else "—",
+                "Version": s.version,
+            }
+        )
 
     if json_output:
-        render_json([{"name": r["Name"], "type": r["Type"], "tags": s.tags,
-                       "tools": s.tools, "dependencies": s.dependencies}
-                      for r, (_, s) in zip(rows, sorted(all_skills.items()))])
+        render_json(
+            [
+                {
+                    "name": r["Name"],
+                    "type": r["Type"],
+                    "tags": s.tags,
+                    "tools": s.tools,
+                    "dependencies": s.dependencies,
+                }
+                for r, (_, s) in zip(rows, sorted(all_skills.items()), strict=False)
+            ]
+        )
     else:
         render_table(rows, headers=["Name", "Type", "Tags", "Tools", "Deps", "Version"])
         blank()
@@ -89,29 +110,39 @@ def info(
     _ensure_skills_loaded()
     try:
         from haven.skills.registry import SkillRegistry
+
         skill = SkillRegistry.get(name)
     except KeyError:
         render_error(f"Skill 不存在: {name}")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from None
 
     if json_output:
-        render_json({
-            "name": skill.name, "description": skill.description,
-            "tags": skill.tags, "tools": skill.tools,
-            "dependencies": skill.dependencies, "version": skill.version,
-            "default": skill.default, "category": skill.category,
-        })
+        render_json(
+            {
+                "name": skill.name,
+                "description": skill.description,
+                "tags": skill.tags,
+                "tools": skill.tools,
+                "dependencies": skill.dependencies,
+                "version": skill.version,
+                "default": skill.default,
+                "category": skill.category,
+            }
+        )
     else:
         from haven.cli.ui.console import render_kv
-        render_kv([
-            ("名称", skill.name),
-            ("描述", skill.description or "(无)"),
-            ("版本", skill.version),
-            ("标签", ", ".join(skill.tags) if skill.tags else "(无)"),
-            ("工具", ", ".join(skill.tools) if skill.tools else "(无)"),
-            ("依赖", ", ".join(skill.dependencies) if skill.dependencies else "(无)"),
-            ("默认", "yes" if skill.default else "no"),
-        ])
+
+        render_kv(
+            [
+                ("名称", skill.name),
+                ("描述", skill.description or "(无)"),
+                ("版本", skill.version),
+                ("标签", ", ".join(skill.tags) if skill.tags else "(无)"),
+                ("工具", ", ".join(skill.tools) if skill.tools else "(无)"),
+                ("依赖", ", ".join(skill.dependencies) if skill.dependencies else "(无)"),
+                ("默认", "yes" if skill.default else "no"),
+            ]
+        )
 
 
 @skill_app.command("search", help="搜索 skill")
@@ -124,6 +155,7 @@ def search(
     _ensure_skills_loaded()
     try:
         from haven.skills.registry import SkillRegistry
+
         all_skills = SkillRegistry.list_all()
     except Exception as exc:
         render_error(str(exc))
@@ -131,21 +163,26 @@ def search(
 
     q = query.lower()
     matched = {
-        name: s for name, s in all_skills.items()
-        if q in name.lower()
-        or q in s.description.lower()
-        or any(q in t.lower() for t in s.tags)
+        name: s
+        for name, s in all_skills.items()
+        if q in name.lower() or q in s.description.lower() or any(q in t.lower() for t in s.tags)
     }
 
     if json_output:
-        render_json([{"name": s.name, "description": s.description, "tags": s.tags}
-                      for s in matched.values()])
+        render_json(
+            [
+                {"name": s.name, "description": s.description, "tags": s.tags}
+                for s in matched.values()
+            ]
+        )
     else:
         if not matched:
             render_info(f"未找到匹配 '{query}' 的 skill")
         else:
-            rows = [{"Name": s.name, "Description": s.description or "—",
-                      "Tags": ", ".join(s.tags)} for s in matched.values()]
+            rows = [
+                {"Name": s.name, "Description": s.description or "—", "Tags": ", ".join(s.tags)}
+                for s in matched.values()
+            ]
             render_table(rows)
             blank()
             dim(f"找到 {len(matched)} 个")
@@ -159,6 +196,7 @@ def add(
 ) -> None:
     """从 .md 文件或目录加载 skill。"""
     from pathlib import Path
+
     from haven.skills.loader import SkillLoader
     from haven.skills.registry import SkillRegistry
 
@@ -197,6 +235,7 @@ def remove(
 ) -> None:
     """按名称移除 skill。"""
     from haven.skills.registry import SkillRegistry
+
     if name not in SkillRegistry.list_all():
         render_error(f"Skill 不存在: {name}")
         raise typer.Exit(code=1)
@@ -208,7 +247,7 @@ def remove(
 @skill_app.command("reload", help="热加载 skills/ 目录")
 def reload(ctx: typer.Context) -> None:
     """重新扫描 skills/ 目录。"""
-    from haven.config import settings, find_user_path
+    from haven.config import find_user_path, settings
     from haven.skills.loader import SkillLoader
     from haven.skills.registry import SkillRegistry
 

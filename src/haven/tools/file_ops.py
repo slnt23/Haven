@@ -2,6 +2,7 @@ from pathlib import Path
 
 from haven.config import settings
 
+
 class FileOpsTool:
     def __init__(self):
         self.work_dir = settings.project_root

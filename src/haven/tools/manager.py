@@ -11,7 +11,7 @@ import logging
 from typing import Any
 
 from haven.tools.base import HavenTool
-from haven.tools.providers.base import ToolProvider, ProviderStatus
+from haven.tools.providers.base import ProviderStatus, ToolProvider
 
 logger = logging.getLogger("haven.tools.manager")
 
@@ -93,7 +93,7 @@ class ToolManager:
         self._started = False
 
     async def refresh_all(self) -> None:
-        results = await asyncio.gather(
+        _results = await asyncio.gather(  # noqa: F841
             *(p.refresh() for p in self._providers.values()),
             return_exceptions=True,
         )
@@ -108,7 +108,11 @@ class ToolManager:
         return self._tools.get(name)
 
     def get_tools_for_skills(self, skill_names: list[str]) -> list[HavenTool]:
-        """根据 skill 声明的 tools 字段返回工具列表。"""
+        """根据 skill 声明的 tools 字段返回工具列表（直接名称匹配）。
+
+        推荐使用 ToolResolver.resolve() 替代此方法——ToolResolver 支持
+        标签/类别/能力关键词多级匹配和上下文过滤。
+        """
         from haven.skills.registry import SkillRegistry
 
         required: set[str] = set()
@@ -123,6 +127,39 @@ class ToolManager:
             return self.list_all()
 
         return [t for name, t in self._tools.items() if name in required]
+
+    def get_tools_by_names(self, names: list[str]) -> list[HavenTool]:
+        """按精确名称批量获取工具。不存在的名称静默跳过。"""
+        return [self._tools[n] for n in names if n in self._tools]
+
+    def get_tools_by_tags(self, tags: list[str]) -> list[HavenTool]:
+        """按标签批量获取工具（OR 语义：匹配任一标签）。"""
+        result: dict[str, HavenTool] = {}
+        for tag in tags:
+            for name, tool in self._tools.items():
+                if tag in getattr(tool.metadata, "tags", []):
+                    result[name] = tool
+        return list(result.values())
+
+    def get_tools_by_categories(self, categories: list[str]) -> list[HavenTool]:
+        """按类别批量获取工具（OR 语义：匹配任一类别）。"""
+        result: dict[str, HavenTool] = {}
+        for cat in categories:
+            for name, tool in self._tools.items():
+                tool_cat = getattr(tool.metadata, "category", None)
+                if tool_cat:
+                    tc_val = tool_cat.value if hasattr(tool_cat, "value") else str(tool_cat)
+                    if tc_val == cat:
+                        result[name] = tool
+        return list(result.values())
+
+    def get_tools_by_provider(self, provider_name: str) -> list[HavenTool]:
+        """获取指定 provider 的所有工具。"""
+        return [
+            t
+            for name, t in self._tools.items()
+            if self._tool_to_provider.get(name) == provider_name
+        ]
 
     def filter_tools(
         self,
@@ -210,7 +247,9 @@ class ToolManager:
                 existing = self._tool_to_provider.get(tool.name, "?")
                 logger.warning(
                     "Tool collision: '%s' from '%s' overwrites '%s'",
-                    tool.name, provider.info.name, existing,
+                    tool.name,
+                    provider.info.name,
+                    existing,
                 )
             self._tools[tool.name] = tool
             self._tool_to_provider[tool.name] = provider.info.name

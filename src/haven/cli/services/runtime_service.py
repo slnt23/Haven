@@ -28,7 +28,6 @@ import logging
 import time
 from typing import Any, AsyncIterator
 
-from haven.cli.services.cli_service import CLIContext
 from haven.cli.ui.console import render_warning
 
 logger = logging.getLogger("haven.cli.service")
@@ -95,8 +94,9 @@ class RuntimeService:
                     self._model = None
 
             self._initialized = True
-            logger.info("RuntimeService started: model=%s session=%s",
-                         self._model or "default", session_id)
+            logger.info(
+                "RuntimeService started: model=%s session=%s", self._model or "default", session_id
+            )
 
             return self._status()
 
@@ -137,6 +137,7 @@ class RuntimeService:
 
         try:
             from haven.skills.registry import SkillRegistry
+
             skills = SkillRegistry.list_all()
             status["skills"] = len(skills)
         except Exception:
@@ -144,6 +145,7 @@ class RuntimeService:
 
         try:
             from haven.workflows.registry import WorkflowRegistry
+
             wf = WorkflowRegistry.list_all()
             status["workflows"] = len(wf)
         except Exception:
@@ -271,23 +273,35 @@ class RuntimeService:
             {result: str, workflow: str, nodes_executed: int, elapsed_ms: int}
         """
         if not self._initialized:
-            return {"result": "[错误] Runtime 未初始化", "workflow": workflow_name,
-                    "nodes_executed": 0, "elapsed_ms": 0}
+            return {
+                "result": "[错误] Runtime 未初始化",
+                "workflow": workflow_name,
+                "nodes_executed": 0,
+                "elapsed_ms": 0,
+            }
 
         from haven.workflows.registry import WorkflowRegistry
 
         wf_names = WorkflowRegistry.list_all()
         if workflow_name not in wf_names:
-            return {"result": f"[错误] 工作流不存在: {workflow_name}。可用: {', '.join(wf_names)}",
-                    "workflow": workflow_name, "nodes_executed": 0, "elapsed_ms": 0}
+            return {
+                "result": f"[错误] 工作流不存在: {workflow_name}。可用: {', '.join(wf_names)}",
+                "workflow": workflow_name,
+                "nodes_executed": 0,
+                "elapsed_ms": 0,
+            }
 
         t0 = time.monotonic()
 
         try:
             graph = WorkflowRegistry.build(workflow_name)
         except Exception as exc:
-            return {"result": f"[错误] 构建工作流失败: {exc}",
-                    "workflow": workflow_name, "nodes_executed": 0, "elapsed_ms": 0}
+            return {
+                "result": f"[错误] 构建工作流失败: {exc}",
+                "workflow": workflow_name,
+                "nodes_executed": 0,
+                "elapsed_ms": 0,
+            }
 
         # 按名称选择 State 类型
         state = self._make_workflow_state(workflow_name, task)
@@ -297,34 +311,45 @@ class RuntimeService:
         if not checkpoint:
             graph._checkpointer = None
 
-        logger.info("Workflow '%s': %d nodes, task=%s",
-                     workflow_name, len(graph._nodes), task[:60])
+        logger.info("Workflow '%s': %d nodes, task=%s", workflow_name, len(graph._nodes), task[:60])
 
         try:
             result_state = await graph.run(state, runtime=self._runtime)
         except Exception as exc:
             logger.error("Workflow '%s' error: %s", workflow_name, exc)
-            return {"result": f"[错误] {exc}", "workflow": workflow_name,
-                    "nodes_executed": len(state.node_outputs), "elapsed_ms": int((time.monotonic() - t0) * 1000)}
+            return {
+                "result": f"[错误] {exc}",
+                "workflow": workflow_name,
+                "nodes_executed": len(state.node_outputs),
+                "elapsed_ms": int((time.monotonic() - t0) * 1000),
+            }
 
         elapsed_ms = int((time.monotonic() - t0) * 1000)
 
         if result_state.status == "failed":
-            return {"result": "[工作流失败]\n" + "\n".join(result_state.errors),
-                    "workflow": workflow_name,
-                    "nodes_executed": len(result_state.node_outputs),
-                    "elapsed_ms": elapsed_ms}
-
-        return {"result": result_state.final_output or "(完成)",
+            return {
+                "result": "[工作流失败]\n" + "\n".join(result_state.errors),
                 "workflow": workflow_name,
                 "nodes_executed": len(result_state.node_outputs),
-                "elapsed_ms": elapsed_ms}
+                "elapsed_ms": elapsed_ms,
+            }
+
+        return {
+            "result": result_state.final_output or "(完成)",
+            "workflow": workflow_name,
+            "nodes_executed": len(result_state.node_outputs),
+            "elapsed_ms": elapsed_ms,
+        }
 
     @staticmethod
     def _make_workflow_state(wf_name: str, task: str) -> Any:
         from haven.workflows.state import (
-            WorkflowState, DevWorkflowState, ResearchWorkflowState, DiagnosisWorkflowState,
+            DevWorkflowState,
+            DiagnosisWorkflowState,
+            ResearchWorkflowState,
+            WorkflowState,
         )
+
         if "dev" in wf_name:
             return DevWorkflowState(task=task)
         elif "research" in wf_name:
@@ -334,7 +359,7 @@ class RuntimeService:
         return WorkflowState(task=task)
 
     async def chat_stream(self, task: str) -> AsyncIterator[str]:
-        """REPL 流式对话（逐 token 返回）。
+        """REPL 流式对话 — LLM.astream() 原生透传。
 
         Usage:
             async for token in svc.chat_stream("你好"):
@@ -344,14 +369,9 @@ class RuntimeService:
             yield "[错误] Runtime 未初始化"
             return
 
-        # 当前 Runtime 不支持原生 streaming，模拟逐句输出
         try:
-            result = await self._planner.execute(task)
-            # 按字符分块模拟流式
-            chunk_size = 3
-            for i in range(0, len(result), chunk_size):
-                yield result[i : i + chunk_size]
-                await asyncio.sleep(0.01)
+            async for chunk in self._planner.execute_stream(task):
+                yield chunk
         except Exception as exc:
             logger.error("chat_stream error: %s", exc)
             yield f"[错误] {exc}"
@@ -376,7 +396,17 @@ class RuntimeService:
         """启发式判断是否为简单对话（跳过 Planner，节省一次 LLM 调用）。"""
         cleaned = task.strip().lower().rstrip("?!.。！？")
         simple = {
-            "你好", "hi", "hello", "谢谢", "thanks", "再见", "bye",
-            "在吗", "你是谁", "你能做什么", "早上好", "晚安",
+            "你好",
+            "hi",
+            "hello",
+            "谢谢",
+            "thanks",
+            "再见",
+            "bye",
+            "在吗",
+            "你是谁",
+            "你能做什么",
+            "早上好",
+            "晚安",
         }
         return cleaned in simple or len(cleaned) <= 2

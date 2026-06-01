@@ -26,7 +26,7 @@ class RuntimeState:
 
     # 执行追踪
     turn_count: int = 0
-    current_node: str = ""           # workflow 当前节点名（单步执行时为空）
+    current_node: str = ""  # workflow 当前节点名（单步执行时为空）
 
     # 临时上下文（跨步骤传递，不持久化）
     context: dict[str, str] = field(default_factory=dict)
