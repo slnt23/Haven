@@ -20,7 +20,7 @@ from langchain_core.tools import BaseTool
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.prebuilt import create_react_agent
 
-from haven.config import settings
+from haven.config import get_auxiliary_model, settings
 from haven.core.llm import create_llm
 from haven.core.state import RuntimeState
 from haven.memory.manager import MemoryManager
@@ -39,6 +39,7 @@ class AgentRuntime:
         self.name = name
 
         self.llm: BaseChatModel | None = None
+        self.aux_llm: BaseChatModel | None = None
         self._tools: dict[str, BaseTool] = {}
         self._active_tools: list[BaseTool] = []
         self.memory = MemoryManager()
@@ -58,6 +59,7 @@ class AgentRuntime:
         if self.llm is not None:
             return self.llm
         self.llm = create_llm(model_name)
+        self.aux_llm = create_llm(get_auxiliary_model())
         return self.llm
 
     def switch_model(self, model_name: str) -> str:
@@ -241,21 +243,12 @@ class AgentRuntime:
     def save_turn(self, user_input: str, response: str) -> None:
         asyncio.create_task(self.memory.record_turn(user_input, response))
 
-    async def extract_facts_async(self) -> None:
-        if self.llm is None:
+    async def extract_semantic_facts_async(self, force: bool = True) -> None:
+        """批量语义事实提取，委托给 MemoryManager。"""
+        if self.aux_llm is None:
             return
-        self.memory.set_llm(self.llm)
-        msgs = self.memory.working.get_messages()
-        user_msg, assistant_msg = "", ""
-        for m in msgs:
-            role = getattr(m, "type", "")
-            content = getattr(m, "content", "")
-            if role == "human":
-                user_msg = content
-            elif role == "ai":
-                assistant_msg = content
-        if user_msg or assistant_msg:
-            await self.memory._extract_facts(user_msg, assistant_msg)
+        self.memory.set_llm(self.aux_llm)
+        await self.memory.extract_semantic_facts_async(force=force)
 
     def reset(self) -> None:
         asyncio.create_task(self.memory.working.clear())

@@ -222,4 +222,4 @@ class FeishuChannel(BaseChannel):
             await _send_reply(self.app_id, self.app_secret, open_id, response)
 
         # 后台事实提取
-        asyncio.create_task(self.agent.extract_facts_async())
+        asyncio.create_task(self.agent.extract_semantic_facts_async())

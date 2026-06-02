@@ -24,6 +24,13 @@ def get_default_model() -> str:
     return str(_load_config().default_model)
 
 
+def get_auxiliary_model() -> str:
+    """返回辅助模型名称，用于记忆提取、摘要等轻量后台任务。"""
+    cfg = _load_config()
+    aux = cfg.get("auxiliary_model", None)
+    return str(aux) if aux is not None else str(cfg.default_model)
+
+
 def load_models_config() -> DictConfig | ListConfig:
     return _load_config().models
 

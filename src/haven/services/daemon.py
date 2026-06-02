@@ -69,7 +69,7 @@ class HavenDaemon:
                 except Exception as exc:
                     logger.debug("ToolManager shutdown: %s", exc)
             try:
-                await rt.extract_facts_async()
+                await rt.extract_semantic_facts_async()
             except Exception:
                 pass
 

@@ -51,6 +51,7 @@ async def create_agent(
 
     # 3. LLM
     runtime.init_llm()
+    runtime.memory.set_llm(runtime.aux_llm)
 
     # 4. ToolManager + Providers
     await _init_tools(runtime, load_mcp)

@@ -1,7 +1,9 @@
 """VectorMemory — 向量语义记忆。
 
-ChromaDB 后端。embedding 相似性检索，跨 session 模式匹配。
-降级策略：chromadb 未安装时静默降级为空操作。
+ChromaDB 后端。基于 embedding 的语义相似性检索，跨 session 模式匹配。
+
+降级策略：chromadb 未安装 → 静默降级为空操作。
+embedding 模型使用 app.yaml 中 RAG 段配置的模型（默认 text-embedding-3-small）。
 """
 
 from __future__ import annotations
@@ -20,7 +22,9 @@ class VectorMemory(BaseMemory):
     """向量语义记忆。基于 embedding 的相似性检索。
 
     存储后端：ChromaDB（持久化到 .data/chroma/）
-    降级策略：chromadb 未安装 → 静默降级，store/retrieve 为空操作
+    检索方式：query → embedding → cosine 相似度 → top_k
+
+    降级策略：chromadb 未安装 → 静默降级，store/retrieve 均为空操作。
     """
 
     name = "vector"
@@ -31,6 +35,7 @@ class VectorMemory(BaseMemory):
         persist_dir: str | None = None,
     ):
         self._collection_name = collection_name
+        # 延迟初始化：首次调用 store/retrieve 时才连接 ChromaDB
         self._client = None
         self._collection = None
         self._embedding_fn = None
@@ -45,6 +50,11 @@ class VectorMemory(BaseMemory):
     # ========== 延迟初始化 ==========
 
     def _ensure_client(self) -> bool:
+        """确保 ChromaDB 客户端可用。
+
+        返回 False 表示不可用（chromadb 未安装或初始化失败），
+        后续操作静默降级。
+        """
         if self._client is not None:
             return self._client is not False
         try:
@@ -53,7 +63,7 @@ class VectorMemory(BaseMemory):
             self._client = chromadb.PersistentClient(path=self._persist_dir)
             self._collection = self._client.get_or_create_collection(
                 name=self._collection_name,
-                metadata={"hnsw:space": "cosine"},
+                metadata={"hnsw:space": "cosine"},  # 余弦相似度
             )
             return True
         except ImportError:
@@ -66,6 +76,11 @@ class VectorMemory(BaseMemory):
             return False
 
     def _ensure_embedding(self) -> bool:
+        """确保 embedding 模型可用。
+
+        使用 OpenAI-compatible embedding API，
+        model 名称和 base URL 从 app.yaml RAG 段读取。
+        """
         if self._embedding_fn is not None:
             return self._embedding_fn is not False
         try:
@@ -86,16 +101,27 @@ class VectorMemory(BaseMemory):
 
     @property
     def _available(self) -> bool:
+        """客户端和 embedding 同时可用才算 ready。"""
         return self._ensure_client() and self._ensure_embedding()
 
     # ========== 存储 ==========
 
     async def store(self, items: list[MemoryItem]) -> None:
+        """嵌入并存储到 ChromaDB。
+
+        每个 MemoryItem 被转换为：
+        - id: item.id
+        - document: item.content（要嵌入的文本）
+        - metadata: 所有可序列化的 item.metadata 字段
+
+        静默降级：不可用时跳过。
+        """
         if not items or not self._available:
             return
 
         texts = [item.content for item in items]
         ids = [item.id for item in items]
+        # 元数据需序列化为字符串（ChromaDB 不支持嵌套结构）
         metadatas = [
             {
                 "memory_type": item.memory_type,
@@ -109,14 +135,26 @@ class VectorMemory(BaseMemory):
         try:
             embeddings = await self._embedding_fn.aembed_documents(texts)
             self._collection.add(
-                ids=ids, embeddings=embeddings, documents=texts, metadatas=metadatas
+                ids=ids,
+                embeddings=embeddings,
+                documents=texts,
+                metadatas=metadatas,
             )
         except Exception as exc:
             logger.warning("VectorMemory store failed: %s", exc)
 
     # ========== 检索 ==========
 
-    async def retrieve(self, query: str = "", top_k: int = 5, **filters: Any) -> list[MemoryItem]:
+    async def retrieve(
+        self, query: str = "", top_k: int = 5, **filters: Any
+    ) -> list[MemoryItem]:
+        """按语义相似度检索。
+
+        流程：query → embedding → ChromaDB cosine 相似度查询 → top_k
+
+        filters 支持: session_id, memory_type, min_importance
+        静默降级：query 为空或不可用时返回空列表。
+        """
         if not query or not self._available:
             return []
 
@@ -137,15 +175,24 @@ class VectorMemory(BaseMemory):
         if results and results.get("ids") and results["ids"][0]:
             for i, doc_id in enumerate(results["ids"][0]):
                 doc = results["documents"][0][i] if results.get("documents") else ""
-                meta = results["metadatas"][0][i] if results.get("metadatas") else {}
-                distance = results["distances"][0][i] if results.get("distances") else 0.0
+                meta = (
+                    results["metadatas"][0][i]
+                    if results.get("metadatas")
+                    else {}
+                )
+                distance = (
+                    results["distances"][0][i]
+                    if results.get("distances")
+                    else 0.0
+                )
+                # cosine 距离转相似度分数
                 score = 1.0 - distance
 
                 created = datetime.now()
                 if "created_at" in meta:
                     try:
                         created = datetime.fromisoformat(meta["created_at"])
-                    except ValueError, TypeError:
+                    except (ValueError, TypeError):
                         pass
 
                 item = MemoryItem(
@@ -171,6 +218,7 @@ class VectorMemory(BaseMemory):
                 pass
 
     async def clear(self) -> None:
+        """删除并重建集合（比逐条删除更高效）。"""
         if self._available and self._client:
             try:
                 self._client.delete_collection(self._collection_name)
@@ -184,12 +232,19 @@ class VectorMemory(BaseMemory):
     # ========== Consolidation ==========
 
     async def consolidate(self, llm: Any = None) -> int:
+        """容量控制：超过 10000 条时删除最旧的条目。
+
+        不需要 LLM 参与。
+        """
         if not self._available or not self._collection:
             return 0
         try:
             count = self._collection.count()
             if count > 10000:
-                oldest = self._collection.get(limit=count - 10000, include=[])
+                # 获取超出部分的 ID 并删除
+                oldest = self._collection.get(
+                    limit=count - 10000, include=[]
+                )
                 if oldest and oldest["ids"]:
                     self._collection.delete(ids=oldest["ids"])
                     return len(oldest["ids"])
@@ -199,6 +254,13 @@ class VectorMemory(BaseMemory):
 
 
 def _build_chroma_filter(filters: dict) -> dict | None:
+    """将 MemoryManager 的检索过滤条件转换为 ChromaDB where 子句。
+
+    ChromaDB 的 where 格式：
+        {"key": "value"}                精确匹配
+        {"key": {"$gte": value}}        比较运算
+        {"$and": [{...}, {...}]}       逻辑与
+    """
     conds: list[dict] = []
     if "session_id" in filters:
         conds.append({"m_session_id": filters["session_id"]})

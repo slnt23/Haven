@@ -108,7 +108,7 @@ class RuntimeService:
         """清理资源：保存记忆、关闭 MCP 连接。"""
         if self._runtime is not None:
             try:
-                await self._runtime.extract_facts_async()
+                await self._runtime.extract_semantic_facts_async()
             except Exception:
                 pass
 
@@ -256,7 +256,7 @@ class RuntimeService:
 
         # 后台提取事实
         if self._runtime:
-            asyncio.create_task(self._runtime.extract_facts_async())
+            asyncio.create_task(self._runtime.extract_semantic_facts_async())
 
         return {"result": result, "plan": plan, "elapsed_ms": elapsed_ms}
 

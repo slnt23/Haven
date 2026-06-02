@@ -1,6 +1,9 @@
-"""SemanticMemory — 结构化知识存储。
+"""SemanticMemory — 自然语言知识存储。
 
-实体-事实图。支持：多实体、事实变更历史、置信度衰减、按实体/标签/键检索。
+存储 LLM 批量提取的自然语言事实陈述。每条事实是一个完整的中文句子，
+由辅助模型从多轮对话中提取并合并去重后写入。
+
+存储：SQLite 的 semantic_facts 表，与 EpisodicMemory 共享 .data/memory.db。
 """
 
 from __future__ import annotations
@@ -15,12 +18,13 @@ from haven.memory.base import BaseMemory, MemoryItem
 
 
 class SemanticMemory(BaseMemory):
-    """结构化知识存储。实体-事实-历史三层。
+    """自然语言知识存储。每条事实为一个完整的中文句子。
 
     Schema:
-      memory_entities    — 实体对象
-      memory_facts       — 事实（entity_id, key, value, confidence, tags）
-      memory_fact_history — 事实变更历史（同 key 被覆盖时的旧值存档）
+      semantic_facts (entity_name, fact_text, importance, source_episode_ids)
+
+    importance 是定性标签（high / medium / low），
+    转换为 MemoryItem.importance 时映射为数值（0.9 / 0.6 / 0.3）。
     """
 
     name = "semantic"
@@ -35,204 +39,174 @@ class SemanticMemory(BaseMemory):
         self._init_schema()
 
     def _init_schema(self) -> None:
+        # 先删除旧的 key-value 表（无向后兼容），再创建新的自然语言事实表
         self._conn.executescript("""
-            CREATE TABLE IF NOT EXISTS memory_entities (
+            DROP TABLE IF EXISTS memory_fact_history;
+            DROP TABLE IF EXISTS memory_facts;
+            DROP TABLE IF EXISTS memory_entities;
+
+            CREATE TABLE IF NOT EXISTS semantic_facts (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL UNIQUE,
-                type TEXT NOT NULL DEFAULT 'user',
-                description TEXT DEFAULT '',
+                entity_name TEXT NOT NULL,
+                fact_text TEXT NOT NULL,
+                source_episode_ids TEXT NOT NULL DEFAULT '[]',
+                importance TEXT NOT NULL DEFAULT 'medium',
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
 
-            CREATE TABLE IF NOT EXISTS memory_facts (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                entity_id INTEGER NOT NULL REFERENCES memory_entities(id),
-                key TEXT NOT NULL,
-                value TEXT NOT NULL,
-                confidence REAL NOT NULL DEFAULT 0.9,
-                source_session TEXT DEFAULT '',
-                source_turn INTEGER DEFAULT 0,
-                tags TEXT DEFAULT '[]',
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE(entity_id, key)
-            );
-
-            CREATE TABLE IF NOT EXISTS memory_fact_history (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                fact_id INTEGER NOT NULL REFERENCES memory_facts(id),
-                old_value TEXT NOT NULL,
-                new_value TEXT NOT NULL,
-                changed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-
-            CREATE INDEX IF NOT EXISTS idx_mf_entity ON memory_facts(entity_id);
-            CREATE INDEX IF NOT EXISTS idx_mf_confidence ON memory_facts(confidence);
+            CREATE INDEX IF NOT EXISTS idx_sf_entity ON semantic_facts(entity_name);
+            CREATE INDEX IF NOT EXISTS idx_sf_importance ON semantic_facts(importance);
         """)
         self._conn.commit()
 
     # ========== 存储 ==========
 
     async def store(self, items: list[MemoryItem]) -> None:
+        """兼容旧接口：逐个写入，importance 默认 medium。
+
+        MemoryManager 的批量提取使用 store_facts() 全量替换，
+        此方法用于兼容外部调用方。
+        """
         for item in items:
             entity_name = item.metadata.get("entity_name", "user")
-            key = item.metadata.get("key", "")
-            value = item.metadata.get("value", "") or item.content
-            entity_type = item.metadata.get("entity_type", "user")
-
-            if not key or not value:
+            fact_text = item.content
+            if not fact_text:
                 continue
-
-            entity_id = self._get_or_create_entity(entity_name, entity_type)
-            old_value = self._get_fact_value(entity_id, key)
-
-            if old_value is not None and old_value != value:
-                self._record_history(entity_id, key, old_value, value)
-
-            self._upsert_fact(
-                entity_id,
-                key,
-                value,
-                confidence=item.metadata.get("confidence", item.importance),
-                source_session=item.metadata.get("source_session", ""),
-                source_turn=item.metadata.get("source_turn", 0),
-                tags=json.dumps(item.metadata.get("tags", [])),
+            self._conn.execute(
+                "INSERT INTO semantic_facts (entity_name, fact_text, importance) "
+                "VALUES (?, ?, ?)",
+                (entity_name, fact_text, "medium"),
             )
+        self._conn.commit()
+
+    async def store_facts(
+        self,
+        entity_name: str,
+        facts: list[dict],
+        source_episode_ids: list[str],
+    ) -> None:
+        """全量替换某实体的所有事实。
+
+        先删除旧事实，再写入 LLM 合并去重后的新事实集。
+        每条 fact 是 {"text": "...", "importance": "high|medium|low"}。
+        """
+        # 1. 删除旧事实
+        self._conn.execute(
+            "DELETE FROM semantic_facts WHERE entity_name = ?", (entity_name,)
+        )
+        # 2. 写入新事实（同一事务）
+        source_json = json.dumps(source_episode_ids, ensure_ascii=False)
+        for f in facts:
+            self._conn.execute(
+                "INSERT INTO semantic_facts "
+                "(entity_name, fact_text, source_episode_ids, importance) "
+                "VALUES (?, ?, ?, ?)",
+                (entity_name, f["text"], source_json, f.get("importance", "medium")),
+            )
+        self._conn.commit()
+
+    async def get_all_facts_text(self, entity_name: str) -> str:
+        """获取某实体的所有事实，格式化为 '- 事实文本' 的字符串。
+
+        供 LLM 批量提取 prompt 中的「已有知识」部分使用。
+        按 importance 排序（high 在前）。
+        """
+        rows = self._conn.execute(
+            "SELECT fact_text FROM semantic_facts WHERE entity_name = ? "
+            "ORDER BY importance = 'high' DESC, created_at DESC",
+            (entity_name,),
+        ).fetchall()
+        if not rows:
+            return ""
+        return "\n".join(f"- {r['fact_text']}" for r in rows)
 
     # ========== 检索 ==========
 
-    async def retrieve(self, query: str = "", top_k: int = 10, **filters: Any) -> list[MemoryItem]:
-        entity_name = filters.get("entity_name")
-        key = filters.get("key")
-        min_confidence = filters.get("min_confidence", 0.3)
-        tag = filters.get("tag")
+    async def retrieve(
+        self, query: str = "", top_k: int = 10, **filters: Any
+    ) -> list[MemoryItem]:
+        """按 entity_name 和/或关键词检索事实。
 
-        where = ["f.confidence >= ?"]
-        params: list[Any] = [min_confidence]
-        joins = ["JOIN memory_entities e ON f.entity_id = e.id"]
+        filters:
+            entity_name: 限定实体（必传，否则查所有实体）
+            query:       关键词 LIKE 匹配 fact_text
+
+        排序：importance = 'high' 优先，再按创建时间倒序。
+        """
+        entity_name = filters.get("entity_name")
+
+        where = ["1=1"]
+        params: list[Any] = []
 
         if entity_name:
-            where.append("e.name = ?")
+            where.append("entity_name = ?")
             params.append(entity_name)
-        if key:
-            where.append("f.key = ?")
-            params.append(key)
-        if tag:
-            where.append("f.tags LIKE ?")
-            params.append(f'%"{tag}"%')
         if query:
-            where.append("(f.key LIKE ? OR f.value LIKE ?)")
-            kw = f"%{query}%"
-            params.extend([kw, kw])
+            # 简单 LIKE 匹配，无需全文索引（事实集通常不大）
+            where.append("fact_text LIKE ?")
+            params.append(f"%{query}%")
 
         rows = self._conn.execute(
-            f"SELECT f.*, e.name as entity_name, e.type as entity_type "
-            f"FROM memory_facts f {' '.join(joins)} "
-            f"WHERE {' AND '.join(where)} "
-            f"ORDER BY f.confidence DESC, f.created_at DESC LIMIT ?",
+            f"SELECT * FROM semantic_facts WHERE {' AND '.join(where)} "
+            f"ORDER BY importance = 'high' DESC, created_at DESC LIMIT ?",
             [*params, top_k],
         ).fetchall()
 
         return [self._row_to_item(r) for r in rows]
 
-    async def retrieve_entity_facts(self, entity_name: str) -> list[MemoryItem]:
+    async def retrieve_entity_facts(
+        self, entity_name: str
+    ) -> list[MemoryItem]:
+        """获取某实体的全部事实（最多 50 条）。"""
         return await self.retrieve(entity_name=entity_name, top_k=50)
 
     # ========== 遗忘 ==========
 
     async def forget(self, item_id: str) -> None:
-        self._conn.execute("DELETE FROM memory_facts WHERE id=?", (int(item_id),))
+        self._conn.execute(
+            "DELETE FROM semantic_facts WHERE id=?", (int(item_id),)
+        )
         self._conn.commit()
 
     async def clear(self) -> None:
-        self._conn.execute("DELETE FROM memory_facts")
-        self._conn.execute("DELETE FROM memory_entities")
-        self._conn.execute("DELETE FROM memory_fact_history")
+        self._conn.execute("DELETE FROM semantic_facts")
         self._conn.commit()
 
     # ========== Consolidation ==========
 
     async def consolidate(self, llm: Any = None) -> int:
-        self._conn.execute("""
-            UPDATE memory_facts SET confidence = MAX(0.1, confidence - 0.1)
-            WHERE confidence < 0.9 AND created_at < datetime('now', '-30 days')
-        """)
-        self._conn.execute("DELETE FROM memory_facts WHERE confidence <= 0.1")
+        """清理超过 90 天未更新的旧事实。
+
+        去重和合并已由 LLM 在每次批量提取时完成，
+        这里只做简单的过期清理，不需要 LLM 参与。
+        """
+        self._conn.execute(
+            "DELETE FROM semantic_facts "
+            "WHERE updated_at < datetime('now', '-90 days')"
+        )
         self._conn.commit()
         return self._conn.total_changes
 
     # ========== 内部 ==========
 
-    def _get_or_create_entity(self, name: str, entity_type: str) -> int:
-        self._conn.execute(
-            "INSERT OR IGNORE INTO memory_entities (name, type) VALUES (?, ?)",
-            (name, entity_type),
-        )
-        self._conn.commit()
-        return self._conn.execute(
-            "SELECT id FROM memory_entities WHERE name=?", (name,)
-        ).fetchone()["id"]
-
-    def _get_fact_value(self, entity_id: int, key: str) -> str | None:
-        row = self._conn.execute(
-            "SELECT value FROM memory_facts WHERE entity_id=? AND key=?",
-            (entity_id, key),
-        ).fetchone()
-        return row["value"] if row else None
-
-    def _record_history(self, entity_id: int, key: str, old: str, new: str) -> None:
-        fact_row = self._conn.execute(
-            "SELECT id FROM memory_facts WHERE entity_id=? AND key=?", (entity_id, key)
-        ).fetchone()
-        if fact_row:
-            self._conn.execute(
-                "INSERT INTO memory_fact_history (fact_id, old_value, new_value) VALUES (?,?,?)",
-                (fact_row["id"], old, new),
-            )
-            self._conn.commit()
-
-    def _upsert_fact(self, entity_id: int, key: str, value: str, **kw: Any) -> None:
-        self._conn.execute(
-            """
-            INSERT INTO memory_facts
-                (entity_id, key, value, confidence, source_session, source_turn, tags)
-            VALUES (?,?,?,?,?,?,?)
-            ON CONFLICT(entity_id, key) DO UPDATE SET
-                value=excluded.value, confidence=excluded.confidence,
-                source_session=excluded.source_session, source_turn=excluded.source_turn,
-                tags=excluded.tags, created_at=CURRENT_TIMESTAMP
-        """,
-            (
-                entity_id,
-                key,
-                value,
-                kw.get("confidence", 0.9),
-                kw.get("source_session", ""),
-                kw.get("source_turn", 0),
-                kw.get("tags", "[]"),
-            ),
-        )
-        self._conn.commit()
-        self._conn.execute(
-            "UPDATE memory_entities SET updated_at=CURRENT_TIMESTAMP WHERE id=?",
-            (entity_id,),
-        )
-        self._conn.commit()
+    # importance 标签到数值的映射，用于 MemoryItem.importance
+    _IMPORTANCE_MAP = {"high": 0.9, "medium": 0.6, "low": 0.3}
 
     def _row_to_item(self, row: Any) -> MemoryItem:
+        """将 SQLite 行转换为 MemoryItem。
+
+        content 直接使用 fact_text（自然语言句子），无需二次格式化。
+        """
         return MemoryItem(
             id=str(row["id"]),
-            content=f"{row['key']}: {row['value']}",
+            content=row["fact_text"],
             memory_type="semantic",
             created_at=datetime.fromisoformat(row["created_at"]),
-            importance=row["confidence"],
+            importance=self._IMPORTANCE_MAP.get(row["importance"], 0.5),
             metadata={
                 "entity_name": row["entity_name"],
-                "entity_type": row["entity_type"],
-                "key": row["key"],
-                "value": row["value"],
-                "confidence": row["confidence"],
-                "source_session": row["source_session"],
-                "source_turn": row["source_turn"],
+                "importance": row["importance"],
+                "source_episode_ids": row["source_episode_ids"],
             },
         )

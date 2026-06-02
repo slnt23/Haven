@@ -1,4 +1,5 @@
 default_model: deepseek-v4-pro
+auxiliary_model: deepseek-v4-flash
 
 models:
   deepseek-v4-pro:

@@ -139,7 +139,7 @@ async def _process_chat(user_input: str, cli_ctx: CLIContext) -> None:
     rt = cli_ctx.runtime
     if rt:
         rt.save_turn(user_input, response)
-        asyncio.create_task(rt.extract_facts_async())
+        asyncio.create_task(rt.extract_semantic_facts_async())
 
 
 # ====================================================================
