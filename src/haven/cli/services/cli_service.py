@@ -28,8 +28,8 @@ class CLIContext:
     planner: Any = field(default=None, repr=False)
     runtime: Any = field(default=None, repr=False)
 
-    # 守护进程
-    daemon_pid: int | None = None
+    # RuntimeService 内部引用
+    _service: Any = field(default=None, repr=False)
 
     @property
     def output_format(self) -> str:

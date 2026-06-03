@@ -67,7 +67,10 @@ class VectorMemory(BaseMemory):
             )
             return True
         except ImportError:
-            logger.debug("chromadb not installed, VectorMemory disabled")
+            logger.warning(
+                "chromadb not installed — VectorMemory disabled. "
+                "Install with: pip install chromadb"
+            )
             self._client = False
             return False
         except Exception as exc:

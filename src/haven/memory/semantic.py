@@ -10,9 +10,12 @@ from __future__ import annotations
 
 from datetime import datetime
 import json
+import logging
 from pathlib import Path
 import sqlite3
 from typing import Any
+
+logger = logging.getLogger("haven.memory.semantic")
 
 from haven.memory.base import BaseMemory, MemoryItem
 
@@ -86,25 +89,57 @@ class SemanticMemory(BaseMemory):
         facts: list[dict],
         source_episode_ids: list[str],
     ) -> None:
-        """全量替换某实体的所有事实。
+        """增量合并事实：新事实插入，已有事实更新。
 
-        先删除旧事实，再写入 LLM 合并去重后的新事实集。
         每条 fact 是 {"text": "...", "importance": "high|medium|low"}。
+        已存在相同 fact_text + entity_name → 更新 importance + 合并来源；
+        不存在 → 插入新行。
+        旧事实不会被删除（由 consolidate 的 90 天过期清理负责）。
         """
-        # 1. 删除旧事实
-        self._conn.execute(
-            "DELETE FROM semantic_facts WHERE entity_name = ?", (entity_name,)
-        )
-        # 2. 写入新事实（同一事务）
         source_json = json.dumps(source_episode_ids, ensure_ascii=False)
+        inserted, updated = 0, 0
+
         for f in facts:
-            self._conn.execute(
-                "INSERT INTO semantic_facts "
-                "(entity_name, fact_text, source_episode_ids, importance) "
-                "VALUES (?, ?, ?, ?)",
-                (entity_name, f["text"], source_json, f.get("importance", "medium")),
-            )
+            text = f["text"]
+            importance = f.get("importance", "medium")
+
+            existing = self._conn.execute(
+                "SELECT id, source_episode_ids FROM semantic_facts "
+                "WHERE entity_name = ? AND fact_text = ?",
+                (entity_name, text),
+            ).fetchone()
+
+            if existing:
+                # 合并来源 episode ID 列表
+                try:
+                    old_sources = json.loads(existing["source_episode_ids"])
+                except (json.JSONDecodeError, TypeError):
+                    old_sources = []
+                new_sources = json.loads(source_json)
+                merged_ids = list(set(old_sources + new_sources))
+                merged_json = json.dumps(merged_ids, ensure_ascii=False)
+
+                self._conn.execute(
+                    "UPDATE semantic_facts SET importance = ?, "
+                    "source_episode_ids = ?, updated_at = CURRENT_TIMESTAMP "
+                    "WHERE id = ?",
+                    (importance, merged_json, existing["id"]),
+                )
+                updated += 1
+            else:
+                self._conn.execute(
+                    "INSERT INTO semantic_facts "
+                    "(entity_name, fact_text, source_episode_ids, importance) "
+                    "VALUES (?, ?, ?, ?)",
+                    (entity_name, text, source_json, importance),
+                )
+                inserted += 1
+
         self._conn.commit()
+        logger.debug(
+            "store_facts: %d inserted, %d updated for '%s'",
+            inserted, updated, entity_name,
+        )
 
     async def get_all_facts_text(self, entity_name: str) -> str:
         """获取某实体的所有事实，格式化为 '- 事实文本' 的字符串。

@@ -25,6 +25,7 @@ dist/
 htmlcov/
 .coverage
 coverage.xml
+tests/
 
 # 类型检查
 .mypy_cache/
@@ -45,3 +46,4 @@ Thumbs.db
 
 # Claude Code
 .claude/
+

@@ -240,8 +240,9 @@ class AgentRuntime:
     # Memory
     # ==================================================================
 
-    def save_turn(self, user_input: str, response: str) -> None:
-        asyncio.create_task(self.memory.record_turn(user_input, response))
+    async def save_turn(self, user_input: str, response: str) -> None:
+        """持久化本轮对话到长期记忆。等待写入完成后返回。"""
+        await self.memory.record_turn(user_input, response)
 
     async def extract_semantic_facts_async(self, force: bool = True) -> None:
         """批量语义事实提取，委托给 MemoryManager。"""

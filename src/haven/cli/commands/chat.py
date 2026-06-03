@@ -1,6 +1,7 @@
 """haven chat — 交互式 REPL。
 
 CLI → RuntimeService → Runtime（禁止 CLI 直接调 Runtime）。
+采用终端动态刷新：原地 spinner + 状态提示，最终结果完整块输出。
 """
 
 from __future__ import annotations
@@ -21,18 +22,22 @@ from haven.cli.ui.console import (
     render_success,
     rule,
 )
-from haven.cli.ui.progress import StreamRenderer
+from haven.cli.ui.progress import DynamicRenderer
 
 logger = logging.getLogger("haven.cli.chat")
 
 
 def run_chat(
-        ctx: typer.Context,
-        model: Annotated[str | None, typer.Option("--model", "-m", help="指定模型")] = None,
-        task: Annotated[str | None, typer.Option("--task", "-t", help="启动后立即执行的任务")] = None,
-        verbose: Annotated[bool, typer.Option("--verbose", "-v", help="详细模式")] = False,
+    ctx: typer.Context,
+    model: Annotated[str | None, typer.Option("--model", "-m", help="指定模型")] = None,
+    task: Annotated[str | None, typer.Option("--task", "-t", help="启动后立即执行的任务")] = None,
+    verbose: Annotated[bool, typer.Option("--verbose", "-v", help="详细模式")] = False,
+    task_only: bool = False,
 ) -> None:
-    """启动 Haven 交互式 REPL。运行一个持续的读取-求值-输出循环。"""
+    """启动 Haven 交互式 REPL。动态刷新渲染，原地状态更新。
+
+    task_only=True 时仅执行初始任务然后退出，不进入 REPL。
+    """
     cli_ctx = ctx.obj if isinstance(ctx.obj, CLIContext) else CLIContext()
     cli_ctx.model = model
     cli_ctx.verbose = verbose
@@ -51,6 +56,7 @@ def run_chat(
         workflows=status["workflows"],
         memory_turns=status["memory_turns"],
         providers=status["providers"],
+        vector_available=status.get("vector_available", False),
     )
     render_info("输入 /help 查看命令，Ctrl+C 退出。")
     blank()
@@ -59,12 +65,16 @@ def run_chat(
     if task:
         render_markdown(f"**[Task]** {task}\n")
         asyncio.run(_process_chat(task, cli_ctx))
+        if task_only:
+            rule()
+            asyncio.run(_stop_service(cli_ctx))
+            return
 
     # ---- REPL ----
     while True:
         try:
             user_input = typer.prompt(">", prompt_suffix=" ", show_default=False)
-        except KeyboardInterrupt, EOFError:
+        except (KeyboardInterrupt, EOFError):
             rule()
             asyncio.run(_stop_service(cli_ctx))
             render_info("再见。")
@@ -80,7 +90,7 @@ def run_chat(
             handled = _handle_slash(user_input, cli_ctx)
             if not handled:
                 continue
-            break  # /exit 会 raise Exit
+            break  # /exit raises Exit
 
         asyncio.run(_process_chat(user_input, cli_ctx))
 
@@ -118,27 +128,29 @@ async def _stop_service(cli_ctx: CLIContext) -> None:
 
 
 # ====================================================================
-# 对话处理
+# 对话处理 — 动态刷新渲染
 # ====================================================================
 
 
 async def _process_chat(user_input: str, cli_ctx: CLIContext) -> None:
-    svc: "RuntimeService" = cli_ctx._service  # noqa: F821
+    """处理一轮对话：spinner 原地刷新 + 最终完整块渲染。"""
+    svc = cli_ctx._service
 
-    renderer = StreamRenderer()
-    try:
-        async for token in svc.chat_stream(user_input):
-            renderer.feed(token)
-    except Exception as exc:
-        logger.error("chat error: %s", exc)
-        renderer.feed(f"[错误] {exc}")
+    renderer = DynamicRenderer()
+    async with renderer:
+        try:
+            async for token in svc.chat_stream(user_input):
+                renderer.feed(token)
+        except Exception as exc:
+            logger.error("chat error: %s", exc)
+            renderer.feed(f"\n[错误] {exc}")
 
-    response = renderer.flush()
+    response = renderer.render()
 
-    # 持久化本轮对话到长期记忆 + 异步提取事实
+    # 持久化本轮对话到长期记忆（先 await 写入完成，再触提取，消除竞态）
     rt = cli_ctx.runtime
-    if rt:
-        rt.save_turn(user_input, response)
+    if rt and response.strip():
+        await rt.save_turn(user_input, response)
         asyncio.create_task(rt.extract_semantic_facts_async())
 
 

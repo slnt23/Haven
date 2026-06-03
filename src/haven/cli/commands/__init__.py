@@ -1,16 +1,12 @@
 """CLI V2 命令模块。
 
 直接命令（注册在 main.py）:
-  run, doctor
+  status, serve
 
-子命令组（add_typer）:
-  workflow, skill
-
-扩展方式:
-  1. 创建 commands/<name>.py
-  2. 在 main.py 中注册
+默认行为:
+  haven → 交互式 REPL (chat.py)
 """
 
-from haven.cli.commands import chat, doctor, run, skill, workflow
+from haven.cli.commands import chat
 
-__all__ = ["run", "doctor", "workflow", "skill"]
+__all__ = ["chat"]

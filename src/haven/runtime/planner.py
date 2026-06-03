@@ -200,8 +200,8 @@ class PlannerAgent:
         # 路径 3: 无步骤（简单对话）→ Runtime 直通
         return await self.runtime.run(
             task,
-            use_memory=True,
         )
+
 
     async def execute_stream(self, task: str) -> AsyncIterator[str]:
         """流式规划+执行。规划非流式，执行阶段逐 token 输出。
@@ -243,7 +243,6 @@ class PlannerAgent:
                     async for chunk in self.runtime.astream(
                         step_task,
                         active_skills=skill_objs,
-                        use_memory=True,
                         tool_results=prev_results or None,
                     ):
                         collected.append(chunk)
@@ -253,14 +252,13 @@ class PlannerAgent:
                     result = await self.runtime.run(
                         step_task,
                         active_skills=skill_objs,
-                        use_memory=True,
                         tool_results=prev_results or None,
                     )
                     step_outputs[step.order] = result
             return
 
         # 路径 3: 简单对话 → 流式直通
-        async for chunk in self.runtime.astream(task, use_memory=True):
+        async for chunk in self.runtime.astream(task):
             yield chunk
 
     # ==================================================================
@@ -308,11 +306,14 @@ class PlannerAgent:
 
         # DeepSeek thinking mode doesn't support tool_choice, which
         # with_structured_output uses internally. Use a non-thinking copy.
+        # NOTE: thinking must go into extra_body (JSON body), NOT model_kwargs
+        # (top-level kwargs to create()), or the API will reject it.
         llm_for_planning = self.llm
         if getattr(self.llm, "_llm_type", "") == "chat-deepseek":
+            existing_extra = getattr(self.llm, "extra_body", None) or {}
             llm_for_planning = self.llm.model_copy(update={
-                "model_kwargs": {
-                    **getattr(self.llm, "model_kwargs", {}),
+                "extra_body": {
+                    **existing_extra,
                     "thinking": {"type": "disabled"},
                 }
             })
@@ -383,7 +384,7 @@ class PlannerAgent:
         """
         wf_name = plan.workflow
         if not wf_name or self._workflow_registry is None:
-            return await self.runtime.run(task, use_memory=True)
+            return await self.runtime.run(task)
 
         try:
             compiled_graph = self._workflow_registry.build(wf_name)
@@ -491,7 +492,6 @@ class PlannerAgent:
             result = await self.runtime.run(
                 step_task,
                 active_skills=skill_objs,
-                use_memory=True,
                 tool_results=prev_results or None,
             )
             step_outputs[step.order] = result

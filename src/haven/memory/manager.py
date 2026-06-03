@@ -48,7 +48,8 @@ class MemoryManager:
     """
 
     # 批量提取参数
-    _BATCH_MIN_SIZE = 5       # 未处理对话少于此时不触发 LLM 调用
+    _BATCH_MIN_SIZE = 1       # 未处理对话不少于此时触发 LLM 调用
+    _BATCH_GATHER_DELAY = 2.0 # 不足 5 条时的聚集等待时间（秒），让更多消息攒批
     _BATCH_MAX_EPISODES = 20  # 每次最多发送给 LLM 的对话数（控制 prompt 长度）
 
     def __init__(
@@ -57,7 +58,7 @@ class MemoryManager:
         entity_name: str = "user",
         channel: str = "cli",
         *,
-        enable_vector: bool = True,
+        enable_vector: bool = False,
         max_working_messages: int = 100,
     ):
         self.session_id = session_id
@@ -116,6 +117,15 @@ class MemoryManager:
         if not persist:
             return
 
+        # 配置级记忆开关：关闭后只保留 Working，不写持久层
+        try:
+            from haven.config import settings
+
+            if not settings.memory_enabled:
+                return
+        except Exception:
+            pass  # 配置不可用时继续写入（宽松策略）
+
         # 2. Episodic — SQLite 持久化完整对话
         await self.episodic.store_turn(
             session_id=self.session_id,
@@ -146,9 +156,9 @@ class MemoryManager:
         # 4. Semantic — 检查未处理对话数，达标则异步批量提取
         asyncio.create_task(self._check_and_extract())
 
-        # 5. Working 摘要 — 溢出消息 ≥ 10 条时异步压缩
+        # 5. Working 摘要 — 溢出消息 ≥ 10 条时异步压缩，并回填到 Episodic
         if self.working.needs_summarization() and self._llm:
-            asyncio.create_task(self.working.summarize(self._llm))
+            asyncio.create_task(self._summarize_and_bridge())
 
         # 6. 周期整合 — 每 10 轮触发一次（清理旧数据、衰减、压缩）
         self._consolidation_counter += 1
@@ -271,6 +281,13 @@ class MemoryManager:
     # 便利方法
     # ==================================================================
 
+    @property
+    def is_vector_available(self) -> bool:
+        """向量记忆是否实际可用（配置开启 + chromadb 已安装 + 初始化成功）。"""
+        if self.vector is None:
+            return False
+        return self.vector._available
+
     def get_working_messages(self) -> list[Any]:
         """获取当前工作记忆的消息列表。用于构建 LLM 调用前的 messages。"""
         return self.working.get_messages()
@@ -286,6 +303,30 @@ class MemoryManager:
         return await self.semantic.retrieve_entity_facts(
             entity_name or self.entity_name
         )
+
+    async def _summarize_and_bridge(self) -> None:
+        """Working 摘要生成 + 回填 Episodic 桥接。
+
+        Working 压缩溢出消息后，将生成的摘要回写到 Episodic
+        中最近的无摘要 episodes，避免 Episodic 重复 LLM 摘要。
+        """
+        if self._llm is None:
+            return
+        try:
+            prev_summary = self.working.summary
+            await self.working.summarize(self._llm)
+            new_summary = self.working.summary
+            # 只有摘要确实更新了才回填
+            if new_summary and new_summary != prev_summary:
+                n = await self.episodic.backfill_summary_from_working(
+                    self.session_id, new_summary
+                )
+                if n > 0:
+                    logger.debug(
+                        "Working summary backfilled to %d episodic rows", n
+                    )
+        except Exception:
+            pass
 
     # ==================================================================
     # 批量语义提取
@@ -306,12 +347,19 @@ class MemoryManager:
     async def _check_and_extract(self) -> None:
         """record_turn() 后的异步检查：未处理对话达标则触发批量提取。
 
-        先快速 COUNT 查询判断是否达到阈值，避免每次查询完整对话列表。
+        小批次（< 5 条）时等待 gather_delay 秒，让更多消息攒批后一起处理。
         """
         try:
             count = await self.episodic.count_unprocessed(self.session_id)
-            if count >= self._BATCH_MIN_SIZE:
-                await self._batch_extract_semantic_facts()
+            if count < self._BATCH_MIN_SIZE:
+                return
+            # 不足 5 条时等待聚集，减少高频小批次 LLM 调用
+            if count < 5:
+                await asyncio.sleep(self._BATCH_GATHER_DELAY)
+                count = await self.episodic.count_unprocessed(self.session_id)
+                if count < self._BATCH_MIN_SIZE:
+                    return
+            await self._batch_extract_semantic_facts()
         except Exception:
             pass
 
@@ -413,6 +461,10 @@ class MemoryManager:
             # 6. 标记已处理
             await self.episodic.mark_processed(episode_ids)
 
+            # 7. 回填情节重要性（从提取的事实推断）
+            if facts:
+                self._backfill_episodic_importance(episode_ids, facts)
+
             logger.info(
                 "Semantic batch: %d episodes → %d facts for '%s'",
                 len(episodes),
@@ -453,22 +505,76 @@ class MemoryManager:
     # 内部工具
     # ==================================================================
 
+    def _backfill_episodic_importance(
+        self, episode_ids: list[str], facts: list[dict]
+    ) -> None:
+        """根据 LLM 提取的事实重要性，回填 episodic 记录的 importance 字段。
+
+        high 事实 → importance 0.9
+        medium 事实 → importance 0.6
+        low 事实 → importance 0.4
+        多条事实取最高值。
+        """
+        importance_map = {"high": 0.9, "medium": 0.6, "low": 0.4}
+        best_imp = 0.4  # 默认值
+        for f in facts:
+            imp = importance_map.get(f.get("importance", "low"), 0.4)
+            if imp > best_imp:
+                best_imp = imp
+
+        # 回填到来源 episodes
+        placeholders = ",".join("?" * len(episode_ids))
+        self.episodic._conn.execute(
+            f"UPDATE episodes SET importance = MAX(importance, ?) "
+            f"WHERE id IN ({placeholders})",
+            [best_imp] + episode_ids,
+        )
+        self.episodic._conn.commit()
+
     @staticmethod
     def _estimate_importance(user: str, assistant: str) -> float:
-        """基于关键词的对话重要性估算。
+        """基于多维度信号的对话重要性估算。
 
-        检测到个人信息/偏好/紧急等关键词时提高评分，
-        用于 episodic 记录的 importance 字段。
+        四个信号维度：
+        1. 个人信息（姓名、联系方式、地址等）
+        2. 偏好声明（喜欢/不喜欢/总是/从不）
+        3. 任务请求（帮我/写一下/生成等）
+        4. 情感表达（紧急/重要/必须等）
         范围 0.3-0.9。
         """
-        keywords = [
-            "记住", "我叫", "我是", "我喜欢", "我住在",
-            "我的电话", "偏好", "总是", "从不", "重要",
-            "过敏", "紧急",
-        ]
         combined = (user + " " + assistant).lower()
-        hits = sum(1 for kw in keywords if kw in combined)
-        return min(0.9, 0.3 + hits * 0.15)
+        score = 0.3
+
+        # 个人信息信号（权重 0.12 每个）
+        personal = [
+            "我叫", "我是", "我住在", "我的电话", "我的邮箱",
+            "我的地址", "我今年", "我的工作是", "我在",
+            "名字是", "联系电话", "email", "出生",
+        ]
+        score += sum(0.12 for kw in personal if kw in combined)
+
+        # 偏好声明信号（权重 0.10 每个）
+        preference = [
+            "我喜欢", "我讨厌", "我不喜欢", "偏好", "总是",
+            "从不", "习惯", "倾向", "宁愿", "最爱",
+        ]
+        score += sum(0.10 for kw in preference if kw in combined)
+
+        # 任务请求信号（权重 0.08 每个）
+        task = [
+            "帮我", "请帮我", "帮我写", "生成", "分析一下",
+            "能不能", "可以帮我", "实现", "修复",
+        ]
+        score += sum(0.08 for kw in task if kw in combined)
+
+        # 情感/紧迫信号（权重 0.15 每个）
+        urgency = [
+            "紧急", "重要", "必须", "尽快", "立即",
+            "过敏", "危险", "严重", "关键",
+        ]
+        score += sum(0.15 for kw in urgency if kw in combined)
+
+        return min(0.9, score)
 
     @staticmethod
     async def _empty() -> list[MemoryItem]:

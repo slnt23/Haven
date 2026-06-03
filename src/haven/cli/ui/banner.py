@@ -23,6 +23,7 @@ def print_banner(
     workflows: int = 0,
     memory_turns: int = 0,
     providers: int = 0,
+    vector_available: bool = False,
     version: str = "2.0.0",
     channel: str = "cli",
 ) -> None:
@@ -36,7 +37,8 @@ def print_banner(
     right.append(f"\n  Tools:    [cyan]{tools}[/]")
     right.append(f"\n  Providers:[cyan]{providers}[/]")
     right.append(f"\n  Workflows:[cyan]{workflows}[/]")
-    right.append(f"\n  Memory:   [cyan]{memory_turns} turns[/]")
+    vec_status = "[green]on[/]" if vector_available else "[dim]off[/]"
+    right.append(f"\n  Memory:   [cyan]{memory_turns} turns[/]  Vector: {vec_status}")
     right.append(f"\n  Channel:  [dim]{channel}[/]")
 
     from rich.columns import Columns

@@ -1,10 +1,9 @@
 """Haven CLI V2 — Typer + Rich 命令体系。
 
 haven              交互式 REPL（默认）
-haven run          单轮任务
-haven workflow     工作流管理
-haven skill        Skill 管理
-haven doctor       环境诊断
+haven --task TEXT   单次任务（执行后退出）
+haven status        查看守护进程状态
+haven serve         启动守护进程
 """
 
 from .main import app, main_cli

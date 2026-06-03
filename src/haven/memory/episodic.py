@@ -230,6 +230,29 @@ class EpisodicMemory(BaseMemory):
         )
         self._conn.commit()
 
+    async def backfill_summary_from_working(
+        self, session_id: str, batch_summary: str, count: int = 10
+    ) -> int:
+        """将 Working 生成的批次摘要回填到最近的无摘要 episodes。
+
+        建立 Working → Episodic 桥接，避免 Episodic 重复 LLM 摘要。
+        """
+        rows = self._conn.execute(
+            "SELECT id FROM episodes "
+            "WHERE session_id = ? AND summary = '' "
+            "ORDER BY turn_number DESC LIMIT ?",
+            (session_id, count),
+        ).fetchall()
+        if not rows:
+            return 0
+
+        self._conn.executemany(
+            "UPDATE episodes SET summary = ? WHERE id = ?",
+            [(batch_summary, r["id"]) for r in rows],
+        )
+        self._conn.commit()
+        return len(rows)
+
     # ========== Consolidation ==========
 
     async def consolidate(self, llm: Any = None) -> int:
@@ -237,6 +260,7 @@ class EpisodicMemory(BaseMemory):
 
         仅处理 summary 为空且创建时间 > 1 天的记录，每次最多 20 条。
         使用辅助模型生成摘要后写回 summary 字段。
+        如果 Working 已回填过摘要则跳过。
         """
         rows = self._conn.execute("""
             SELECT id, user_message, assistant_response
@@ -251,7 +275,6 @@ class EpisodicMemory(BaseMemory):
             try:
                 from langchain_core.messages import HumanMessage
 
-                # 消息截断到 200 字符，控制 prompt 长度
                 resp = await llm.ainvoke(
                     [
                         HumanMessage(

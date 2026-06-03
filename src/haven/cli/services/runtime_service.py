@@ -166,6 +166,9 @@ class RuntimeService:
             mm = self._runtime.memory
             if mm and hasattr(mm, "turn_count"):
                 status["memory_turns"] = mm.turn_count
+                status["vector_available"] = (
+                    mm.is_vector_available if hasattr(mm, "is_vector_available") else False
+                )
         except Exception:
             pass
 

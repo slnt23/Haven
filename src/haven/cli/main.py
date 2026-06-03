@@ -1,20 +1,21 @@
 """haven CLI V2 — 统一入口。Typer + Rich。
 
-自动命令注册，统一帮助，Rich 终端渲染，全局异常处理。
+4 条命令：haven（REPL）/ haven --task / haven status / haven serve。
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
-from pathlib import Path
 import sys
+from pathlib import Path
 from typing import Annotated, Optional
 
 from rich.logging import RichHandler
 import typer
 
 from haven.cli.services.cli_service import CLIContext
-from haven.cli.ui.console import dim, render_error
+from haven.cli.ui.console import dim, render_error, render_info, render_success
 
 # ---------------------------------------------------------------------------
 # 日志
@@ -42,19 +43,10 @@ app = typer.Typer(
     invoke_without_command=True,
 )
 
-# ---- 注册子命令组 (有二级命令的) ----
-from haven.cli.commands.skill import skill_app  # noqa: E402
-from haven.cli.commands.tool import tool_app  # noqa: E402
-from haven.cli.commands.workflow import workflow_app  # noqa: E402
 
-app.add_typer(workflow_app, name="workflow")
-app.add_typer(skill_app, name="skill")
-app.add_typer(tool_app, name="tool")
-
-
-# ---------------------------------------------------------------------------
-# 全局回调 + 默认命令
-# ---------------------------------------------------------------------------
+# ====================================================================
+# 全局回调 + 默认 REPL
+# ====================================================================
 
 
 @app.callback(invoke_without_command=True)
@@ -68,7 +60,7 @@ def main(
     config: Annotated[Optional[str], typer.Option("--config", "-c", help="指定配置文件")] = None,
     model: Annotated[str | None, typer.Option("--model", "-m", help="指定模型")] = None,
     session: Annotated[str | None, typer.Option("--session", "-s", help="恢复会话 ID")] = None,
-    task: Annotated[str | None, typer.Option("--task", "-t", help="启动后立即执行的任务")] = None,
+    task: Annotated[str | None, typer.Option("--task", "-t", help="单次任务（执行后退出）")] = None,
     no_memory: Annotated[bool, typer.Option("--no-memory", help="禁用长期记忆")] = False,
 ) -> None:
     """Haven — 基于 Python 3.14+ 和 LangChain 的多智能体交互框架。
@@ -96,58 +88,67 @@ def main(
             render_error(f"配置文件不存在: {config}")
             raise typer.Exit(code=1)
 
-    # 默认 → REPL
+    # 默认 → REPL（含 --task 单次任务模式）
     if ctx.invoked_subcommand is None:
         from haven.cli.commands.chat import run_chat
 
-        run_chat(ctx, model=model, task=task, verbose=verbose)
+        run_chat(ctx, model=model, task=task, verbose=verbose, task_only=bool(task))
 
 
 # ====================================================================
-# 直接命令 (无二级子命令)
+# haven status — 查看守护进程状态
 # ====================================================================
 
 
-@app.command(name="run", help="单轮任务执行")
-def run_cmd(
+@app.command(name="status", help="查看守护进程状态")
+def status_cmd(
     ctx: typer.Context,
-    task: Annotated[str, typer.Option("--task", "-t", help="任务文本（必填）")] = "",
-    file: Annotated[Optional[str], typer.Option("--file", "-f", help="从文件读取任务")] = None,
-    model: Annotated[str | None, typer.Option("--model", "-m", help="指定模型")] = None,
-    stream: Annotated[bool, typer.Option("--stream", "-s", help="流式输出")] = False,
-    json_output: Annotated[bool, typer.Option("--json", "-j", help="JSON 格式输出")] = False,
-    no_memory: Annotated[bool, typer.Option("--no-memory", help="禁用长期记忆")] = False,
-    no_plan: Annotated[bool, typer.Option("--no-plan", help="跳过 Planner")] = False,
-    output: Annotated[Optional[str], typer.Option("--output", "-o", help="结果写入文件")] = None,
-    verbose: Annotated[bool, typer.Option("--verbose", "-v", help="详细模式")] = False,
-) -> None:
-    """执行单轮任务，输出结果后退出。"""
-    from haven.cli.commands.run import run_task
-
-    run_task(
-        ctx,
-        task=task,
-        file=file,
-        model=model,
-        stream=stream,
-        json_output=json_output,
-        no_memory=no_memory,
-        no_plan=no_plan,
-        output=output,
-        verbose=verbose,
-    )
-
-
-@app.command(name="doctor", help="环境诊断")
-def doctor_cmd(
-    ctx: typer.Context,
-    check: Annotated[str | None, typer.Option("--check", help="只检查指定项")] = None,
     json_output: Annotated[bool, typer.Option("--json", "-j", help="JSON 输出")] = False,
 ) -> None:
-    """运行环境诊断，检查依赖和配置完整性。"""
-    from haven.cli.commands.doctor import run_doctor
+    """查看 Haven 守护进程运行状态。"""
+    from haven.config import settings
+    from haven.core.pidfile import is_running, read as pid_read
 
-    run_doctor(ctx, check=check, json_output=json_output)
+    pid = pid_read(settings.pid_file)
+    running = pid is not None and is_running(pid)
+
+    if json_output:
+        import json as json_mod
+
+        info = {
+            "daemon": "running" if running else "stopped",
+            "pid": pid,
+            "pid_file": str(settings.pid_file),
+        }
+        typer.echo(json_mod.dumps(info, ensure_ascii=False, indent=2))
+    else:
+        if running:
+            render_success(f"守护进程运行中 (PID: {pid})")
+        else:
+            render_info(f"守护进程未运行 (PID 文件: {settings.pid_file})")
+
+
+# ====================================================================
+# haven serve — 启动守护进程
+# ====================================================================
+
+
+@app.command(name="serve", help="启动守护进程")
+def serve_cmd(
+    ctx: typer.Context,
+) -> None:
+    """启动 Haven 守护进程（多通道：TCP + 邮件 + 飞书）。"""
+    from haven.services.daemon import HavenDaemon
+
+    daemon = HavenDaemon()
+    try:
+        asyncio.run(daemon.run_forever())
+    except KeyboardInterrupt:
+        dim("\n守护进程已停止。")
+    except SystemExit as e:
+        if e.code != 0:
+            render_error(f"启动失败: {e}")
+            raise typer.Exit(code=e.code) from None
 
 
 # ====================================================================
