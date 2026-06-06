@@ -44,6 +44,7 @@ class FactStore:
     def _init_schema(self) -> None:
         """建表（幂等）。"""
         self._conn.executescript("""
+            DROP TABLE IF EXISTS semantic_facts;  -- 清理旧版 schema
             CREATE TABLE IF NOT EXISTS facts (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 entity_name TEXT NOT NULL,

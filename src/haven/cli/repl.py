@@ -130,13 +130,13 @@ def _show_agents(console: Console, runtime) -> None:
 
 
 def _clear_memory(console: Console, runtime) -> None:
-    """清除长期记忆（FactStore 中的所有事实）。"""
-    fs = getattr(runtime.dispatcher, "_fact_store", None)
-    if fs is None:
+    """清除长期记忆（通过 MemoryPipeline）。"""
+    pipeline = getattr(runtime, "_pipeline", None)
+    if pipeline is None:
         console.print("  [yellow]长期记忆未启用[/yellow]")
         return
     try:
-        fs.clear()
+        pipeline.clear()
         console.print("  [green]长期记忆已清除[/green]")
     except Exception as exc:
         console.print(f"  [red]清除失败: {exc}[/red]")

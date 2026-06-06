@@ -11,7 +11,7 @@ __pycache__/
 dist/.env
 
 # 运行时数据
-.data/
+resource/
 
 # 构建产物
 dist/
@@ -46,5 +46,5 @@ Thumbs.db
 
 # Claude Code
 .claude/
-resource/
+
 

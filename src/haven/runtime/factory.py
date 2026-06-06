@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import aiosqlite
+import asyncio
 import logging
 from pathlib import Path
 from typing import Any
@@ -38,7 +39,7 @@ class Runtime:
 
     __slots__ = (
         "coordinator", "dispatcher", "llm", "tool_loader",
-        "checkpointer", "state", "agents", "_sqlite_conn",
+        "checkpointer", "state", "agents", "_sqlite_conn", "_pipeline",
     )
 
     def __init__(
@@ -51,6 +52,7 @@ class Runtime:
         state: RuntimeState,
         agents: dict[str, BaseAgent],
         sqlite_conn: Any = None,
+        pipeline: Any = None,
     ) -> None:
         self.coordinator = coordinator
         self.dispatcher = dispatcher
@@ -60,17 +62,36 @@ class Runtime:
         self.state = state
         self.agents = agents
         self._sqlite_conn = sqlite_conn  # 原始 aiosqlite 连接，用于 close()
+        self._pipeline = pipeline  # 长期记忆管道（可能为 None）
 
     async def execute(self, task: str) -> str:
-        """规划 + 执行：一步完成。"""
+        """规划 + 执行：一步完成。
+
+        执行完毕后触发长期记忆提取（后台非阻塞）。
+        """
         plan = await self.coordinator.plan(task)
-        return await self.dispatcher.dispatch(plan, task)
+        result = await self.dispatcher.dispatch(plan, task)
+        self._trigger_memory(task, result)
+        return result
 
     async def execute_stream(self, task: str):
-        """规划 + 流式执行。"""
+        """规划 + 流式执行。
+
+        流式结束后触发长期记忆提取（后台非阻塞）。
+        """
         plan = await self.coordinator.plan(task)
+        # 收集完整响应用于记忆提取
+        chunks: list[str] = []
         async for chunk in self.dispatcher.dispatch_stream(plan, task):
+            chunks.append(chunk)
             yield chunk
+        self._trigger_memory(task, "".join(chunks))
+
+    def _trigger_memory(self, user_input: str, agent_response: str) -> None:
+        """后台触发长期记忆提取，不阻塞主流程。"""
+        if self._pipeline is None:
+            return
+        asyncio.create_task(self._pipeline.after_turn(user_input, agent_response))
 
     async def reset_session(self) -> None:
         """清空当前会话。"""
@@ -156,16 +177,29 @@ async def create_runtime(
     checkpointer = AsyncSqliteSaver(conn)
     await checkpointer.setup()
 
-    # 5. ContextBuilder + FactStore
+    # 5. ContextBuilder + 长期记忆 (FactStore + MemoryPipeline)
     context_builder = ContextBuilder()
 
     memory_on = settings.memory_enabled if use_memory is None else use_memory
     fact_store = None
+    pipeline = None
     if memory_on:
         from haven.memory.fact_store import FactStore
 
         memory_path = Path.cwd() / settings.memory_db_path
         fact_store = FactStore(memory_path)
+
+        # MemoryPipeline 负责后台事实提取→写入
+        from haven.config import get_auxiliary_model
+        from haven.memory.extractor import FactExtractor
+        from haven.memory.pipeline import MemoryPipeline
+
+        aux_llm = create_llm(get_auxiliary_model())
+        pipeline = MemoryPipeline(
+            FactExtractor(aux_llm),
+            fact_store,
+            entity_name=entity_name,
+        )
 
     # 6. Create Agents — 所有 Agent 共享全部工具
     agent_defs = _load_agent_definitions()
@@ -201,7 +235,7 @@ async def create_runtime(
         use_memory=memory_on,
     )
 
-    # 10. 装配 Runtime（传入 SQLite 连接用于优雅关闭）
+    # 10. 装配 Runtime
     runtime = Runtime(
         coordinator=coordinator,
         dispatcher=dispatcher,
@@ -211,6 +245,7 @@ async def create_runtime(
         state=state,
         agents=agents,
         sqlite_conn=conn,
+        pipeline=pipeline,
     )
 
     logger.info(
