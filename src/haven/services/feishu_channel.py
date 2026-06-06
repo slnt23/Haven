@@ -201,10 +201,10 @@ class FeishuChannel(BaseChannel):
             text[:100],
         )
 
-        # 将 agent 记忆标记为按用户身份隔离
-        self.agent.memory.session_id = f"feishu_{open_id}"
-        self.agent.memory.entity_name = f"feishu_{open_id}"
-        self.agent.memory.channel = "feishu"
+        # 按用户身份隔离会话状态
+        self.agent.state.session_id = f"feishu_{open_id}"
+        self.agent.state.entity_name = f"feishu_{open_id}"
+        self.agent.state.channel = "feishu"
 
         # 通过 PlannerAgent 处理
         try:
@@ -221,5 +221,4 @@ class FeishuChannel(BaseChannel):
         if open_id:
             await _send_reply(self.app_id, self.app_secret, open_id, response)
 
-        # 后台事实提取
-        asyncio.create_task(self.agent.extract_semantic_facts_async())
+        # checkpointer 自动持久化

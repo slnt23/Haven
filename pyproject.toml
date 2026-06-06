@@ -21,6 +21,7 @@ dependencies = [
     "typer>=0.16",
     "rich>=14.0",
     "chroma==0.2.0",
+    "langgraph-checkpoint-sqlite>=3.1.0",
 ]
 
 [project.scripts]

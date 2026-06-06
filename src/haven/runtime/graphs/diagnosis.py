@@ -9,9 +9,19 @@ from langgraph.constants import END
 from langgraph.graph import StateGraph
 from langgraph.runtime import Runtime
 
-from haven.workflows.graph import create_checkpointer
-from haven.workflows.registry import WorkflowRegistry
-from haven.workflows.state import DiagnosisAgentState
+from haven.runtime.graphs import create_checkpointer
+from haven.runtime.registry import WorkflowRegistry
+from haven.runtime.state import AgentState
+
+
+class DiagnosisAgentState(AgentState, total=False):
+    """诊断工作流状态。"""
+
+    symptoms: str
+    collected_info: str
+    possible_causes: str
+    diagnosis: str
+    recommendations: str
 
 
 async def _collector_node(state: DiagnosisAgentState, config: Runtime) -> dict:

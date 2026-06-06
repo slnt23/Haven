@@ -85,11 +85,8 @@ class Settings(BaseSettings):
 
     # ==================== Memory ====================
     memory_enabled: bool = Field(default=_app_config["memory"]["enabled"], alias="MEMORY_ENABLED")
-    memory_extract_after_turn: bool = Field(
-        default=_app_config["memory"]["extract_after_turn"], alias="MEMORY_EXTRACT_AFTER_TURN"
-    )
-    memory_min_confidence: float = Field(
-        default=_app_config["memory"]["min_confidence"], alias="MEMORY_MIN_CONFIDENCE"
+    context_window_tokens: int = Field(
+        default=_app_config["memory"]["context_window_tokens"], alias="CONTEXT_WINDOW_TOKENS"
     )
 
     # ==================== Skills ====================

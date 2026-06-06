@@ -8,13 +8,30 @@ Graph: planner → architect → coder → reviewer → tester
 
 from __future__ import annotations
 
+from operator import add
+from typing import Annotated
+
 from langgraph.constants import END
 from langgraph.graph import StateGraph
 from langgraph.runtime import Runtime
 
-from haven.workflows.graph import create_checkpointer
-from haven.workflows.registry import WorkflowRegistry
-from haven.workflows.state import DevAgentState
+from haven.runtime.graphs import create_checkpointer
+from haven.runtime.registry import WorkflowRegistry
+from haven.runtime.state import AgentState
+
+
+class DevAgentState(AgentState, total=False):
+    """软件开发工作流状态。"""
+
+    architecture_doc: str
+    source_code: str
+    code_language: str
+    review_feedback: str
+    review_score: float
+    review_blockers: Annotated[list[str], add]
+    test_report: str
+    test_passed: bool
+    test_failures: Annotated[list[str], add]
 
 
 # ====================================================================
@@ -161,15 +178,7 @@ def _test_router(state: DevAgentState) -> str:
 
 
 def _create_dev_workflow() -> StateGraph:
-    """创建软件开发工作流。
-
-    ┌──────────┐   ┌───────────┐   ┌───────┐   ┌──────────┐   ┌────────┐
-    │ planner  │ → │ architect │ → │ coder │ → │ reviewer │ → │ tester │
-    └──────────┘   └───────────┘   └───────┘   └──────────┘   └───┬────┘
-                                       ▲                          │
-                                       │         fail (≤3)       │
-                                       └──────────────────────────┘
-    """
+    """创建软件开发工作流。"""
     graph = StateGraph(DevAgentState)
 
     graph.add_node("planner", _planner_node)

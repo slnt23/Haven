@@ -35,20 +35,19 @@ uv run pytest tests/path  # 运行单个测试文件
 ```
 
 - **PlannerAgent** = 任务规划层。一次 LLM 调用（`with_structured_output(ExecutionPlan)`）完成意图分类 + Skill 选择 + 步骤拆解 + Workflow 匹配。输出 `ExecutionPlan` Pydantic 模型（`goal`、`intent`、`complexity`、`skills`、`workflow`、`steps`）。
-- **AgentRuntime** = 纯执行引擎。组合 LLM + Tool + Memory + State + Prompt，含工具调用循环（`_invoke_with_tool_loop`，最多 `max_iterations` 轮）。
-- **WorkflowGraph** = DAG 工作流引擎（LangGraph 风格）。`add_node()` / `add_edge()` / `add_conditional_edge()` 构建图，`graph.run(state, runtime)` 执行。内置 3 个工作流：`dev_flow`、`research_flow`、`diagnosis_flow`，定义在 `workflows/graphs/` 中。
+- **AgentRuntime** = 纯执行引擎。组合 LLM + Tool + State + Prompt。使用 LangGraph `SqliteSaver` checkpointer 自动持久化消息，`pre_model_hook` + `trim_messages()` 管理上下文窗口。
+- **WorkflowGraph** = DAG 工作流引擎（LangGraph 风格）。`add_node()` / `add_edge()` / `add_conditional_edge()` 构建图，`graph.run(state, runtime)` 执行。内置 3 个工作流：`dev_flow`、`research_flow`、`diagnosis_flow`，定义在 `runtime/graphs/` 中。
 
 **核心分层（自底向上）：**
 
 | 层 | 目录 | 职责 |
 |-------|-----------|------|
 | Config | `src/haven/config/` | YAML + env vars，OmegaConf deep-merge |
-| Core | `src/haven/core/` | `AgentMemory`（V1 facade）、`PromptBuilder`、`RuntimeState`、`Registry` |
-| Memory | `src/haven/memory/` | 四层记忆：Working / Episodic / Semantic / Vector，`MemoryManager` 统一编排 |
+| Core | `src/haven/core/` | `RuntimeState`、`Registry`、LLM 工厂 |
+| Memory | `src/haven/memory/` | `FactStore`（SQLite 语义事实）+ `VectorMemory`（ChromaDB，可选）。消息持久化由 LangGraph `SqliteSaver` checkpointer 自动管理 |
 | Skills | `src/haven/skills/` | `.md` 文件加载，YAML frontmatter 解析，`SkillRegistry` 依赖解析 |
 | Tools | `src/haven/tools/` | `ToolManager` + Provider 架构（Builtin + MCP），MCP 配置解析 |
-| Runtime | `src/haven/runtime/` | `PlannerAgent`（规划）+ `AgentRuntime`（执行）+ `factory.create_agent()`（装配） |
-| Workflows | `src/haven/workflows/` | DAG 引擎 + 3 个预定义工作流 + SQLite checkpoint |
+| Runtime | `src/haven/runtime/` | `PlannerAgent`（规划）+ `AgentRuntime`（执行）+ `WorkflowRegistry`（工作流引擎）+ `factory.create_agent()`（装配） |
 | CLI | `src/haven/cli/` | `main.py` 入口 + REPL 循环 + `RuntimeService` 桥梁 |
 | Services | `src/haven/services/` | 守护进程 + 渠道（TCP socket、邮件 IMAP/SMTP、飞书 WebSocket） |
 
@@ -61,7 +60,7 @@ uv run pytest tests/path  # 运行单个测试文件
 - **Skill 文件**：Skill 通过 `skills/` 目录（CWD 相对，由 `app.yaml` 的 `skill_directory` 配置）中的 `.md` 文件加载，包含 YAML frontmatter（`name`、`description`、`tags`、`tools`、`dependencies`、`default`）。`default: true` = 系统人格 skill（`haven.md`），始终注入 system prompt。V2 中 PlannerAgent 通过 LLM 语义匹配选择领域 Skill（而非 V1 的 `trigger_keywords` 关键词匹配）。
 - **工具绑定**：通过 `AgentRuntime.register_tool()` 注册，`activate_tools()` 选择子集，`bind_tools_to_llm()` 执行 `llm.bind_tools()`。`switch_model()` 切换模型后工具自动重绑。
 - **ToolManager + Provider 架构**：`ToolManager` 编排所有 `ToolProvider` 生命周期。`BuiltinProvider` 扫描内置工具（6 个模块），`MCPProvider` 管理单个 MCP 服务器连接。支持 stdio / HTTP SSE / WebSocket 传输。MCP 工具以 `{server_name}__{tool_name}` 命名避免冲突。Provider 状态机：UNINITIALIZED → CONNECTING → CONNECTED / DEGRADED / ERROR → DISCONNECTED。
-- **记忆系统**：V2 四层记忆，`MemoryManager` 统一编排 —— `WorkingMemory`（滑动窗口 + LLM 摘要，进程内存）、`EpisodicMemory`（完整对话记录，SQLite）、`SemanticMemory`（实体-事实知识图，SQLite）、`VectorMemory`（语义检索，ChromaDB，默认关闭）。`AgentMemory`（`core/memory.py`）保留 V1 兼容 facade，内部委托给 `MemoryManager`。`record_turn()` 持久化一轮对话 + 异步触发事实提取；`retrieve()` 多路并行检索合并去重；`consolidate()` 后台衰减清理。
+- **记忆系统**：基于 LangGraph 原生机制。`SqliteSaver` checkpointer 按 `thread_id` 自动持久化所有消息，`pre_model_hook` + `trim_messages()` 在 LLM 调用前裁剪消息确保不超 context window。可选组件：`FactStore`（SQLite 语义事实存储与检索）、`VectorMemory`（ChromaDB 向量语义检索，默认关闭）。
 - **MCP 工具**：从 CWD 下的 `mcp.json` 加载，标准 `mcpServers` 格式。`${VAR}` 语法自动解析环境变量。`"enabled": false` 的服务器跳过不加载。单服务器故障不影响其他。
 - **用户扩展**：所有用户可扩展内容统一放在 CWD 下（`skills/`、`mcp.json`、`haven.yaml`、`models.yaml`），拖入即用。
 - **Registry 模式**：`Registry` 基类提供 `register()` / `get()` / `list_all()` 类方法。`SkillRegistry`、`WorkflowRegistry` 均继承自此基类。新建可注册组件时继承 `Registry` 并设置 `_label`。
@@ -69,7 +68,7 @@ uv run pytest tests/path  # 运行单个测试文件
 
 ## 已知问题
 
-- **测试全部损坏**：`tests/` 下 3 个测试文件导入的 V1 模块（`haven.agents.GeneralAgent`、`haven.tools.WebSearchTool.search()`、`haven.workflows.ResearchFlow`）在 V2 中不存在，需按新 API 重写。
+- **测试全部损坏**：`tests/` 下 3 个测试文件导入的 V1 模块（`haven.agents.GeneralAgent`、`haven.tools.WebSearchTool.search()`、`haven.workflows.ResearchFlow`（已废弃））在 V2 中不存在，需按新 API 重写。
 - **无 CI/CD**：无 `.github/` 目录，无 linting（ruff/flake8/mypy）或 pre-commit 配置。
 - **`pyproject.toml` 版本不一致**：文件声明 `0.1.0`，但 banner 和代码中硬编码 `"2.0.0"`。
 

@@ -32,9 +32,8 @@ daemon:
 # ==================== Memory ====================
 memory:
   db_path: ".data/memory.db"
-  enabled: true                              # 是否启用长期记忆
-  extract_after_turn: true                   # 每轮对话后自动提取事实
-  min_confidence: 0.5                        # 注入 system prompt 的最低置信度
+  enabled: true                              # 是否启用长期记忆（FactStore）
+  context_window_tokens: 8000                # pre_model_hook 消息裁剪上限
 
 # ==================== Skills ====================
 skill:

@@ -146,12 +146,7 @@ async def _process_chat(user_input: str, cli_ctx: CLIContext) -> None:
             renderer.feed(f"\n[错误] {exc}")
 
     response = renderer.render()
-
-    # 持久化本轮对话到长期记忆（先 await 写入完成，再触提取，消除竞态）
-    rt = cli_ctx.runtime
-    if rt and response.strip():
-        await rt.save_turn(user_input, response)
-        asyncio.create_task(rt.extract_semantic_facts_async())
+    # 消息由 LangGraph SqliteSaver checkpointer 自动持久化，无需手动保存
 
 
 # ====================================================================
@@ -242,30 +237,20 @@ def _handle_slash(text: str, cli_ctx: CLIContext) -> bool:
             if rt is None:
                 render_info("(Runtime 未初始化)")
                 return False
-            mm = getattr(rt.memory, "manager", None)
-            if mm is None:
-                ctx_str = rt.memory.get_long_term_context()
-                render_info(ctx_str or "(暂无长期记忆)")
-            else:
-                turns = mm.turn_count
-                messages = len(mm.working.get_messages())
-                summary = mm.working.summary
-                lines = [
-                    f"会话: {mm.session_id}",
-                    f"实体: {mm.entity_name}",
-                    f"轮次: {turns}",
-                    f"Working: {messages} 条消息",
-                ]
-                if summary:
-                    lines.append(f"摘要: {summary[:100]}...")
-                render_info("\n".join(lines))
+            info = (
+                f"会话: {rt.state.session_id}\n"
+                f"实体: {rt.state.entity_name}\n"
+                f"轮次: {rt.state.turn_count}\n"
+                f"频道: {rt.state.channel}"
+            )
+            render_info(info)
         except Exception as exc:
             render_error(str(exc))
         return False
 
     if cmd == "/workflows":
         try:
-            from haven.workflows.registry import WorkflowRegistry
+            from haven.runtime.registry import WorkflowRegistry
 
             ctx_wf = WorkflowRegistry.get_selection_context()
             if "(无可用" in ctx_wf:

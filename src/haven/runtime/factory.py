@@ -8,7 +8,6 @@ from pathlib import Path
 from haven.config import find_user_path, settings
 from haven.middleware import MiddlewarePipeline
 from haven.middleware.filesystem import FilesystemMiddleware
-from haven.middleware.memory import MemoryMiddleware
 from haven.middleware.personality import PersonalityMiddleware
 from haven.middleware.skills import SkillsMiddleware
 from haven.middleware.summarization import SummarizationMiddleware
@@ -38,9 +37,9 @@ async def create_agent(
     """
     # 1. Runtime
     runtime = AgentRuntime()
-    runtime.memory.session_id = session_id
-    runtime.memory.entity_name = entity_name
-    runtime.memory.channel = channel
+    runtime.state.session_id = session_id
+    runtime.state.entity_name = entity_name
+    runtime.state.channel = channel
     runtime.state.session_id = session_id
     runtime.state.entity_name = entity_name
     runtime.state.channel = channel
@@ -51,13 +50,12 @@ async def create_agent(
 
     # 3. LLM
     runtime.init_llm()
-    runtime.memory.set_llm(runtime.aux_llm)
 
     # 4. ToolManager + Providers
     await _init_tools(runtime, load_mcp)
 
     # 5. WorkflowRegistry
-    from haven.workflows.registry import WorkflowRegistry
+    from haven.runtime.registry import WorkflowRegistry
 
     # 6. Middleware Pipeline
     if middlewares is None:
@@ -68,7 +66,6 @@ async def create_agent(
 
         pipeline = MiddlewarePipeline([
             PersonalityMiddleware(skill_prompt=persona_prompt),
-            MemoryMiddleware(manager=runtime.memory),
             SummarizationMiddleware(model=runtime.llm, max_tokens=8000),
             FilesystemMiddleware(workspace=settings.project_root),
             SkillsMiddleware(),

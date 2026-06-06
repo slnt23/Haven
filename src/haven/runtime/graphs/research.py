@@ -8,13 +8,26 @@ Graph: searcher → analyst ─┬→ synthesizer → END
 
 from __future__ import annotations
 
+from operator import add
+from typing import Annotated
+
 from langgraph.constants import END
 from langgraph.graph import StateGraph
 from langgraph.runtime import Runtime
 
-from haven.workflows.graph import create_checkpointer
-from haven.workflows.registry import WorkflowRegistry
-from haven.workflows.state import ResearchAgentState
+from haven.runtime.graphs import create_checkpointer
+from haven.runtime.registry import WorkflowRegistry
+from haven.runtime.state import AgentState
+
+
+class ResearchAgentState(AgentState, total=False):
+    """调研工作流状态。"""
+
+    research_topic: str
+    raw_findings: Annotated[list[str], add]
+    analyzed_insights: str
+    final_report: str
+    sources: Annotated[list[str], add]
 
 
 async def _searcher_node(state: ResearchAgentState, config: Runtime) -> dict:

@@ -13,12 +13,12 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from haven.memory.base import BaseMemory, MemoryItem
+from haven.memory.base import MemoryItem
 
 logger = logging.getLogger("haven.memory.vector")
 
 
-class VectorMemory(BaseMemory):
+class VectorMemory:
     """向量语义记忆。基于 embedding 的相似性检索。
 
     存储后端：ChromaDB（持久化到 .data/chroma/）
@@ -26,8 +26,6 @@ class VectorMemory(BaseMemory):
 
     降级策略：chromadb 未安装 → 静默降级，store/retrieve 均为空操作。
     """
-
-    name = "vector"
 
     def __init__(
         self,
@@ -257,7 +255,7 @@ class VectorMemory(BaseMemory):
 
 
 def _build_chroma_filter(filters: dict) -> dict | None:
-    """将 MemoryManager 的检索过滤条件转换为 ChromaDB where 子句。
+    """将检索过滤条件转换为 ChromaDB where 子句。
 
     ChromaDB 的 where 格式：
         {"key": "value"}                精确匹配

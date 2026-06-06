@@ -68,10 +68,7 @@ class HavenDaemon:
                     await tm.stop_all()
                 except Exception as exc:
                     logger.debug("ToolManager shutdown: %s", exc)
-            try:
-                await rt.extract_semantic_facts_async()
-            except Exception:
-                pass
+            # checkpointer 自动持久化
 
         pid_remove(settings.pid_file)
         logger.info("Haven daemon stopped")

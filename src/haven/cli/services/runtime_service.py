@@ -23,7 +23,6 @@ CLI 层禁止直接调用 ``haven.runtime`` 内部实现。
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import time
 from typing import Any, AsyncIterator
@@ -105,12 +104,9 @@ class RuntimeService:
             raise RuntimeError(f"启动 Runtime 失败: {exc}") from exc
 
     async def stop(self) -> None:
-        """清理资源：保存记忆、关闭 MCP 连接。"""
+        """清理资源：关闭 MCP 连接。"""
         if self._runtime is not None:
-            try:
-                await self._runtime.extract_semantic_facts_async()
-            except Exception:
-                pass
+            pass  # checkpointer 自动持久化，无需手动清理
 
         self._planner = None
         self._runtime = None
@@ -144,7 +140,7 @@ class RuntimeService:
             pass
 
         try:
-            from haven.workflows.registry import WorkflowRegistry
+            from haven.runtime.registry import WorkflowRegistry
 
             wf = WorkflowRegistry.list_all()
             status["workflows"] = len(wf)
@@ -163,12 +159,8 @@ class RuntimeService:
             pass
 
         try:
-            mm = self._runtime.memory
-            if mm and hasattr(mm, "turn_count"):
-                status["memory_turns"] = mm.turn_count
-                status["vector_available"] = (
-                    mm.is_vector_available if hasattr(mm, "is_vector_available") else False
-                )
+            state = self._runtime.state
+            status["memory_turns"] = state.turn_count
         except Exception:
             pass
 
@@ -257,9 +249,7 @@ class RuntimeService:
 
         elapsed_ms = int((time.monotonic() - t0) * 1000)
 
-        # 后台提取事实
-        if self._runtime:
-            asyncio.create_task(self._runtime.extract_semantic_facts_async())
+        # checkpointer 自动持久化，无需手动提取
 
         return {"result": result, "plan": plan, "elapsed_ms": elapsed_ms}
 
@@ -283,7 +273,7 @@ class RuntimeService:
                 "elapsed_ms": 0,
             }
 
-        from haven.workflows.registry import WorkflowRegistry
+        from haven.runtime.registry import WorkflowRegistry
 
         wf_names = WorkflowRegistry.list_all()
         if workflow_name not in wf_names:

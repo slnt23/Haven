@@ -3,27 +3,29 @@
 职责：
   1. LLM     — 模型初始化、切换
   2. Tool    — 工具注册/激活/解析
-  3. Memory  — 短期消息窗口 + 长期事实存储
+  3. Memory  — LangGraph SqliteSaver 自动持久化 + pre_model_hook 消息裁剪
   4. State   — 会话状态
   5. Context — 委托 MiddlewarePipeline 组装上下文
 """
 
 from __future__ import annotations
 
-import asyncio
 import logging
+import sqlite3
+from pathlib import Path
 from typing import Any, AsyncIterator
 
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
+from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages.utils import count_tokens_approximately, trim_messages
 from langchain_core.tools import BaseTool
+from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.prebuilt import create_react_agent
 
 from haven.config import get_auxiliary_model, settings
 from haven.core.llm import create_llm
 from haven.core.state import RuntimeState
-from haven.memory.manager import MemoryManager
 
 logger = logging.getLogger("haven.runtime")
 
@@ -42,12 +44,17 @@ class AgentRuntime:
         self.aux_llm: BaseChatModel | None = None
         self._tools: dict[str, BaseTool] = {}
         self._active_tools: list[BaseTool] = []
-        self.memory = MemoryManager()
         self.state = RuntimeState()
 
         self._agent: CompiledStateGraph | None = None
         self._agent_tools_hash: int = 0
         self._pipeline: Any = None
+
+        db_dir = Path.cwd() / ".data"
+        db_dir.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(str(db_dir / "checkpoint.db"), check_same_thread=False)
+        self._checkpointer = SqliteSaver(conn)
+        self._checkpointer.setup()
 
         self.max_iterations = settings.agent_max_iterations
 
@@ -111,21 +118,25 @@ class AgentRuntime:
         return self._active_tools
 
     # ==================================================================
-    # Messages
-    # ==================================================================
-
-    def build_messages(
-        self, task: str, *, history: list[BaseMessage] | None = None,
-    ) -> list[BaseMessage]:
-        messages: list[BaseMessage] = []
-        for msg in history or self.memory.working.get_messages():
-            messages.append(msg)
-        messages.append(HumanMessage(content=task))
-        return messages
-
-    # ==================================================================
     # LangGraph Agent
     # ==================================================================
+
+    @staticmethod
+    def _pre_model_hook(state: dict, config: dict) -> dict:
+        """在 LLM 调用前裁剪消息 + 注入 system_prompt。"""
+        sp = config.get("configurable", {}).get("system_prompt", "")
+        msgs = list(state.get("messages", []))
+        if sp:
+            msgs = [SystemMessage(content=sp)] + msgs
+        trimmed = trim_messages(
+            msgs,
+            max_tokens=settings.context_window_tokens or 8000,
+            strategy="last",
+            token_counter=count_tokens_approximately,
+            include_system=True,
+            start_on="human",
+        )
+        return {"llm_input_messages": trimmed}
 
     def _get_agent(self, tools: list[BaseTool]) -> CompiledStateGraph:
         tools_hash = hash(tuple(id(t) for t in tools))
@@ -135,9 +146,23 @@ class AgentRuntime:
         if self.llm is None:
             self.init_llm()
 
-        self._agent = create_react_agent(model=self.llm, tools=tools)
+        self._agent = create_react_agent(
+            model=self.llm,
+            tools=tools,
+            checkpointer=self._checkpointer,
+            pre_model_hook=self._pre_model_hook,
+        )
         self._agent_tools_hash = tools_hash
         return self._agent
+
+    def _build_config(self, system_prompt: str = "") -> dict:
+        return {
+            "configurable": {
+                "thread_id": self.state.session_id,
+                "system_prompt": system_prompt,
+            },
+            "recursion_limit": self.max_iterations * 2 + 10,
+        }
 
     # ==================================================================
     # Execution
@@ -147,7 +172,6 @@ class AgentRuntime:
         self,
         task: str,
         *,
-        history: list[BaseMessage] | None = None,
         active_skills: list[Any] | None = None,
         active_tools: list[BaseTool] | None = None,
         **kwargs: Any,
@@ -158,28 +182,23 @@ class AgentRuntime:
         tools = active_tools or self._active_tools
         agent = self._get_agent(tools)
 
-        messages = self.build_messages(task, history=history)
-
         # 中间件管道组装上下文
         skill_names = [getattr(s, "name", str(s)) for s in (active_skills or [])]
         state: dict[str, Any] = {
             "task": task,
-            "messages": messages,
+            "messages": [HumanMessage(content=task)],
             "system_prompt": "",
             "active_skills": skill_names,
         }
         if self._pipeline is not None:
             state = await self._pipeline.before(state)
 
-        # 将 system_prompt 注入到消息列
-        final_messages = list(state["messages"])
         sp = state.get("system_prompt", "")
-        if sp:
-            final_messages.insert(0, SystemMessage(content=sp))
+        config = self._build_config(system_prompt=sp)
 
         result = await agent.ainvoke(
-            {"messages": final_messages},
-            config={"recursion_limit": self.max_iterations * 2 + 10},
+            {"messages": [HumanMessage(content=task)]},
+            config=config,
         )
         output = result["messages"][-1]
         output_text = output.content if hasattr(output, "content") else str(output)
@@ -195,7 +214,6 @@ class AgentRuntime:
         self,
         task: str,
         *,
-        history: list[BaseMessage] | None = None,
         active_skills: list[Any] | None = None,
         active_tools: list[BaseTool] | None = None,
         **kwargs: Any,
@@ -206,26 +224,22 @@ class AgentRuntime:
         tools = active_tools or self._active_tools
         agent = self._get_agent(tools)
 
-        messages = self.build_messages(task, history=history)
-
         skill_names = [getattr(s, "name", str(s)) for s in (active_skills or [])]
         state: dict[str, Any] = {
             "task": task,
-            "messages": messages,
+            "messages": [HumanMessage(content=task)],
             "system_prompt": "",
             "active_skills": skill_names,
         }
         if self._pipeline is not None:
             state = await self._pipeline.before(state)
 
-        final_messages = list(state["messages"])
         sp = state.get("system_prompt", "")
-        if sp:
-            final_messages.insert(0, SystemMessage(content=sp))
+        config = self._build_config(system_prompt=sp)
 
         async for event in agent.astream_events(
-            {"messages": final_messages},
-            config={"recursion_limit": self.max_iterations * 2 + 10},
+            {"messages": [HumanMessage(content=task)]},
+            config=config,
             version="v2",
         ):
             kind = event.get("event", "")
@@ -237,20 +251,8 @@ class AgentRuntime:
         self.state.turn_count += 1
 
     # ==================================================================
-    # Memory
+    # Lifecycle
     # ==================================================================
 
-    async def save_turn(self, user_input: str, response: str) -> None:
-        """持久化本轮对话到长期记忆。等待写入完成后返回。"""
-        await self.memory.record_turn(user_input, response)
-
-    async def extract_semantic_facts_async(self, force: bool = True) -> None:
-        """批量语义事实提取，委托给 MemoryManager。"""
-        if self.aux_llm is None:
-            return
-        self.memory.set_llm(self.aux_llm)
-        await self.memory.extract_semantic_facts_async(force=force)
-
     def reset(self) -> None:
-        asyncio.create_task(self.memory.working.clear())
         self.state.reset_turn()
