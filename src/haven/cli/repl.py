@@ -20,10 +20,12 @@ _BANNER = f"""
 
 _HELP = """\
 [bold]内建命令:[/bold]
-  /model   查看当前模型
-  /tools   查看已加载工具
-  /agents  查看可用 Agent
-  /exit    退出对话
+  /model        查看当前模型
+  /tools        查看已加载工具
+  /agents       查看可用 Agent
+  /clear        清除当前会话记忆
+  /memory-clear 清除长期记忆
+  /exit         退出对话
 """
 
 
@@ -68,6 +70,11 @@ async def run_repl() -> None:
                     _show_tools(console, runtime)
                 elif cmd == "/agents":
                     _show_agents(console, runtime)
+                elif cmd == "/clear":
+                    await runtime.reset_session()
+                    console.print("  [green]会话记忆已清除[/green]")
+                elif cmd == "/memory-clear":
+                    _clear_memory(console, runtime)
                 else:
                     console.print(f"  [yellow]未知命令: {cmd}[/yellow]")
                 continue
@@ -120,3 +127,16 @@ def _show_agents(console: Console, runtime) -> None:
     for name, agent in agents.items():
         prompt = getattr(agent, "agent_prompt", "")[:60]
         console.print(f"    • [cyan]{name}[/cyan]  {prompt}")
+
+
+def _clear_memory(console: Console, runtime) -> None:
+    """清除长期记忆（FactStore 中的所有事实）。"""
+    fs = getattr(runtime.dispatcher, "_fact_store", None)
+    if fs is None:
+        console.print("  [yellow]长期记忆未启用[/yellow]")
+        return
+    try:
+        fs.clear()
+        console.print("  [green]长期记忆已清除[/green]")
+    except Exception as exc:
+        console.print(f"  [red]清除失败: {exc}[/red]")

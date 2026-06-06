@@ -21,6 +21,29 @@ logger = logging.getLogger("haven.context")
 _PERSONA_PATH = Path(__file__).resolve().parent.parent / "config" / "haven.md"
 
 
+def _load_persona() -> str:
+    """读取 haven.md 并剥离 YAML frontmatter。
+
+    haven.md 格式：
+        ---
+        name: haven
+        ...
+        ---
+        ## 角色：健健 — 灯塔医疗助手机器人
+        ...
+
+    仅返回第二个 ``---`` 之后的人格正文。
+    """
+    if not _PERSONA_PATH.is_file():
+        return ""
+    raw = _PERSONA_PATH.read_text(encoding="utf-8").strip()
+    if raw.startswith("---"):
+        parts = raw.split("---", 2)
+        if len(parts) >= 3:
+            return parts[2].strip()
+    return raw
+
+
 @dataclass
 class BuildResult:
     system_prompt: str = ""
@@ -32,9 +55,7 @@ class ContextBuilder:
 
     def __init__(self, token_budget: int | None = None):
         self.token_budget = token_budget or settings.context_window_tokens or 8000
-        self._persona = ""
-        if _PERSONA_PATH.is_file():
-            self._persona = _PERSONA_PATH.read_text(encoding="utf-8").strip()
+        self._persona = _load_persona()
 
     def build(
         self,
