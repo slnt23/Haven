@@ -14,7 +14,7 @@ from typing import Annotated, Optional
 from rich.logging import RichHandler
 import typer
 
-from haven.cli.services.cli_service import CLIContext
+from haven.cli.bridge.cli_context import CLIContext
 from haven.cli.ui.console import dim, render_error, render_info, render_success
 
 # ---------------------------------------------------------------------------
@@ -76,7 +76,9 @@ def main(
     ctx.obj = cli_ctx
 
     if version:
-        typer.echo("haven v2.0.0")
+        from haven import __version__
+
+        typer.echo(f"haven v{__version__}")
         raise typer.Exit()
 
     if verbose:
@@ -92,7 +94,15 @@ def main(
     if ctx.invoked_subcommand is None:
         from haven.cli.commands.chat import run_chat
 
-        run_chat(ctx, model=model, task=task, verbose=verbose, task_only=bool(task))
+        run_chat(
+            ctx,
+            model=model,
+            task=task,
+            verbose=verbose,
+            task_only=bool(task),
+            session=session,
+            no_memory=no_memory,
+        )
 
 
 # ====================================================================
@@ -129,6 +139,44 @@ def status_cmd(
 
 
 # ====================================================================
+# haven stop — 停止守护进程
+# ====================================================================
+
+
+@app.command(name="stop", help="停止守护进程")
+def stop_cmd() -> None:
+    """停止正在运行的 Haven 守护进程。"""
+    import os
+    import signal
+    import time
+
+    from haven.config import settings
+    from haven.core.pidfile import is_running, read as pid_read, remove as pid_remove
+
+    pid = pid_read(settings.pid_file)
+    if pid is None or not is_running(pid):
+        render_info("守护进程未运行。")
+        raise typer.Exit()
+
+    try:
+        if sys.platform == "win32":
+            os.kill(pid, signal.SIGTERM)
+        else:
+            os.kill(pid, signal.SIGTERM)
+    except OSError as exc:
+        render_error(f"停止失败: {exc}")
+        raise typer.Exit(code=1) from exc
+
+    for _ in range(20):
+        if not is_running(pid):
+            break
+        time.sleep(0.25)
+
+    pid_remove(settings.pid_file)
+    render_success(f"守护进程已停止 (PID: {pid})")
+
+
+# ====================================================================
 # haven serve — 启动守护进程
 # ====================================================================
 
@@ -138,7 +186,7 @@ def serve_cmd(
     ctx: typer.Context,
 ) -> None:
     """启动 Haven 守护进程（多通道：TCP + 邮件 + 飞书）。"""
-    from haven.services.daemon import HavenDaemon
+    from haven.channels.daemon import HavenDaemon
 
     daemon = HavenDaemon()
     try:

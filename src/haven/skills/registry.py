@@ -61,7 +61,7 @@ class SkillRegistry(Registry):
     def get_defaults(cls) -> dict[str, BaseSkill]:
         """返回所有 ``default=True`` 的人格 skill。"""
         return {
-            name: skill for name, skill in cls._items.items() if getattr(skill, "default", False)
+            name: skill for name, skill in cls._items.items() if skill.default
         }
 
     @classmethod
@@ -70,14 +70,14 @@ class SkillRegistry(Registry):
         return {
             name: skill
             for name, skill in cls._items.items()
-            if not getattr(skill, "default", False)
+            if not skill.default
         }
 
     @classmethod
     def get_by_tag(cls, tag: str) -> dict[str, BaseSkill]:
         """按标签过滤。"""
         return {
-            name: skill for name, skill in cls._items.items() if tag in getattr(skill, "tags", [])
+            name: skill for name, skill in cls._items.items() if tag in skill.tags
         }
 
     @classmethod
@@ -86,7 +86,7 @@ class SkillRegistry(Registry):
         return {
             name: skill
             for name, skill in cls._items.items()
-            if tool_name in getattr(skill, "tools", [])
+            if tool_name in skill.tools
         }
 
     @classmethod
@@ -94,7 +94,7 @@ class SkillRegistry(Registry):
         """返回所有 skill 的标签并集（去重排序）。"""
         tags: set[str] = set()
         for skill in cls._items.values():
-            tags.update(getattr(skill, "tags", []))
+            tags.update(skill.tags)
         return sorted(tags)
 
     # ==================================================================
@@ -130,7 +130,7 @@ class SkillRegistry(Registry):
                     chain[-1] if chain else "?",
                 )
                 return
-            for dep in getattr(skill, "dependencies", []):
+            for dep in skill.dependencies:
                 if dep not in result:
                     result.append(dep)
                 _walk(dep, (*chain, name))
@@ -142,27 +142,3 @@ class SkillRegistry(Registry):
             logger.info("依赖解析: 自动激活 %s", set(result) - set(selected))
 
         return result
-
-    # ==================================================================
-    # LLM 选择上下文
-    # ==================================================================
-
-    @classmethod
-    def get_selection_context(cls) -> str:
-        """格式化领域 skill 为 LLM 选择 prompt 的 skill 菜单。"""
-        domain = cls.get_domain_skills()
-        if not domain:
-            return "(无可用领域技能)"
-
-        lines: list[str] = []
-        for skill in domain.values():
-            tools_str = ", ".join(skill.tools) if skill.tools else "无"
-            deps_str = ", ".join(skill.dependencies) if skill.dependencies else "无"
-            lines.append(
-                f"### {skill.name}\n"
-                f"- 描述: {skill.description}\n"
-                f"- 标签: {', '.join(skill.tags)}\n"
-                f"- 工具: {tools_str}\n"
-                f"- 依赖: {deps_str}"
-            )
-        return "\n\n".join(lines)

@@ -14,6 +14,7 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 
+from haven.runtime.context import ContextBuilder
 from haven.skills.registry import SkillRegistry
 
 logger = logging.getLogger("haven.coordinator")
@@ -109,13 +110,24 @@ class Coordinator:
         *,
         workflow_registry: Any = None,
         state: Any = None,
+        context_builder: ContextBuilder | None = None,
+        tool_resolver: Any = None,
+        fact_store: Any = None,
+        checkpointer: Any = None,
+        use_memory: bool = True,
     ):
         self.agents = agents
         self.llm = llm
         self._workflow_registry = workflow_registry
         self.state = state  # RuntimeState (shared across agents)
+        self._context_builder = context_builder or ContextBuilder()
+        self._tool_resolver = tool_resolver
+        self._fact_store = fact_store
+        self._checkpointer = checkpointer
+        self._use_memory = use_memory and fact_store is not None
         self._plan_cache: dict[str, ExecutionPlan] = {}
         self._fallback_agent = agents.get("general")
+        self.tool_manager: Any = None
 
     @property
     def runtime(self):
@@ -174,7 +186,8 @@ class Coordinator:
 
         # 路径 3: 简单对话 → Agent
         agent = self.agents.get(plan.agent_type, self._fallback_agent)
-        return await agent.run(task)
+        system_prompt = await self.prepare_agent(agent, plan.skills, task=task)
+        return await agent.run(task, system_prompt=system_prompt)
 
     async def execute_stream(self, task: str) -> AsyncIterator[str]:
         """流式规划 + 执行。"""
@@ -197,21 +210,24 @@ class Coordinator:
                     step_task += f"\n预期产出: {step.expected_output}"
 
                 agent = self._pick_agent_for_step(step, plan.agent_type)
+                step_skills = self._skills_for_step(plan.skills, step.skill)
+                system_prompt = await self.prepare_agent(agent, step_skills, task=task)
 
                 if step.order == ordered[-1].order:
                     collected: list[str] = []
-                    async for chunk in agent.astream(step_task):
+                    async for chunk in agent.astream(step_task, system_prompt=system_prompt):
                         collected.append(chunk)
                         yield chunk
                     step_outputs[step.order] = "".join(collected)
                 else:
-                    result = await agent.run(step_task)
+                    result = await agent.run(step_task, system_prompt=system_prompt)
                     step_outputs[step.order] = result
             return
 
         # 简单对话 → 流式
         agent = self.agents.get(plan.agent_type, self._fallback_agent)
-        async for chunk in agent.astream(task):
+        system_prompt = await self.prepare_agent(agent, plan.skills, task=task)
+        async for chunk in agent.astream(task, system_prompt=system_prompt):
             yield chunk
 
     # ==================================================================
@@ -245,12 +261,113 @@ class Coordinator:
                     return agent
         return self.agents.get(default_type, self._fallback_agent)
 
+    def _skills_for_step(self, plan_skills: list[str], step_skill: str | None) -> list[str]:
+        """合并 plan 级与 step 级 skill。"""
+        names = list(plan_skills)
+        if step_skill and step_skill not in names:
+            names.append(step_skill)
+        return SkillRegistry.resolve_dependencies(names)
+
+    def _merge_skill_names(self, agent: Any, skill_names: list[str]) -> list[str]:
+        """合并 plan/agent 级 skill 并解析依赖。"""
+        names = list(skill_names)
+        for name in getattr(agent, "default_skills", []):
+            if name not in names:
+                names.append(name)
+        return SkillRegistry.resolve_dependencies(names)
+
+    def _resolve_tools_for_agent(self, agent: Any, skill_names: list[str]) -> list[Any]:
+        """根据 Skill 动态解析工具，受 Agent 静态工具上限约束。"""
+        base_by_name = {t.name: t for t in agent.base_tools}
+        if not base_by_name:
+            return []
+
+        if not self._tool_resolver:
+            return list(base_by_name.values())
+
+        skill_tools: dict[str, list[str]] = {}
+        for name in skill_names:
+            try:
+                skill = SkillRegistry.get(name)
+                if skill.tools:
+                    skill_tools[name] = list(skill.tools)
+            except KeyError:
+                continue
+
+        if not skill_tools:
+            return list(base_by_name.values())
+
+        result = self._tool_resolver.resolve(
+            skill_tools,
+            channel=self.state.channel,
+            permissions=["read", "write"],
+            context=self.state.context,
+        )
+
+        if result.tools:
+            resolved = [t for t in result.tools if t.name in base_by_name]
+            if resolved:
+                return resolved
+            for warning in result.warnings[:3]:
+                logger.debug(warning)
+
+        return list(base_by_name.values())
+
+    async def prepare_agent(
+        self,
+        agent: Any,
+        skill_names: list[str],
+        *,
+        task: str = "",
+    ) -> str:
+        """绑定动态工具 + 构建 system_prompt（执行前统一入口）。"""
+        resolved_names = self._merge_skill_names(agent, skill_names)
+        self.state.active_skills = resolved_names
+
+        tools = self._resolve_tools_for_agent(agent, resolved_names)
+        agent.set_tools(tools)
+        self.state.active_tools = [t.name for t in tools]
+
+        return self._build_system_prompt(agent, resolved_names, task=task)
+
+    def _build_system_prompt(
+        self,
+        agent: Any,
+        skill_names: list[str],
+        *,
+        task: str = "",
+    ) -> str:
+        """通过 ContextBuilder 组装 system_prompt。"""
+        skills: list[Any] = []
+        seen: set[str] = set()
+        for name in skill_names:
+            if name in seen:
+                continue
+            try:
+                skills.append(SkillRegistry.get(name))
+                seen.add(name)
+            except KeyError:
+                pass
+        history_summary = ""
+        if self._use_memory and self._fact_store:
+            facts_text = self._fact_store.get_all_text(self.state.entity_name)
+            if facts_text:
+                history_summary = f"[长期记忆]\n{facts_text}"
+
+        ctx = self._context_builder.build(
+            agent_prompt=getattr(agent, "agent_prompt", ""),
+            skills=skills,
+            task=task,
+            history_summary=history_summary,
+        )
+        return ctx.system_prompt
+
     # ==================================================================
     # LLM 规划
     # ==================================================================
 
     async def _llm_plan(self, task: str) -> ExecutionPlan:
-        skill_menu = SkillRegistry.get_selection_context()
+        skill_menu = self._build_skill_menu()
         workflow_menu = self._get_workflow_menu()
 
         system = _PLANNER_SYSTEM_PROMPT.format(
@@ -290,6 +407,26 @@ class Coordinator:
         except Exception:
             return "(工作流注册表不可用)"
 
+    @staticmethod
+    def _build_skill_menu() -> str:
+        """格式化领域 skill 为 LLM 选择 prompt 的 skill 菜单。"""
+        domain = SkillRegistry.get_domain_skills()
+        if not domain:
+            return "(无可用领域技能)"
+
+        lines: list[str] = []
+        for skill in domain.values():
+            tools_str = ", ".join(skill.tools) if skill.tools else "无"
+            deps_str = ", ".join(skill.dependencies) if skill.dependencies else "无"
+            lines.append(
+                f"### {skill.name}\n"
+                f"- 描述: {skill.description}\n"
+                f"- 标签: {', '.join(skill.tags)}\n"
+                f"- 工具: {tools_str}\n"
+                f"- 依赖: {deps_str}"
+            )
+        return "\n\n".join(lines)
+
     # ==================================================================
     # 验证
     # ==================================================================
@@ -315,7 +452,8 @@ class Coordinator:
         wf_name = plan.workflow
         if not wf_name or self._workflow_registry is None:
             agent = self.agents.get(plan.agent_type, self._fallback_agent)
-            return await agent.run(task)
+            system_prompt = await self.prepare_agent(agent, plan.skills, task=task)
+            return await agent.run(task, system_prompt=system_prompt)
 
         try:
             compiled_graph = self._workflow_registry.build(wf_name)
@@ -333,6 +471,9 @@ class Coordinator:
                     "configurable": {
                         "thread_id": self.state.session_id,
                         "agent": agent,
+                        "agents": self.agents,
+                        "context_builder": self._context_builder,
+                        "coordinator": self,
                     }
                 },
             )
@@ -396,7 +537,9 @@ class Coordinator:
                 step_task += f"\n预期产出: {step.expected_output}"
 
             agent = self._pick_agent_for_step(step, plan.agent_type)
-            result = await agent.run(step_task)
+            step_skills = self._skills_for_step(plan.skills, step.skill)
+            system_prompt = await self.prepare_agent(agent, step_skills, task=task)
+            result = await agent.run(step_task, system_prompt=system_prompt)
             step_outputs[step.order] = result
             final = result
 
@@ -415,10 +558,25 @@ class Coordinator:
         self.llm = self._fallback_agent.llm if self._fallback_agent else self.llm
         return model_name
 
-    def reset(self) -> None:
+    async def reset_session(self) -> None:
+        """清空当前会话：turn 状态 + checkpointer 线程历史 + 工具恢复默认。"""
         self.state.reset_turn()
         for agent in self.agents.values():
             agent.reset()
+            agent.restore_base_tools()
+
+        if self._checkpointer is not None:
+            try:
+                await self._checkpointer.adelete_thread(self.state.session_id)
+            except Exception as exc:
+                logger.warning("清空 checkpointer 线程失败: %s", exc)
+
+    def reset(self) -> None:
+        """同步重置（仅 turn 状态，不清 checkpointer）。保留供旧调用方兼容。"""
+        self.state.reset_turn()
+        for agent in self.agents.values():
+            agent.reset()
+            agent.restore_base_tools()
 
     @staticmethod
     def _topological_sort(steps: list[PlanStep]) -> list[PlanStep]:

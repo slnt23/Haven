@@ -24,7 +24,7 @@ def print_banner(
     memory_turns: int = 0,
     providers: int = 0,
     vector_available: bool = False,
-    version: str = "2.0.0",
+    version: str = "3.0.0",
     channel: str = "cli",
 ) -> None:
     console = Console(highlight=False)

@@ -12,8 +12,9 @@ from typing import Any, AsyncIterator
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.messages.utils import count_tokens_approximately, trim_messages
+from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import BaseTool
-from langgraph.checkpoint.sqlite import SqliteSaver
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.prebuilt import create_react_agent
 
@@ -31,18 +32,21 @@ class BaseAgent:
         name: str,
         llm: BaseChatModel,
         tools: list[BaseTool],
-        checkpointer: SqliteSaver,
+        checkpointer: AsyncSqliteSaver,
         state: RuntimeState,
         *,
         agent_prompt: str = "",
+        default_skills: list[str] | None = None,
         max_iterations: int | None = None,
     ):
         self.name = name
         self.llm = llm
-        self._tools = tools
+        self._base_tools = list(tools)
+        self._tools = list(tools)
         self._checkpointer = checkpointer
         self.state = state
         self.agent_prompt = agent_prompt
+        self.default_skills = list(default_skills or [])
         self.max_iterations = max_iterations or settings.agent_max_iterations
 
         self._agent: CompiledStateGraph | None = None
@@ -53,8 +57,8 @@ class BaseAgent:
     # ==================================================================
 
     @staticmethod
-    def _pre_model_hook(state: dict, config: dict) -> dict:
-        sp = config.get("configurable", {}).get("system_prompt", "")
+    def _pre_model_hook(state: dict, config: RunnableConfig | None = None) -> dict:
+        sp = state.get("system_prompt", "")
         msgs = list(state.get("messages", []))
         if sp:
             msgs = [SystemMessage(content=sp)] + msgs
@@ -106,7 +110,7 @@ class BaseAgent:
         config = self._build_config(system_prompt=system_prompt)
 
         result = await agent.ainvoke(
-            {"messages": [HumanMessage(content=task)]},
+            {"messages": [HumanMessage(content=task)], "system_prompt": system_prompt},
             config=config,
         )
         output = result["messages"][-1]
@@ -126,7 +130,7 @@ class BaseAgent:
         config = self._build_config(system_prompt=system_prompt)
 
         async for event in agent.astream_events(
-            {"messages": [HumanMessage(content=task)]},
+            {"messages": [HumanMessage(content=task)], "system_prompt": system_prompt},
             config=config,
             version="v2",
         ):
@@ -137,6 +141,28 @@ class BaseAgent:
                     yield chunk.content
 
         self.state.turn_count += 1
+
+    # ==================================================================
+    # 工具绑定
+    # ==================================================================
+
+    @property
+    def base_tools(self) -> list[BaseTool]:
+        return self._base_tools
+
+    @property
+    def tools(self) -> list[BaseTool]:
+        return self._tools
+
+    def set_tools(self, tools: list[BaseTool]) -> None:
+        """动态切换当前轮次可用工具（变更后重建 LangGraph Agent）。"""
+        self._tools = list(tools) if tools else list(self._base_tools)
+        self._agent = None
+
+    def restore_base_tools(self) -> None:
+        """恢复为 app.yaml 声明的静态工具上限。"""
+        self._tools = list(self._base_tools)
+        self._agent = None
 
     # ==================================================================
     # Lifecycle

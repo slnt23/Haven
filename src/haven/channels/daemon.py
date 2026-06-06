@@ -11,14 +11,19 @@ from haven.core.pidfile import is_running
 from haven.core.pidfile import read as pid_read
 from haven.core.pidfile import remove as pid_remove
 from haven.core.pidfile import write as pid_write
-from haven.services.base_channel import BaseChannel
-from haven.services.feishu_channel import FeishuChannel
+from haven.channels.base_channel import BaseChannel
+from haven.channels.feishu_channel import FeishuChannel
 
 logger = logging.getLogger("haven.daemon")
 
-BANNER = """
+def _daemon_banner() -> str:
+    try:
+        from haven import __version__ as ver
+    except Exception:
+        ver = "3.0.0"
+    return f"""
   +--------------------------------------------------------------+
-  |                    Haven Daemon v2.0.0                       |
+  |                    Haven Daemon v{ver}                       |
   |                                                              |
   |  Daemon is running. Press Ctrl+C to stop.                    |
   +--------------------------------------------------------------+
@@ -131,7 +136,7 @@ class HavenDaemon:
         llm = getattr(rt, "llm", None) if rt else None
         model = getattr(llm, "model_name", None) or "unknown"
 
-        lines = [BANNER, f"  Model   : {model}", "  Channels:"]
+        lines = [_daemon_banner(), f"  Model   : {model}", "  Channels:"]
         for ch in self.channels:
             detail = ch.status_detail
             label = f"  ({detail})" if detail else ""

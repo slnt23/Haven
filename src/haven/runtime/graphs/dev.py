@@ -16,6 +16,7 @@ from langgraph.graph import StateGraph
 from langgraph.runtime import Runtime
 
 from haven.runtime.graphs import create_checkpointer
+from haven.runtime.graphs._helpers import run_agent_node
 from haven.runtime.registry import WorkflowRegistry
 from haven.runtime.state import AgentState
 
@@ -40,13 +41,12 @@ class DevAgentState(AgentState, total=False):
 
 
 async def _planner_node(state: DevAgentState, config: Runtime) -> dict:
-    rt = config["configurable"]["agent"]
-
+    task = state.get("task", "")
     prompt = f"""## 任务：需求分析
 
 分析用户需求，明确要做的事情。
 
-用户需求: {state.get("task", "")}
+用户需求: {task}
 
 输出:
 1. 需求概述（一句话）
@@ -54,19 +54,20 @@ async def _planner_node(state: DevAgentState, config: Runtime) -> dict:
 3. 技术约束
 4. 验收标准"""
 
-    output = await rt.run(prompt, active_skills=_resolve_skills(["coder"]), use_memory=True)
+    output = await run_agent_node(
+        config, prompt, skill_names=["coder"], agent_type="coder", task=task,
+    )
     return _node_result("planner", output)
 
 
 async def _architect_node(state: DevAgentState, config: Runtime) -> dict:
-    rt = config["configurable"]["agent"]
-
+    task = state.get("task", "")
     plan = state.get("node_outputs", {}).get("planner", "")
     prompt = f"""## 任务：架构设计
 
 基于需求分析设计系统架构。
 
-原始需求: {state.get("task", "")}
+原始需求: {task}
 
 需求分析:
 {plan}
@@ -77,20 +78,21 @@ async def _architect_node(state: DevAgentState, config: Runtime) -> dict:
 3. 目录/模块结构
 4. 关键接口定义"""
 
-    output = await rt.run(prompt, active_skills=_resolve_skills(["coder"]), use_memory=True)
+    output = await run_agent_node(
+        config, prompt, skill_names=["coder"], agent_type="coder", task=task,
+    )
     result = _node_result("architect", output)
     result["architecture_doc"] = output
     return result
 
 
 async def _coder_node(state: DevAgentState, config: Runtime) -> dict:
-    rt = config["configurable"]["agent"]
-
+    task = state.get("task", "")
     arch = state.get("architecture_doc", "")
     review_feedback = state.get("node_outputs", {}).get("reviewer", "")
     test_failures = state.get("test_failures", [])
 
-    parts = ["## 任务：编写代码\n", f"需求: {state.get('task', '')}", f"架构设计: {arch}"]
+    parts = ["## 任务：编写代码\n", f"需求: {task}", f"架构设计: {arch}"]
 
     retries = state.get("node_retry_counts", {}).get("coder", 0)
     if retries > 0:
@@ -103,22 +105,23 @@ async def _coder_node(state: DevAgentState, config: Runtime) -> dict:
 
     parts.append("\n输出: 完整的可运行代码，包含注释。")
 
-    output = await rt.run("\n".join(parts), active_skills=_resolve_skills(["coder"]), use_memory=True)
+    output = await run_agent_node(
+        config, "\n".join(parts), skill_names=["coder"], agent_type="coder", task=task,
+    )
     result = _node_result("coder", output)
     result["source_code"] = _extract_code_block(output)
     return result
 
 
 async def _reviewer_node(state: DevAgentState, config: Runtime) -> dict:
-    rt = config["configurable"]["agent"]
-
+    task = state.get("task", "")
     prompt = f"""## 任务：代码审查
 
 审查以下代码:
 
 {state.get("source_code", "")}
 
-原始需求: {state.get("task", "")}
+原始需求: {task}
 
 按维度评分（0-100）: 功能正确性(40) 代码质量(20) 安全性(20) 性能(10) 可维护性(10)
 
@@ -128,8 +131,8 @@ async def _reviewer_node(state: DevAgentState, config: Runtime) -> dict:
 - 阻塞项:
 - 建议项:"""
 
-    output = await rt.run(
-        prompt, active_skills=_resolve_skills(["code_review"]), use_memory=True
+    output = await run_agent_node(
+        config, prompt, skill_names=["code_review"], agent_type="coder", task=task,
     )
     result = _node_result("reviewer", output)
     result["review_feedback"] = output
@@ -139,22 +142,23 @@ async def _reviewer_node(state: DevAgentState, config: Runtime) -> dict:
 
 
 async def _tester_node(state: DevAgentState, config: Runtime) -> dict:
-    rt = config["configurable"]["agent"]
-
+    task = state.get("task", "")
     prompt = f"""## 任务：测试验证
 
 编写测试并验证以下代码:
 
 {state.get("source_code", "")}
 
-原始需求: {state.get("task", "")}
+原始需求: {task}
 
 输出:
 - 通过: yes/no
 - 失败项:
 - 测试覆盖:"""
 
-    output = await rt.run(prompt, active_skills=_resolve_skills(["coder"]), use_memory=True)
+    output = await run_agent_node(
+        config, prompt, skill_names=["coder"], agent_type="coder", task=task,
+    )
     passed = "通过: yes" in output or "通过：是" in output or "PASS" in output.upper()
     result = _node_result("tester", output)
     result["test_report"] = output
@@ -210,18 +214,6 @@ def _node_result(name: str, output: str) -> dict:
         "completed_steps": [name],
         "node_outputs": {name: output},
     }
-
-
-def _resolve_skills(names: list[str]) -> list:
-    from haven.skills.registry import SkillRegistry
-
-    skills = []
-    for n in names:
-        try:
-            skills.append(SkillRegistry.get(n))
-        except KeyError:
-            pass
-    return skills
 
 
 def _extract_code_block(text: str) -> str:

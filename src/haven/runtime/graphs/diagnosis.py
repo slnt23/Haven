@@ -10,6 +10,7 @@ from langgraph.graph import StateGraph
 from langgraph.runtime import Runtime
 
 from haven.runtime.graphs import create_checkpointer
+from haven.runtime.graphs._helpers import run_agent_node
 from haven.runtime.registry import WorkflowRegistry
 from haven.runtime.state import AgentState
 
@@ -25,17 +26,18 @@ class DiagnosisAgentState(AgentState, total=False):
 
 
 async def _collector_node(state: DiagnosisAgentState, config: Runtime) -> dict:
-    rt = config["configurable"]["agent"]
-
+    task = state.get("task", "")
     prompt = f"""## 任务：信息收集
 
 收集用户信息以辅助诊断。
 
-用户描述: {state.get("task", "")}
+用户描述: {task}
 
 询问并收集: 持续时间、伴随症状、既往病史、用药情况。"""
 
-    output = await rt.run(prompt, active_skills=_skills(["medical"]), use_memory=True)
+    output = await run_agent_node(
+        config, prompt, skill_names=["medical"], agent_type="diagnosis", task=task,
+    )
     return {
         "current_step": "collector",
         "completed_steps": ["collector"],
@@ -45,13 +47,12 @@ async def _collector_node(state: DiagnosisAgentState, config: Runtime) -> dict:
 
 
 async def _analyzer_node(state: DiagnosisAgentState, config: Runtime) -> dict:
-    rt = config["configurable"]["agent"]
-
+    task = state.get("task", "")
     prompt = f"""## 任务：症状分析
 
 分析症状并给出可能的原因。
 
-症状: {state.get("task", "")}
+症状: {task}
 已收集信息: {state.get("collected_info", "")}
 
 输出:
@@ -59,7 +60,9 @@ async def _analyzer_node(state: DiagnosisAgentState, config: Runtime) -> dict:
 2. 每种可能性的置信度
 3. 建议的下一步"""
 
-    output = await rt.run(prompt, active_skills=_skills(["medical"]), use_memory=True)
+    output = await run_agent_node(
+        config, prompt, skill_names=["medical"], agent_type="diagnosis", task=task,
+    )
     return {
         "current_step": "analyzer",
         "completed_steps": ["analyzer"],
@@ -69,13 +72,12 @@ async def _analyzer_node(state: DiagnosisAgentState, config: Runtime) -> dict:
 
 
 async def _adviser_node(state: DiagnosisAgentState, config: Runtime) -> dict:
-    rt = config["configurable"]["agent"]
-
+    task = state.get("task", "")
     prompt = f"""## 任务：给出建议
 
 基于分析给出分级的医疗建议。
 
-症状: {state.get("task", "")}
+症状: {task}
 分析结果: {state.get("possible_causes", "")}
 
 输出:
@@ -84,25 +86,15 @@ async def _adviser_node(state: DiagnosisAgentState, config: Runtime) -> dict:
 3. 需要立即就医的情况
 4. 免责声明: AI建议仅供参考"""
 
-    output = await rt.run(prompt, active_skills=_skills(["medical"]), use_memory=True)
+    output = await run_agent_node(
+        config, prompt, skill_names=["medical"], agent_type="diagnosis", task=task,
+    )
     return {
         "current_step": "adviser",
         "completed_steps": ["adviser"],
         "node_outputs": {"adviser": output},
         "recommendations": output,
     }
-
-
-def _skills(names: list[str]) -> list:
-    from haven.skills.registry import SkillRegistry
-
-    skills = []
-    for n in names:
-        try:
-            skills.append(SkillRegistry.get(n))
-        except KeyError:
-            pass
-    return skills
 
 
 def _create_diagnosis_workflow() -> StateGraph:

@@ -16,16 +16,17 @@ logger = logging.getLogger("haven.cli.service")
 
 
 class RuntimeService:
-    """CLI ↔ Runtime 桥梁。内部持有 Coordinator + ContextBuilder。"""
+    """CLI ↔ Runtime 桥梁。内部持有 Coordinator。"""
 
     def __init__(self):
         self._coordinator: Any = None
-        self._runtime: Any = None  # general agent (兼容旧接口)
+        self._runtime: Any = None
         self._initialized = False
         self._model: str | None = None
         self._session_id: str = "cli_main"
         self._entity_name: str = "cli_user"
         self._channel: str = "cli"
+        self._use_memory: bool = True
 
     # ==================================================================
     # 生命周期
@@ -46,6 +47,7 @@ class RuntimeService:
         self._model = model
         self._session_id = session_id
         self._entity_name = entity_name
+        self._use_memory = use_memory
 
         try:
             from haven.runtime.factory import create_coordinator
@@ -55,6 +57,7 @@ class RuntimeService:
                 entity_name=entity_name,
                 channel=self._channel,
                 load_mcp=load_mcp,
+                use_memory=use_memory,
             )
             self._runtime = self._coordinator.runtime
 
@@ -147,7 +150,7 @@ class RuntimeService:
         return self._coordinator
 
     # ==================================================================
-    # 核心 API
+    # 核心 API — 委托给 Coordinator
     # ==================================================================
 
     async def chat(self, task: str) -> str:
@@ -166,11 +169,11 @@ class RuntimeService:
             return {"result": "[错误] Runtime 未初始化", "plan": None, "elapsed_ms": 0}
 
         t0 = time.monotonic()
-        plan = None
 
         try:
-            if no_plan or self._is_simple(task):
+            if no_plan:
                 result = await self._runtime.run(task)
+                plan = None
             else:
                 plan_obj = await self._coordinator.plan(task)
                 plan = {
@@ -181,17 +184,11 @@ class RuntimeService:
                     "steps": [s.model_dump() for s in plan_obj.steps],
                     "reasoning": plan_obj.reasoning,
                 }
-                if plan_obj.steps:
-                    result = await self._coordinator._execute_steps(plan_obj, task)
-                else:
-                    agent = self._coordinator.agents.get(
-                        plan_obj.agent_type, self._runtime
-                    )
-                    result = await agent.run(task)
-
+                result = await self._coordinator.execute(task)
         except Exception as exc:
             logger.error("run_task error: %s", exc)
             result = f"[错误] {exc}"
+            plan = None
 
         elapsed_ms = int((time.monotonic() - t0) * 1000)
         return {"result": result, "plan": plan, "elapsed_ms": elapsed_ms}
@@ -205,6 +202,8 @@ class RuntimeService:
                 "workflow": workflow_name, "nodes_executed": 0, "elapsed_ms": 0,
             }
 
+        t0 = time.monotonic()
+
         from haven.runtime.registry import WorkflowRegistry
 
         wf_names = WorkflowRegistry.list_all()
@@ -214,78 +213,32 @@ class RuntimeService:
                 "workflow": workflow_name, "nodes_executed": 0, "elapsed_ms": 0,
             }
 
-        t0 = time.monotonic()
+        # 通过 plan 触发 workflow 路径
+        from haven.runtime.coordinator import ExecutionPlan
+
+        plan = ExecutionPlan(
+            goal=task, intent="task", agent_type="general",
+            complexity="complex", skills=[], workflow=workflow_name,
+            steps=[], reasoning="手动触发工作流",
+        )
 
         try:
-            graph = WorkflowRegistry.build(workflow_name)
-        except Exception as exc:
-            return {
-                "result": f"[错误] 构建工作流失败: {exc}",
-                "workflow": workflow_name, "nodes_executed": 0, "elapsed_ms": 0,
-            }
-
-        state = self._make_workflow_state(workflow_name, task)
-        logger.info("Workflow '%s': task=%s", workflow_name, task[:60])
-
-        try:
-            config = {
-                "configurable": {
-                    "thread_id": self._session_id,
-                    "agent": self._runtime,
-                }
-            }
-            result = await graph.ainvoke(state, config=config)
+            result = await self._coordinator._execute_via_workflow(plan, task)
         except Exception as exc:
             logger.error("Workflow '%s' error: %s", workflow_name, exc)
             return {
                 "result": f"[错误] {exc}",
-                "workflow": workflow_name,
-                "nodes_executed": len(state.get("node_outputs", {})),
+                "workflow": workflow_name, "nodes_executed": 0,
                 "elapsed_ms": int((time.monotonic() - t0) * 1000),
             }
 
         elapsed_ms = int((time.monotonic() - t0) * 1000)
-        if result.get("status") == "failed":
-            return {
-                "result": "[工作流失败]\n" + "\n".join(result.get("errors", [])),
-                "workflow": workflow_name,
-                "nodes_executed": len(result.get("node_outputs", {})),
-                "elapsed_ms": elapsed_ms,
-            }
-
         return {
-            "result": result.get("final_output") or "(完成)",
+            "result": result,
             "workflow": workflow_name,
-            "nodes_executed": len(result.get("node_outputs", {})),
+            "nodes_executed": 0,
             "elapsed_ms": elapsed_ms,
         }
-
-    @staticmethod
-    def _make_workflow_state(wf_name: str, task: str) -> dict:
-        base: dict = {
-            "task": task, "session_id": "default", "messages": [],
-            "errors": [], "completed_steps": [], "current_step": "",
-            "node_outputs": {}, "node_retry_counts": {},
-            "max_retries_per_node": 3, "status": "pending",
-            "final_output": "", "started_at": 0.0,
-        }
-        if "dev" in wf_name:
-            base.update({
-                "architecture_doc": "", "source_code": "", "code_language": "python",
-                "review_feedback": "", "review_score": 0.0, "review_blockers": [],
-                "test_report": "", "test_passed": False, "test_failures": [],
-            })
-        elif "research" in wf_name:
-            base.update({
-                "research_topic": "", "raw_findings": [], "analyzed_insights": "",
-                "final_report": "", "sources": [],
-            })
-        elif "diagnosis" in wf_name:
-            base.update({
-                "symptoms": "", "collected_info": "", "possible_causes": "",
-                "diagnosis": "", "recommendations": "",
-            })
-        return base
 
     async def chat_stream(self, task: str) -> AsyncIterator[str]:
         if not self._initialized:
@@ -308,6 +261,92 @@ class RuntimeService:
         except Exception:
             return self._model or "unknown"
 
+    # ==================================================================
+    # 斜杠命令桥接 — CLI 通过这里查询，不直调内部
+    # ==================================================================
+
+    def list_skills(self) -> str:
+        from haven.skills.registry import SkillRegistry
+
+        all_s = SkillRegistry.list_all()
+        if not all_s:
+            return "(未加载 skill)"
+
+        lines = [f"已加载 {len(all_s)} 个 skill:"]
+        for name, s in sorted(all_s.items()):
+            dtype = "人格" if s.default else "领域"
+            lines.append(f"  [{dtype}] {name} — {s.description or '(无描述)'}")
+        return "\n".join(lines)
+
+    def list_tools(self) -> str:
+        if not self._initialized:
+            return "(Runtime 未初始化)"
+
+        tools: list[Any] = []
+        for agent in self._coordinator.agents.values():
+            for t in getattr(agent, "_tools", []):
+                if t not in tools:
+                    tools.append(t)
+
+        if not tools:
+            return "(未加载工具)"
+
+        lines = [f"已加载 {len(tools)} 个工具:"]
+        for t in sorted(tools, key=lambda x: x.name):
+            desc = getattr(t, "description", "") or ""
+            lines.append(f"  {t.name} — {desc}" if desc else f"  {t.name}")
+        return "\n".join(lines)
+
+    def get_memory_stats(self) -> str:
+        if not self._initialized or not self._runtime:
+            return "(Runtime 未初始化)"
+
+        st = self._runtime.state
+        lines = [
+            f"会话: {st.session_id}",
+            f"实体: {st.entity_name}",
+            f"轮次: {st.turn_count}",
+            f"频道: {st.channel}",
+            f"长期记忆: {'开启' if self._use_memory else '关闭'}",
+        ]
+        if self._coordinator and getattr(self._coordinator, "_fact_store", None):
+            facts = self._coordinator._fact_store.get_all(st.entity_name)
+            lines.append(f"事实条数: {len(facts)}")
+        if st.active_skills:
+            lines.append(f"当前 skills: {', '.join(st.active_skills)}")
+        if st.active_tools:
+            lines.append(f"当前 tools: {', '.join(st.active_tools)}")
+        return "\n".join(lines)
+
     @staticmethod
-    def _is_simple(task: str) -> bool:
-        return len(task.strip()) < 20 and "?" not in task
+    def list_workflows() -> str:
+        from haven.runtime.registry import WorkflowRegistry
+
+        ctx = WorkflowRegistry.get_selection_context()
+        if "(无可用" in ctx:
+            return "(未注册工作流)"
+        return ctx
+
+    @staticmethod
+    def list_models() -> str:
+        from haven.config import load_models_config
+
+        models = load_models_config()
+        lines = ["可用模型:"]
+        for name in sorted(models.keys()):
+            lines.append(f"  {name}")
+        return "\n".join(lines)
+
+    def current_model(self) -> str:
+        if self._runtime and self._runtime.llm:
+            return getattr(self._runtime.llm, "model_name", "unknown")
+        return "(Runtime 未初始化)"
+
+    async def reset_session(self) -> None:
+        """清空对话历史（checkpointer 线程 + turn 状态）。"""
+        if self._coordinator:
+            await self._coordinator.reset_session()
+
+    def reset(self) -> None:
+        if self._coordinator:
+            self._coordinator.reset()

@@ -1,7 +1,8 @@
 """LLM 生命周期管理。
 
-从 ``models.yaml`` 加载配置，创建对应的 LangChain 模型实例。
-支持 DeepSeek 和 OpenAI 兼容 provider，可通过环境变量注入 API Key。
+从 ``models.yaml`` 加载模型定义，根据 provider 创建对应的 LangChain 模型实例。
+支持 DeepSeek（ChatDeepSeek）和 OpenAI 兼容 provider（ChatOpenAI，含阿里云 DashScope）。
+API Key 通过 ``models.yaml`` 中 ``api_key_env`` 字段声明的环境变量注入。
 """
 
 from __future__ import annotations
@@ -43,7 +44,7 @@ def create_llm(model_name: str | None = None) -> BaseChatModel:
             temperature=cfg["temperature"],
             max_tokens=cfg["max_tokens"],
         )
-    elif provider == "openai":
+    elif provider in ("openai", "aliyun"):
         from langchain_openai import ChatOpenAI
 
         model = ChatOpenAI(
@@ -54,6 +55,8 @@ def create_llm(model_name: str | None = None) -> BaseChatModel:
             max_tokens=cfg["max_tokens"],
         )
     else:
-        raise ValueError(f"Unknown provider: {provider}")
+        raise ValueError(
+            f"Unknown provider: {provider}. Supported: deepseek, openai, aliyun"
+        )
 
     return model

@@ -108,6 +108,24 @@ def render_panel(content: str, *, title: str = "", style: str = "blue") -> None:
     _console.print(Panel(content, title=title, border_style=style))
 
 
+# ====================================================================
+# 消息装饰 — 用户输入 / AI 回复
+# ====================================================================
+
+
+def render_user_message(text: str) -> None:
+    """回显用户输入，dim 边框 + You 标签。"""
+    _console.print()
+    _console.print(Panel(text.strip(), title="You", border_style="dim", padding=(0, 1)))
+    _console.print()
+
+
+def render_assistant_message(text: str) -> None:
+    """渲染 AI 回复，蓝色边框 + Haven 标签。text 为 Rich 渲染后的字符串。"""
+    _console.print(Panel(text, title="Haven", border_style="blue", padding=(0, 1)))
+    _console.print()
+
+
 def render_list(items: list[str], *, style: str = "white", bullet: str = "•") -> None:
     for item in items:
         _console.print(f"  {bullet} {item}", style=style)

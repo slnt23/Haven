@@ -12,7 +12,7 @@ from typing import Annotated
 
 import typer
 
-from haven.cli.services.cli_service import CLIContext, HistoryManager
+from haven.cli.bridge.cli_context import CLIContext, HistoryManager
 from haven.cli.ui.banner import print_banner
 from haven.cli.ui.console import (
     blank,
@@ -20,6 +20,7 @@ from haven.cli.ui.console import (
     render_info,
     render_markdown,
     render_success,
+    render_user_message,
     rule,
 )
 from haven.cli.ui.progress import DynamicRenderer
@@ -33,6 +34,8 @@ def run_chat(
     task: Annotated[str | None, typer.Option("--task", "-t", help="启动后立即执行的任务")] = None,
     verbose: Annotated[bool, typer.Option("--verbose", "-v", help="详细模式")] = False,
     task_only: bool = False,
+    session: str | None = None,
+    no_memory: bool = False,
 ) -> None:
     """启动 Haven 交互式 REPL。动态刷新渲染，原地状态更新。
 
@@ -41,14 +44,18 @@ def run_chat(
     cli_ctx = ctx.obj if isinstance(ctx.obj, CLIContext) else CLIContext()
     cli_ctx.model = model
     cli_ctx.verbose = verbose
+    if session:
+        cli_ctx.session_id = session
     history = HistoryManager()
 
     # ---- 初始化 RuntimeService ----
-    asyncio.run(_start_service(cli_ctx, model))
+    asyncio.run(_start_service(cli_ctx, model, no_memory=no_memory))
 
     # ---- Banner ----
     svc = cli_ctx._service
     status = svc._status()
+    from haven import __version__
+
     print_banner(
         model=status["model"],
         skills=status["skills"],
@@ -57,6 +64,7 @@ def run_chat(
         memory_turns=status["memory_turns"],
         providers=status["providers"],
         vector_available=status.get("vector_available", False),
+        version=__version__,
     )
     render_info("输入 /help 查看命令，Ctrl+C 退出。")
     blank()
@@ -100,8 +108,11 @@ def run_chat(
 # ====================================================================
 
 
-async def _start_service(cli_ctx: CLIContext, model: str | None) -> None:
-    from haven.cli.services.runtime_service import RuntimeService
+async def _start_service(
+    cli_ctx: CLIContext, model: str | None, *, no_memory: bool = False,
+) -> None:
+    from haven.cli.bridge.runtime_service import RuntimeService
+    from haven.config import settings
 
     svc = RuntimeService()
     try:
@@ -109,8 +120,8 @@ async def _start_service(cli_ctx: CLIContext, model: str | None) -> None:
             model=model,
             session_id=cli_ctx.session_id or "cli_main",
             entity_name="cli_user",
-            load_mcp=False,
-            use_memory=True,
+            load_mcp=settings.mcp_enabled,
+            use_memory=not no_memory,
         )
     except Exception as exc:
         render_error(f"启动 Runtime 失败: {exc}")
@@ -133,8 +144,11 @@ async def _stop_service(cli_ctx: CLIContext) -> None:
 
 
 async def _process_chat(user_input: str, cli_ctx: CLIContext) -> None:
-    """处理一轮对话：spinner 原地刷新 + 最终完整块渲染。"""
+    """处理一轮对话：用户回显 + spinner 原地刷新 + AI 面板渲染。"""
     svc = cli_ctx._service
+
+    # 回显用户输入
+    render_user_message(user_input)
 
     renderer = DynamicRenderer()
     async with renderer:
@@ -157,6 +171,7 @@ async def _process_chat(user_input: str, cli_ctx: CLIContext) -> None:
 def _handle_slash(text: str, cli_ctx: CLIContext) -> bool:
     """处理斜杠命令。返回 True 表示应退出 REPL。"""
     cmd = text.strip().lower()
+    svc = getattr(cli_ctx, "_service", None)
 
     if cmd in ("/exit", "/quit", "/q"):
         rule()
@@ -181,53 +196,23 @@ def _handle_slash(text: str, cli_ctx: CLIContext) -> bool:
 
     if cmd == "/skills":
         try:
-            from haven.skills.registry import SkillRegistry
-
-            all_s = SkillRegistry.list_all()
-            if not all_s:
-                render_info("(未加载 skill)")
-            else:
-                lines = [f"已加载 {len(all_s)} 个 skill:"]
-                for name, s in sorted(all_s.items()):
-                    dtype = "人格" if s.default else "领域"
-                    lines.append(f"  [{dtype}] {name} — {s.description or '(无描述)'}")
-                render_info("\n".join(lines))
+            info = svc.list_skills() if svc else "(RuntimeService 未初始化)"
+            render_info(info)
         except Exception as exc:
             render_error(str(exc))
         return False
 
     if cmd == "/tools":
         try:
-            rt = cli_ctx.runtime
-            if rt is None:
-                render_info("(Runtime 未初始化)")
-                return False
-
-            tools = getattr(rt, "_tools", [])
-            if not tools:
-                render_info("(未加载工具)")
-            else:
-                lines = [f"已加载 {len(tools)} 个工具 (通用 Agent):"]
-                for t in sorted(tools, key=lambda x: x.name):
-                    desc = getattr(t, "description", "") or ""
-                    lines.append(f"  {t.name} — {desc}" if desc else f"  {t.name}")
-                render_info("\n".join(lines))
+            info = svc.list_tools() if svc else "(RuntimeService 未初始化)"
+            render_info(info)
         except Exception as exc:
             render_error(str(exc))
         return False
 
     if cmd == "/memory":
         try:
-            rt = cli_ctx.runtime
-            if rt is None:
-                render_info("(Runtime 未初始化)")
-                return False
-            info = (
-                f"会话: {rt.state.session_id}\n"
-                f"实体: {rt.state.entity_name}\n"
-                f"轮次: {rt.state.turn_count}\n"
-                f"频道: {rt.state.channel}"
-            )
+            info = svc.get_memory_stats() if svc else "(RuntimeService 未初始化)"
             render_info(info)
         except Exception as exc:
             render_error(str(exc))
@@ -235,20 +220,14 @@ def _handle_slash(text: str, cli_ctx: CLIContext) -> bool:
 
     if cmd == "/workflows":
         try:
-            from haven.runtime.registry import WorkflowRegistry
-
-            ctx_wf = WorkflowRegistry.get_selection_context()
-            if "(无可用" in ctx_wf:
-                render_info("(未注册工作流)")
-            else:
-                render_info(ctx_wf)
+            info = svc.list_workflows() if svc else "(RuntimeService 未初始化)"
+            render_info(info)
         except Exception as exc:
             render_error(str(exc))
         return False
 
     if cmd.startswith("/model"):
         parts = cmd.split()
-        svc = getattr(cli_ctx, "_service", None)
         if len(parts) > 1 and svc:
             try:
                 actual = svc.switch_model(parts[1])
@@ -256,32 +235,22 @@ def _handle_slash(text: str, cli_ctx: CLIContext) -> bool:
             except Exception as exc:
                 render_error(str(exc))
         else:
-            rt = cli_ctx.runtime
-            if rt and rt.llm:
-                current = getattr(rt.llm, "model_name", "unknown")
-                render_info(f"当前模型: {current}")
-            else:
-                render_info("(Runtime 未初始化)")
+            info = svc.current_model() if svc else "(Runtime 未初始化)"
+            render_info(f"当前模型: {info}")
         return False
 
     if cmd == "/models":
         try:
-            from haven.config import load_models_config
-
-            models = load_models_config()
-            lines = ["可用模型:"]
-            for name in sorted(models.keys()):
-                lines.append(f"  {name}")
-            render_info("\n".join(lines))
+            info = svc.list_models() if svc else "(RuntimeService 未初始化)"
+            render_info(info)
         except Exception as exc:
             render_error(str(exc))
         return False
 
     if cmd == "/clear":
-        rt = cli_ctx.runtime
-        if rt:
-            rt.reset()
-            render_success("对话历史已清空。")
+        if svc:
+            asyncio.run(svc.reset_session())
+            render_success("对话历史已清空（含 checkpointer 线程）。")
         else:
             render_info("(Runtime 未初始化)")
         return False

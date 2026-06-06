@@ -16,6 +16,7 @@ from langgraph.graph import StateGraph
 from langgraph.runtime import Runtime
 
 from haven.runtime.graphs import create_checkpointer
+from haven.runtime.graphs._helpers import run_agent_node
 from haven.runtime.registry import WorkflowRegistry
 from haven.runtime.state import AgentState
 
@@ -31,17 +32,18 @@ class ResearchAgentState(AgentState, total=False):
 
 
 async def _searcher_node(state: ResearchAgentState, config: Runtime) -> dict:
-    rt = config["configurable"]["agent"]
-
+    task = state.get("task", "")
     prompt = f"""## 任务：信息搜集
 
 搜索以下主题的相关信息:
 
-{state.get("task", "")}
+{task}
 
 要求: 从多个来源搜集信息，记录来源URL，提炼核心观点。"""
 
-    output = await rt.run(prompt, use_memory=True)
+    output = await run_agent_node(
+        config, prompt, agent_type="researcher", task=task,
+    )
     return {
         "current_step": "searcher",
         "completed_steps": ["searcher"],
@@ -51,8 +53,7 @@ async def _searcher_node(state: ResearchAgentState, config: Runtime) -> dict:
 
 
 async def _analyst_node(state: ResearchAgentState, config: Runtime) -> dict:
-    rt = config["configurable"]["agent"]
-
+    task = state.get("task", "")
     findings = "\n---\n".join(state.get("raw_findings", []))
     prompt = f"""## 任务：信息分析
 
@@ -60,7 +61,7 @@ async def _analyst_node(state: ResearchAgentState, config: Runtime) -> dict:
 
 {findings}
 
-原始主题: {state.get("task", "")}
+原始主题: {task}
 
 输出:
 1. 核心发现 (3-5条)
@@ -68,8 +69,8 @@ async def _analyst_node(state: ResearchAgentState, config: Runtime) -> dict:
 3. 数据可信度评估
 4. 仍存在的知识缺口"""
 
-    output = await rt.run(
-        prompt, active_skills=_skills(["data_analysis"]), use_memory=True
+    output = await run_agent_node(
+        config, prompt, skill_names=["data_analysis"], agent_type="researcher", task=task,
     )
     return {
         "current_step": "analyst",
@@ -80,22 +81,21 @@ async def _analyst_node(state: ResearchAgentState, config: Runtime) -> dict:
 
 
 async def _synthesizer_node(state: ResearchAgentState, config: Runtime) -> dict:
-    rt = config["configurable"]["agent"]
-
+    task = state.get("task", "")
     prompt = f"""## 任务：撰写报告
 
 基于分析撰写结构化报告。
 
-主题: {state.get("task", "")}
+主题: {task}
 
 分析结果: {state.get("analyzed_insights", "")}
 
 报告格式（Markdown）:
-# {state.get("task", "")} — 调研报告
+# {task} — 调研报告
 ## 概述 / ## 核心发现 / ## 详细分析 / ## 结论与建议 / ## 信息来源"""
 
-    output = await rt.run(
-        prompt, active_skills=_skills(["summarization"]), use_memory=True
+    output = await run_agent_node(
+        config, prompt, skill_names=["summarization"], agent_type="researcher", task=task,
     )
     return {
         "current_step": "synthesizer",
@@ -103,18 +103,6 @@ async def _synthesizer_node(state: ResearchAgentState, config: Runtime) -> dict:
         "node_outputs": {"synthesizer": output},
         "final_report": output,
     }
-
-
-def _skills(names: list[str]) -> list:
-    from haven.skills.registry import SkillRegistry
-
-    skills = []
-    for n in names:
-        try:
-            skills.append(SkillRegistry.get(n))
-        except KeyError:
-            pass
-    return skills
 
 
 def _research_router(state: ResearchAgentState) -> str:

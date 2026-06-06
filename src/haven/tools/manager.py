@@ -32,7 +32,7 @@ class ToolManager:
         tm.add_provider(MCPProvider(cfg))
         await tm.start_all()
 
-        tools = tm.get_tools_for_skills(["coder"])
+        tools = tm.get_tools_for_skills({"coder": ["code_exec"]})
         runtime.bind_tools(tools)
     """
 
@@ -107,21 +107,15 @@ class ToolManager:
     def get_tool(self, name: str) -> HavenTool | None:
         return self._tools.get(name)
 
-    def get_tools_for_skills(self, skill_names: list[str]) -> list[HavenTool]:
-        """根据 skill 声明的 tools 字段返回工具列表（直接名称匹配）。
+    def get_tools_for_skills(self, skill_tools: dict[str, list[str]]) -> list[HavenTool]:
+        """根据 skill→tools 映射返回工具列表（直接名称匹配）。
 
         推荐使用 ToolResolver.resolve() 替代此方法——ToolResolver 支持
         标签/类别/能力关键词多级匹配和上下文过滤。
         """
-        from haven.skills.registry import SkillRegistry
-
         required: set[str] = set()
-        for sn in skill_names:
-            try:
-                skill = SkillRegistry.get(sn)
-                required.update(getattr(skill, "tools", []))
-            except KeyError:
-                pass
+        for tool_names in skill_tools.values():
+            required.update(tool_names)
 
         if not required:
             return self.list_all()

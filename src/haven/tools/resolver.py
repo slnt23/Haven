@@ -165,7 +165,7 @@ class ToolResolver:
 
     def resolve(
         self,
-        skill_names: list[str],
+        skill_tools: dict[str, list[str]],
         *,
         context: dict[str, str] | None = None,
         channel: str = "cli",
@@ -173,10 +173,10 @@ class ToolResolver:
         only_available: bool = True,
         use_cache: bool = True,
     ) -> ResolveResult:
-        """根据 skill 列表 + 上下文解析可用工具。
+        """根据 skill→tools 映射 + 上下文解析可用工具。
 
         Args:
-            skill_names: skill 名列表（如 ``["coder", "medical"]``）。
+            skill_tools: skill 名 → 工具名列表的映射（如 ``{"coder": ["code_exec"], "medical": ["rag"]}``）。
             context: 运行时上下文（如 RuntimeState.context）。
             channel: 当前通道（cli / socket / feishu / email）。
             permissions: 授予的权限列表（如 ``["read", "write"]``）。
@@ -191,12 +191,13 @@ class ToolResolver:
             self._build_index()
 
         # 缓存
+        skill_names = list(skill_tools.keys())
         cache_key = _make_cache_key(skill_names, channel, permissions or [])
         if use_cache and cache_key in self._cache:
             return self._cache[cache_key]
 
         # 收集 Skill 工具需求 → 解析
-        requirements = self._collect_requirements(skill_names)
+        requirements = self._collect_requirements(skill_tools)
         result = self._match_all(requirements)
 
         # 上下文过滤
@@ -267,19 +268,13 @@ class ToolResolver:
     # ==================================================================
 
     @staticmethod
-    def _collect_requirements(skill_names: list[str]) -> list[ToolRequirement]:
-        """从 SkillRegistry 读取所有 skill 的工具需求。"""
-        from haven.skills.registry import SkillRegistry
-
+    def _collect_requirements(skill_tools: dict[str, list[str]]) -> list[ToolRequirement]:
+        """从 skill→tools 映射收集工具需求。"""
         seen: set[str] = set()
         requirements: list[ToolRequirement] = []
 
-        for sn in skill_names:
-            try:
-                skill = SkillRegistry.get(sn)
-            except KeyError:
-                continue
-            for tool_name in getattr(skill, "tools", []):
+        for sn, tool_names in skill_tools.items():
+            for tool_name in tool_names:
                 if tool_name and tool_name not in seen:
                     seen.add(tool_name)
                     requirements.append(
@@ -329,22 +324,16 @@ class ToolResolver:
         if tool:
             return tool
 
-        # Level 2: MCP 命名空间匹配（provider__tool_name）
-        if "__" in requirement:
-            tool = self._name_index.get(requirement)
-            if tool:
-                return tool
-
-        # Level 3: 标签匹配（tool.metadata.tags 包含该字符串）
+        # Level 2: 标签匹配（tool.metadata.tags 包含该字符串）
         candidates = self._tag_index.get(requirement)
         if candidates:
             return self._pick_best(candidates, requirement)
 
-        # Level 4: 类别匹配（requirement 是 ToolCategory 值）
+        # Level 3: 类别匹配（requirement 是 ToolCategory 值）
         if requirement in self._category_index:
             return self._pick_best(self._category_index[requirement], requirement)
 
-        # Level 5: 能力关键词 → 类别映射
+        # Level 4: 能力关键词 → 类别映射
         category = _CAPABILITY_CATEGORY.get(requirement)
         if category:
             cat_val = category.value

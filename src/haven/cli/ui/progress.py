@@ -101,7 +101,7 @@ class DynamicRenderer:
     # ---- 最终渲染 ----
 
     def render(self) -> str:
-        """停止 Live 并渲染完整响应（Markdown + 代码高亮）。"""
+        """停止 Live 并渲染完整响应（Markdown + 代码高亮 + Haven 面板）。"""
         if self._live:
             self._live.stop()
             self._live = None
@@ -114,8 +114,13 @@ class DynamicRenderer:
         if not result.strip():
             return result
 
+        # 捕获 Markdown+代码渲染 → 包装为 Haven 面板
+        with _console.capture() as capture:
+            _render_markdown_with_code(result)
+        rendered = capture.get()
+
         _console.print()
-        _render_markdown_with_code(result)
+        _console.print(Panel(rendered, title="Haven", border_style="blue", padding=(0, 1)))
         _console.print()
         return result
 

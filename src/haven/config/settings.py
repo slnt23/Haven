@@ -1,3 +1,13 @@
+"""Settings — pydantic-settings 配置单例。
+
+配置加载优先级（由低到高）：
+1. ``src/haven/config/haven.yaml`` — 内置默认值
+2. CWD ``haven.yaml`` — 用户覆盖（OmegaConf deep-merge）
+3. 环境变量 — 最高优先级，通过 pydantic-settings Field alias 注入
+
+提供 ``settings`` 全局单例、``find_user_path`` 路径工具和 ``get_mcp_config`` 桥接。
+"""
+
 from pathlib import Path
 
 from omegaconf import OmegaConf
@@ -6,39 +16,45 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 def _find_user_config(filename: str) -> Path | None:
-    """在 CWD 中查找 *filename*，不存在返回 None。"""
+    """在 CWD 中查找用户配置文件。不存在时返回 None。"""
     cwd_path = Path.cwd() / filename
     return cwd_path if cwd_path.is_file() else None
 
 
 def find_user_path(relative_path: str) -> Path:
-    """返回 CWD 下的 *relative_path*。
-
-    始终返回路径——调用方按需检查是否存在。
-    """
+    """返回 CWD 下的路径。调用方自行检查是否存在。"""
     return Path.cwd() / relative_path
 
 
 def _load_app_config() -> dict:
-    config = OmegaConf.load(Path(__file__).parent / "app.yaml")
+    """加载框架配置：内置 haven.yaml + CWD 用户 haven.yaml deep-merge。"""
+    config = OmegaConf.load(Path(__file__).parent / "haven.yaml")
     user_config_path = _find_user_config("haven.yaml")
     if user_config_path is not None:
         config = OmegaConf.merge(config, OmegaConf.load(user_config_path))
     return OmegaConf.to_container(config, resolve=True)
 
 
+def get_mcp_config() -> list[dict]:
+    """返回来自 ``mcp.json`` 的原始 MCP 服务器配置。
+
+    桥接函数：将 settings 模块与 mcp 子模块解耦，避免循环导入。
+    """
+    from haven.config.mcp import load_mcp_servers
+
+    return load_mcp_servers()
+
+
 _app_config = _load_app_config()
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(
-        extra="ignore",
-    )
+    """应用设置单例，字段默认值来自 haven.yaml，可被环境变量覆盖。
 
-    # ==================== API Keys ====================
-    # 模型 API Key 现在通过 models.yaml 中的 api_key_env 字段指定，
-    # 由 loader.get_model_config() 直接从 os.environ 读取。
-    # 用户只需在 .env 或 shell 中设置对应环境变量即可，无需修改此文件。
+    每个字段的 alias 即对应的环境变量名，设置后自动覆盖 YAML 默认值。
+    """
+
+    model_config = SettingsConfigDict(extra="ignore")
 
     # ==================== Agent ====================
     agent_max_iterations: int = Field(
@@ -85,6 +101,9 @@ class Settings(BaseSettings):
 
     # ==================== Memory ====================
     memory_enabled: bool = Field(default=_app_config["memory"]["enabled"], alias="MEMORY_ENABLED")
+    memory_db_path: str = Field(
+        default=_app_config["memory"]["db_path"], alias="MEMORY_DB_PATH"
+    )
     context_window_tokens: int = Field(
         default=_app_config["memory"]["context_window_tokens"], alias="CONTEXT_WINDOW_TOKENS"
     )
@@ -104,10 +123,3 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
-
-
-def get_mcp_config() -> list[dict]:
-    """Return raw MCP server configurations from ``mcp.json``."""
-    from haven.tools.mcp_config import load_mcp_servers
-
-    return load_mcp_servers()

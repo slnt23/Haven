@@ -73,8 +73,7 @@ class MCPProvider(ToolProvider):
             return []
 
     async def _load_stdio(self) -> list[LCBaseTool]:
-        from langchain_mcp_adapters.tools import load_mcp_tools
-        from mcp import ClientSession, StdioServerParameters
+        from mcp import StdioServerParameters
         from mcp.client.stdio import stdio_client
 
         params = StdioServerParameters(
@@ -84,16 +83,9 @@ class MCPProvider(ToolProvider):
             if getattr(self._config, "env", None)
             else None,
         )
-        transport = await self._exit_stack.enter_async_context(stdio_client(params))
-        read, write = transport
-        session = await self._exit_stack.enter_async_context(ClientSession(read, write))
-        await session.initialize()
-        self._session = session
-        return await load_mcp_tools(session)
+        return await self._load_via_transport(stdio_client(params))
 
     async def _load_http(self) -> list[LCBaseTool]:
-        from langchain_mcp_adapters.tools import load_mcp_tools
-        from mcp import ClientSession
         from mcp.client.sse import sse_client
 
         headers = (
@@ -101,21 +93,18 @@ class MCPProvider(ToolProvider):
             if getattr(self._config, "headers", None)
             else {}
         )
-        transport = await self._exit_stack.enter_async_context(
-            sse_client(self._config.url, headers=headers)
-        )
-        read, write = transport
-        session = await self._exit_stack.enter_async_context(ClientSession(read, write))
-        await session.initialize()
-        self._session = session
-        return await load_mcp_tools(session)
+        return await self._load_via_transport(sse_client(self._config.url, headers=headers))
 
     async def _load_websocket(self) -> list[LCBaseTool]:
-        from langchain_mcp_adapters.tools import load_mcp_tools
-        from mcp import ClientSession
         from mcp.client.websocket import websocket_client
 
-        transport = await self._exit_stack.enter_async_context(websocket_client(self._config.url))
+        return await self._load_via_transport(websocket_client(self._config.url))
+
+    async def _load_via_transport(self, transport_ctx) -> list[LCBaseTool]:
+        from langchain_mcp_adapters.tools import load_mcp_tools
+        from mcp import ClientSession
+
+        transport = await self._exit_stack.enter_async_context(transport_ctx)
         read, write = transport
         session = await self._exit_stack.enter_async_context(ClientSession(read, write))
         await session.initialize()
