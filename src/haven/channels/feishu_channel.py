@@ -202,11 +202,11 @@ class FeishuChannel(BaseChannel):
         )
 
         # 按用户身份隔离会话状态
-        self.agent.state.session_id = f"feishu_{open_id}"
-        self.agent.state.entity_name = f"feishu_{open_id}"
-        self.agent.state.channel = "feishu"
+        self.runtime.state.session_id = f"feishu_{open_id}"
+        self.runtime.state.entity_name = f"feishu_{open_id}"
+        self.runtime.state.channel = "feishu"
 
-        # 通过 Coordinator 处理
+        # 通过 Runtime 处理
         try:
             response = await self._session.execute(text)
         except Exception:

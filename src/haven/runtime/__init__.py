@@ -1,28 +1,38 @@
-"""Haven V3 Runtime — Coordinator + 多专业 Agent + 工作流引擎。
+"""Haven Runtime —— Agent 运行时调度中心（Execution Layer）。
 
-Coordinator — 任务规划 + 多 Agent 调度
-BaseAgent — 专业 Agent 基类 (Coder/Researcher/Diagnosis/General)
-ContextBuilder — 统一上下文构建 (替代 Middleware 管道)
-create_coordinator — 系统装配入口
+职责：
+  - 请求入口       — Runtime.execute(task)
+  - 任务规划       — Coordinator.plan() → ExecutionPlan
+  - 执行调度       — Dispatcher.dispatch() → Workflow / Agent
+  - 上下文构建     — ContextBuilder → system_prompt
+  - Agent 执行     — BaseAgent → create_react_agent() → LLM
+
+不负责：
+  - Tool 解析/选择  — 全部交给 LangChain + LLM Function Calling
+  - Skill→Tool 映射 — 已删除，Skill 仅影响 system_prompt
+
+依赖方向（单向）：
+  Config → Core → Tools → Runtime
 """
 
 from haven.runtime.agents.base import BaseAgent
 from haven.runtime.context import ContextBuilder
 from haven.runtime.coordinator import Coordinator, ExecutionPlan, PlanStep
-from haven.runtime.factory import create_coordinator
-from haven.runtime.graphs import create_checkpointer
+from haven.runtime.dispatcher import Dispatcher
+from haven.runtime.factory import Runtime, create_runtime
 from haven.runtime.registry import WorkflowRegistry
 from haven.runtime.state import AgentState
-
-# 兼容旧 API — PlannerAgent/AgentRuntime 已删除，迁移到 Coordinator/BaseAgent
+from haven.runtime.workflows import create_checkpointer
 
 __all__ = [
+    "Runtime",
+    "create_runtime",
     "Coordinator",
+    "Dispatcher",
     "ExecutionPlan",
     "PlanStep",
     "BaseAgent",
     "ContextBuilder",
-    "create_coordinator",
     "AgentState",
     "WorkflowRegistry",
     "create_checkpointer",

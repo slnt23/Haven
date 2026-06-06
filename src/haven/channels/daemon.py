@@ -1,3 +1,9 @@
+"""Haven 守护进程 —— 长期运行，通过飞书 WebSocket 共享单个 Runtime。
+
+Runtime 包含 Coordinator（规划）+ Dispatcher（执行）+ Agents + Tools，
+所有 Channel 共享同一个 Runtime 实例。
+"""
+
 from __future__ import annotations
 
 import asyncio
@@ -16,6 +22,7 @@ from haven.channels.feishu_channel import FeishuChannel
 
 logger = logging.getLogger("haven.daemon")
 
+
 def _daemon_banner() -> str:
     try:
         from haven import __version__ as ver
@@ -31,21 +38,22 @@ def _daemon_banner() -> str:
 
 
 class HavenDaemon:
-    """长期运行守护进程，通过飞书 WebSocket 共享单个 Coordinator。"""
+    """长期运行守护进程，通过飞书 WebSocket 共享单个 Runtime。"""
 
     def __init__(self) -> None:
-        self.agent: Any = None
+        self.runtime: Any = None
         self.channels: list[BaseChannel] = []
         self._running = False
         self._shutdown_event = asyncio.Event()
 
     async def start(self) -> None:
+        """启动守护进程：初始化 Runtime → 构建 Channel → 注册信号。"""
         existing = pid_read(settings.pid_file)
         if existing is not None and is_running(existing):
             logger.error("Daemon already running (PID %d). Use 'haven stop' first.", existing)
             raise SystemExit(1)
 
-        await self._init_agent()
+        await self._init_runtime()
         self._build_channels()
         await self._start_channels()
         self._register_signals()
@@ -54,6 +62,7 @@ class HavenDaemon:
         self._print_status()
 
     async def stop(self) -> None:
+        """停止守护进程：停止 Channel → 停止 ToolLoader → 清理 PID。"""
         if not self._running:
             return
         self._running = False
@@ -65,19 +74,17 @@ class HavenDaemon:
             except Exception as exc:
                 logger.warning("Error stopping channel '%s': %s", ch.name, exc)
 
-        if self.agent:
-            tm = getattr(self.agent, "tool_manager", None)
-            if tm:
-                try:
-                    await tm.stop_all()
-                except Exception as exc:
-                    logger.debug("ToolManager shutdown: %s", exc)
-            # checkpointer 自动持久化
+        if self.runtime:
+            try:
+                await self.runtime.close()
+            except Exception as exc:
+                logger.debug("Runtime close: %s", exc)
 
         pid_remove(settings.pid_file)
         logger.info("Haven daemon stopped")
 
     async def run_forever(self) -> None:
+        """运行直到收到停止信号。"""
         try:
             await self.start()
             await self._shutdown_event.wait()
@@ -88,16 +95,18 @@ class HavenDaemon:
     # 内部实现
     # ------------------------------------------------------------------
 
-    async def _init_agent(self) -> None:
-        from haven.runtime.factory import create_coordinator
+    async def _init_runtime(self) -> None:
+        """创建 Runtime（Coordinator + Dispatcher + Agents + Tools）。"""
+        from haven.runtime.factory import create_runtime
 
-        self.agent = await create_coordinator(
+        self.runtime = await create_runtime(
             session_id="daemon",
             entity_name="daemon_user",
             channel="daemon",
         )
 
     def _build_channels(self) -> None:
+        """构建已启用的 Channel 列表。"""
         feishu_enabled = getattr(settings, "daemon_feishu_enabled", False)
         if feishu_enabled:
             self.channels.append(
@@ -108,14 +117,16 @@ class HavenDaemon:
             )
 
     async def _start_channels(self) -> None:
+        """启动所有 Channel，传入共享 Runtime。"""
         for ch in self.channels:
             try:
-                await ch.start(self.agent)
+                await ch.start(self.runtime)
                 logger.info("Channel '%s' started", ch.name)
             except Exception as exc:
                 logger.error("Failed to start channel '%s': %s", ch.name, exc)
 
     def _register_signals(self) -> None:
+        """注册 SIGINT/SIGTERM 信号处理。"""
         loop = asyncio.get_running_loop()
 
         def _handler() -> None:
@@ -132,9 +143,10 @@ class HavenDaemon:
                     pass
 
     def _print_status(self) -> None:
-        rt = self.agent.runtime if self.agent else None
-        llm = getattr(rt, "llm", None) if rt else None
-        model = getattr(llm, "model_name", None) or "unknown"
+        """打印守护进程启动状态。"""
+        model = "unknown"
+        if self.runtime:
+            model = getattr(self.runtime.llm, "model_name", None) or "unknown"
 
         lines = [_daemon_banner(), f"  Model   : {model}", "  Channels:"]
         for ch in self.channels:

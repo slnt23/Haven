@@ -1,31 +1,41 @@
-"""Coordinator — 任务规划 + 多 Agent 调度。
+"""协调器 —— 仅负责任务规划，不负责执行。
 
-在 PlannerAgent 基础上升级：plan() 不变，execute() 根据 agent_type
-调度到专业 Agent (Coder/Researcher/Diagnosis/General)。
+Coordinator 的唯一职责是将用户输入转换为结构化的 ExecutionPlan。
+执行由 Dispatcher 负责。
+
+职责边界：
+  - plan()        → Task → ExecutionPlan（LLM Structured Output）
+  - _llm_plan()   → 调用 LLM 生成计划
+  - _validate_plan() → 校验计划中的 skill/workflow 引用
+
+不负责：
+  - 执行（由 Dispatcher 负责）
+  - Tool 选择（由 LLM Function Calling 负责）
+  - Context 构建（由 ContextBuilder 负责）
 """
 
 from __future__ import annotations
 
 import hashlib
 import logging
-from typing import Any, AsyncIterator
+from typing import Any
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 
-from haven.runtime.context import ContextBuilder
 from haven.skills.registry import SkillRegistry
 
 logger = logging.getLogger("haven.coordinator")
 
+
 # ============================================================================
-# Structured Output Schemas
+# 结构化输出 Schema
 # ============================================================================
 
 
 class PlanStep(BaseModel):
-    """执行计划中的单步。"""
+    """执行计划中的单个步骤。"""
 
     order: int = Field(description="步骤序号，从 1 开始")
     description: str = Field(description="这一步要完成什么，自然语言描述")
@@ -35,9 +45,9 @@ class PlanStep(BaseModel):
 
 
 class ExecutionPlan(BaseModel):
-    """Coordinator 的完整规划输出。"""
+    """Coordinator 的规划输出 —— 由 LLM Structured Output 生成。"""
 
-    goal: str = Field(description="用户目标的简洁概括，一句话")
+    goal: str = Field(description="用户目标的一句话概括")
     intent: str = Field(description="意图分类标签")
     agent_type: str = Field(
         default="general",
@@ -51,7 +61,7 @@ class ExecutionPlan(BaseModel):
 
 
 # ============================================================================
-# Planner System Prompt
+# 规划器 System Prompt
 # ============================================================================
 
 _PLANNER_SYSTEM_PROMPT = """\
@@ -95,51 +105,41 @@ Analyze the user's request and produce a structured execution plan in JSON.
 
 
 class Coordinator:
-    """任务规划 + 多 Agent 调度。
+    """任务规划器。
 
-    职责:
-      1. plan()   — LLM Structured Output → ExecutionPlan (含 agent_type)
-      2. execute() — 根据 agent_type 调度到专业 Agent
-      3. execute_stream() — 流式版本
+    唯一公开方法：
+      - plan(task) → ExecutionPlan
+
+    不负责执行 —— 执行由 Dispatcher 负责。
     """
+
+    # 快速路径：无需 LLM 的琐碎输入
+    _TRIVIAL: set[str] = {
+        "你好", "hi", "hello", "谢谢", "thanks",
+        "再见", "bye", "拜拜", "在吗", "你是谁", "你能做什么",
+    }
 
     def __init__(
         self,
-        agents: dict[str, Any],
         llm: BaseChatModel,
         *,
         workflow_registry: Any = None,
-        state: Any = None,
-        context_builder: ContextBuilder | None = None,
-        tool_resolver: Any = None,
-        fact_store: Any = None,
-        checkpointer: Any = None,
-        use_memory: bool = True,
-    ):
-        self.agents = agents
+    ) -> None:
         self.llm = llm
         self._workflow_registry = workflow_registry
-        self.state = state  # RuntimeState (shared across agents)
-        self._context_builder = context_builder or ContextBuilder()
-        self._tool_resolver = tool_resolver
-        self._fact_store = fact_store
-        self._checkpointer = checkpointer
-        self._use_memory = use_memory and fact_store is not None
-        self._plan_cache: dict[str, ExecutionPlan] = {}
-        self._fallback_agent = agents.get("general")
-        self.tool_manager: Any = None
+        self._plan_cache: dict[str, ExecutionPlan] = {}  # 计划缓存
 
-    @property
-    def runtime(self):
-        """兼容旧接口 — 返回 general agent (仅用于 workflow 节点)。"""
-        return self._fallback_agent
-
-    # ==================================================================
+    # ------------------------------------------------------------------
     # 公开 API
-    # ==================================================================
+    # ------------------------------------------------------------------
 
     async def plan(self, task: str) -> ExecutionPlan:
-        """分析任务并生成 ExecutionPlan。"""
+        """分析任务并生成 ExecutionPlan。
+
+        快速路径（琐碎输入）直接返回默认计划，不走 LLM。
+        计划结果缓存 128 条，相同输入复用。
+        """
+        # 快速路径
         if self._is_trivial(task):
             return ExecutionPlan(
                 goal="日常对话",
@@ -152,14 +152,17 @@ class Coordinator:
                 reasoning="简单社交对话",
             )
 
+        # 缓存检查
         cache_key = self._cache_key(task)
         if cache_key in self._plan_cache:
             return self._plan_cache[cache_key]
 
+        # LLM 规划
         plan = await self._llm_plan(task)
         plan.skills = SkillRegistry.resolve_dependencies(plan.skills)
         plan = self._validate_plan(plan)
 
+        # 写入缓存
         self._plan_cache[cache_key] = plan
         if len(self._plan_cache) > 128:
             first = next(iter(self._plan_cache))
@@ -172,209 +175,36 @@ class Coordinator:
         )
         return plan
 
-    async def execute(self, task: str) -> str:
-        """规划 + 调度执行。"""
-        plan = await self.plan(task)
-
-        # 路径 1: 工作流
-        if plan.workflow and self._workflow_registry:
-            return await self._execute_via_workflow(plan, task)
-
-        # 路径 2: 多步编排
-        if plan.steps:
-            return await self._execute_steps(plan, task)
-
-        # 路径 3: 简单对话 → Agent
-        agent = self.agents.get(plan.agent_type, self._fallback_agent)
-        system_prompt = await self.prepare_agent(agent, plan.skills, task=task)
-        return await agent.run(task, system_prompt=system_prompt)
-
-    async def execute_stream(self, task: str) -> AsyncIterator[str]:
-        """流式规划 + 执行。"""
-        plan = await self.plan(task)
-
-        if plan.workflow and self._workflow_registry:
-            try:
-                result = await self._execute_via_workflow(plan, task)
-                yield result
-            except Exception as exc:
-                yield f"[错误] 工作流执行失败: {exc}"
-            return
-
-        if plan.steps:
-            ordered = self._topological_sort(plan.steps)
-            step_outputs: dict[int, str] = {}
-            for step in ordered:
-                step_task = f"原始任务: {task}\n当前步骤: {step.description}"
-                if step.expected_output:
-                    step_task += f"\n预期产出: {step.expected_output}"
-
-                agent = self._pick_agent_for_step(step, plan.agent_type)
-                step_skills = self._skills_for_step(plan.skills, step.skill)
-                system_prompt = await self.prepare_agent(agent, step_skills, task=task)
-
-                if step.order == ordered[-1].order:
-                    collected: list[str] = []
-                    async for chunk in agent.astream(step_task, system_prompt=system_prompt):
-                        collected.append(chunk)
-                        yield chunk
-                    step_outputs[step.order] = "".join(collected)
-                else:
-                    result = await agent.run(step_task, system_prompt=system_prompt)
-                    step_outputs[step.order] = result
-            return
-
-        # 简单对话 → 流式
-        agent = self.agents.get(plan.agent_type, self._fallback_agent)
-        system_prompt = await self.prepare_agent(agent, plan.skills, task=task)
-        async for chunk in agent.astream(task, system_prompt=system_prompt):
-            yield chunk
-
-    # ==================================================================
+    # ------------------------------------------------------------------
     # 快速路径
-    # ==================================================================
-
-    _TRIVIAL: set[str] = {
-        "你好", "hi", "hello", "谢谢", "thanks",
-        "再见", "bye", "拜拜", "在吗", "你是谁", "你能做什么",
-    }
+    # ------------------------------------------------------------------
 
     @classmethod
     def _is_trivial(cls, task: str) -> bool:
+        """判断是否为无需 LLM 规划的琐碎输入。"""
         cleaned = task.strip().lower().rstrip("?!。！？")
         return cleaned in cls._TRIVIAL or len(cleaned) <= 2
 
     @staticmethod
     def _cache_key(task: str) -> str:
+        """生成计划缓存键。"""
         return hashlib.md5(task.encode()).hexdigest()
 
-    # ==================================================================
-    # Agent 选择
-    # ==================================================================
-
-    def _pick_agent_for_step(self, step: PlanStep, default_type: str):
-        """根据 step.skill 选择合适的 Agent。"""
-        if step.skill:
-            # skill 到 agent_type 的启发式映射
-            for agent_type, agent in self.agents.items():
-                if agent_type in step.skill.lower():
-                    return agent
-        return self.agents.get(default_type, self._fallback_agent)
-
-    def _skills_for_step(self, plan_skills: list[str], step_skill: str | None) -> list[str]:
-        """合并 plan 级与 step 级 skill。"""
-        names = list(plan_skills)
-        if step_skill and step_skill not in names:
-            names.append(step_skill)
-        return SkillRegistry.resolve_dependencies(names)
-
-    def _merge_skill_names(self, agent: Any, skill_names: list[str]) -> list[str]:
-        """合并 plan/agent 级 skill 并解析依赖。"""
-        names = list(skill_names)
-        for name in getattr(agent, "default_skills", []):
-            if name not in names:
-                names.append(name)
-        return SkillRegistry.resolve_dependencies(names)
-
-    def _resolve_tools_for_agent(self, agent: Any, skill_names: list[str]) -> list[Any]:
-        """根据 Skill 动态解析工具，受 Agent 静态工具上限约束。"""
-        base_by_name = {t.name: t for t in agent.base_tools}
-        if not base_by_name:
-            return []
-
-        if not self._tool_resolver:
-            return list(base_by_name.values())
-
-        skill_tools: dict[str, list[str]] = {}
-        for name in skill_names:
-            try:
-                skill = SkillRegistry.get(name)
-                if skill.tools:
-                    skill_tools[name] = list(skill.tools)
-            except KeyError:
-                continue
-
-        if not skill_tools:
-            return list(base_by_name.values())
-
-        result = self._tool_resolver.resolve(
-            skill_tools,
-            channel=self.state.channel,
-            permissions=["read", "write"],
-            context=self.state.context,
-        )
-
-        if result.tools:
-            resolved = [t for t in result.tools if t.name in base_by_name]
-            if resolved:
-                return resolved
-            for warning in result.warnings[:3]:
-                logger.debug(warning)
-
-        return list(base_by_name.values())
-
-    async def prepare_agent(
-        self,
-        agent: Any,
-        skill_names: list[str],
-        *,
-        task: str = "",
-    ) -> str:
-        """绑定动态工具 + 构建 system_prompt（执行前统一入口）。"""
-        resolved_names = self._merge_skill_names(agent, skill_names)
-        self.state.active_skills = resolved_names
-
-        tools = self._resolve_tools_for_agent(agent, resolved_names)
-        agent.set_tools(tools)
-        self.state.active_tools = [t.name for t in tools]
-
-        return self._build_system_prompt(agent, resolved_names, task=task)
-
-    def _build_system_prompt(
-        self,
-        agent: Any,
-        skill_names: list[str],
-        *,
-        task: str = "",
-    ) -> str:
-        """通过 ContextBuilder 组装 system_prompt。"""
-        skills: list[Any] = []
-        seen: set[str] = set()
-        for name in skill_names:
-            if name in seen:
-                continue
-            try:
-                skills.append(SkillRegistry.get(name))
-                seen.add(name)
-            except KeyError:
-                pass
-        history_summary = ""
-        if self._use_memory and self._fact_store:
-            facts_text = self._fact_store.get_all_text(self.state.entity_name)
-            if facts_text:
-                history_summary = f"[长期记忆]\n{facts_text}"
-
-        ctx = self._context_builder.build(
-            agent_prompt=getattr(agent, "agent_prompt", ""),
-            skills=skills,
-            task=task,
-            history_summary=history_summary,
-        )
-        return ctx.system_prompt
-
-    # ==================================================================
+    # ------------------------------------------------------------------
     # LLM 规划
-    # ==================================================================
+    # ------------------------------------------------------------------
 
     async def _llm_plan(self, task: str) -> ExecutionPlan:
+        """调用 LLM Structured Output 生成 ExecutionPlan。"""
         skill_menu = self._build_skill_menu()
-        workflow_menu = self._get_workflow_menu()
+        workflow_menu = self._build_workflow_menu()
 
         system = _PLANNER_SYSTEM_PROMPT.format(
             skill_menu=skill_menu,
             workflow_menu=workflow_menu,
         )
 
+        # DeepSeek 模型规划时禁用 thinking（节省 token）
         llm_for_planning = self.llm
         if getattr(self.llm, "_llm_type", "") == "chat-deepseek":
             existing_extra = getattr(self.llm, "extra_body", None) or {}
@@ -390,7 +220,7 @@ class Coordinator:
                 HumanMessage(content=f"User request: {task}"),
             ])
         except Exception as exc:
-            logger.warning("LLM planning failed: %s, falling back to chat", exc)
+            logger.warning("LLM 规划失败: %s，回退到 general", exc)
             return ExecutionPlan(
                 goal="", intent="chat", agent_type="general",
                 complexity="simple", skills=[], workflow=None, steps=[],
@@ -399,7 +229,12 @@ class Coordinator:
 
         return plan
 
-    def _get_workflow_menu(self) -> str:
+    # ------------------------------------------------------------------
+    # 菜单构建
+    # ------------------------------------------------------------------
+
+    def _build_workflow_menu(self) -> str:
+        """构建可用工作流列表（供 Planner LLM 选择）。"""
         if self._workflow_registry is None:
             return "(无可用工作流)"
         try:
@@ -409,191 +244,36 @@ class Coordinator:
 
     @staticmethod
     def _build_skill_menu() -> str:
-        """格式化领域 skill 为 LLM 选择 prompt 的 skill 菜单。"""
+        """构建领域 Skill 菜单（供 Planner LLM 选择）。"""
         domain = SkillRegistry.get_domain_skills()
         if not domain:
             return "(无可用领域技能)"
 
         lines: list[str] = []
         for skill in domain.values():
-            tools_str = ", ".join(skill.tools) if skill.tools else "无"
             deps_str = ", ".join(skill.dependencies) if skill.dependencies else "无"
             lines.append(
                 f"### {skill.name}\n"
                 f"- 描述: {skill.description}\n"
                 f"- 标签: {', '.join(skill.tags)}\n"
-                f"- 工具: {tools_str}\n"
                 f"- 依赖: {deps_str}"
             )
         return "\n\n".join(lines)
 
-    # ==================================================================
-    # 验证
-    # ==================================================================
+    # ------------------------------------------------------------------
+    # 计划校验
+    # ------------------------------------------------------------------
 
     @staticmethod
     def _validate_plan(plan: ExecutionPlan) -> ExecutionPlan:
+        """校验计划中的 skill 和 workflow 引用是否存在。"""
         available = set(SkillRegistry.list_all().keys())
         valid_skills = [s for s in plan.skills if s in available]
         invalid = set(plan.skills) - set(valid_skills)
         if invalid:
-            logger.warning("Plan 引用了不存在的 skill: %s，已过滤", invalid)
+            logger.warning("计划引用了不存在的 skill: %s，已过滤", invalid)
         for step in plan.steps:
             if step.skill and step.skill not in available:
                 step.skill = None
         plan.skills = valid_skills
         return plan
-
-    # ==================================================================
-    # 路径 1: 工作流
-    # ==================================================================
-
-    async def _execute_via_workflow(self, plan: ExecutionPlan, task: str) -> str:
-        wf_name = plan.workflow
-        if not wf_name or self._workflow_registry is None:
-            agent = self.agents.get(plan.agent_type, self._fallback_agent)
-            system_prompt = await self.prepare_agent(agent, plan.skills, task=task)
-            return await agent.run(task, system_prompt=system_prompt)
-
-        try:
-            compiled_graph = self._workflow_registry.build(wf_name)
-        except Exception as exc:
-            logger.error("构建工作流 '%s' 失败: %s", wf_name, exc)
-            return f"[错误] 工作流 '{wf_name}' 构建失败: {exc}"
-
-        state = self._make_state(wf_name, task)
-        agent = self.agents.get(plan.agent_type, self._fallback_agent)
-
-        try:
-            result = await compiled_graph.ainvoke(
-                state,
-                config={
-                    "configurable": {
-                        "thread_id": self.state.session_id,
-                        "agent": agent,
-                        "agents": self.agents,
-                        "context_builder": self._context_builder,
-                        "coordinator": self,
-                    }
-                },
-            )
-        except Exception as exc:
-            logger.error("工作流 '%s' 执行失败: %s", wf_name, exc)
-            return f"[错误] 工作流执行失败: {exc}"
-
-        if result.get("status") == "failed":
-            errors = result.get("errors", [])
-            logger.warning("工作流 '%s' 失败: %s", wf_name, errors)
-            return "[工作流失败]\n" + "\n".join(errors)
-
-        logger.info("工作流 '%s' 完成", wf_name)
-        return result.get("final_output") or "(工作流完成，无输出)"
-
-    def _make_state(self, wf_name: str, task: str) -> dict:
-        base = {
-            "task": task,
-            "session_id": self.state.session_id,
-            "messages": [],
-            "errors": [],
-            "completed_steps": [],
-            "current_step": "",
-            "node_outputs": {},
-            "node_retry_counts": {},
-            "max_retries_per_node": 3,
-            "status": "pending",
-            "final_output": "",
-            "started_at": 0.0,
-        }
-        if "dev" in wf_name:
-            base.update({
-                "architecture_doc": "", "source_code": "", "code_language": "python",
-                "review_feedback": "", "review_score": 0.0, "review_blockers": [],
-                "test_report": "", "test_passed": False, "test_failures": [],
-            })
-        elif "research" in wf_name:
-            base.update({
-                "research_topic": "", "raw_findings": [], "analyzed_insights": "",
-                "final_report": "", "sources": [],
-            })
-        elif "diagnosis" in wf_name:
-            base.update({
-                "symptoms": "", "collected_info": "", "possible_causes": "",
-                "diagnosis": "", "recommendations": "",
-            })
-        return base
-
-    # ==================================================================
-    # 路径 2: 自编排多步
-    # ==================================================================
-
-    async def _execute_steps(self, plan: ExecutionPlan, task: str) -> str:
-        ordered = self._topological_sort(plan.steps)
-        step_outputs: dict[int, str] = {}
-        final = ""
-
-        for step in ordered:
-            step_task = f"原始任务: {task}\n当前步骤: {step.description}"
-            if step.expected_output:
-                step_task += f"\n预期产出: {step.expected_output}"
-
-            agent = self._pick_agent_for_step(step, plan.agent_type)
-            step_skills = self._skills_for_step(plan.skills, step.skill)
-            system_prompt = await self.prepare_agent(agent, step_skills, task=task)
-            result = await agent.run(step_task, system_prompt=system_prompt)
-            step_outputs[step.order] = result
-            final = result
-
-        return final
-
-    # ==================================================================
-    # 工具方法
-    # ==================================================================
-
-    def switch_model(self, model_name: str) -> str:
-        for agent in self.agents.values():
-            if hasattr(agent, "llm"):
-                from haven.core.llm import create_llm
-                agent.llm = create_llm(model_name)
-                agent._agent = None
-        self.llm = self._fallback_agent.llm if self._fallback_agent else self.llm
-        return model_name
-
-    async def reset_session(self) -> None:
-        """清空当前会话：turn 状态 + checkpointer 线程历史 + 工具恢复默认。"""
-        self.state.reset_turn()
-        for agent in self.agents.values():
-            agent.reset()
-            agent.restore_base_tools()
-
-        if self._checkpointer is not None:
-            try:
-                await self._checkpointer.adelete_thread(self.state.session_id)
-            except Exception as exc:
-                logger.warning("清空 checkpointer 线程失败: %s", exc)
-
-    def reset(self) -> None:
-        """同步重置（仅 turn 状态，不清 checkpointer）。保留供旧调用方兼容。"""
-        self.state.reset_turn()
-        for agent in self.agents.values():
-            agent.reset()
-            agent.restore_base_tools()
-
-    @staticmethod
-    def _topological_sort(steps: list[PlanStep]) -> list[PlanStep]:
-        step_map = {s.order: s for s in steps}
-        in_degree = {s.order: len(s.depends_on) for s in steps}
-        adj: dict[int, list[int]] = {s.order: [] for s in steps}
-        for s in steps:
-            for dep in s.depends_on:
-                if dep in adj:
-                    adj[dep].append(s.order)
-        queue = [o for o, d in in_degree.items() if d == 0]
-        result: list[PlanStep] = []
-        while queue:
-            order = queue.pop(0)
-            result.append(step_map[order])
-            for nb in adj.get(order, []):
-                in_degree[nb] -= 1
-                if in_degree[nb] == 0:
-                    queue.append(nb)
-        return result

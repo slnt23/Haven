@@ -1,7 +1,8 @@
-"""BaseAgent — 专业 Agent 基类。
+"""BaseAgent —— 专业 Agent 基类，封装 LangGraph ReAct Agent。
 
-封装 LangGraph ReAct Agent 的执行逻辑。
-每个实例是 tool 子集 + skill 子集 + system_prompt 扩展的组合。
+每个 Agent 实例 = LangChain 工具集 + system_prompt 扩展。
+工具在创建时一次性绑定，LLM 通过 Function Calling 自行决定调用哪个。
+不做任何 Tool 解析、选择、推理 —— 这些全部交给 LangChain 和 LLM。
 """
 
 from __future__ import annotations
@@ -25,7 +26,19 @@ logger = logging.getLogger("haven.agent")
 
 
 class BaseAgent:
-    """专业 Agent。封装 LangGraph ReAct Agent 的执行逻辑。"""
+    """LangGraph ReAct Agent 的轻量包装。
+
+    职责：
+      - 持有 LLM + 工具 + checkpointer
+      - 懒初始化 LangGraph Agent（工具变更时自动重建）
+      - pre_model_hook 中裁剪消息确保不超 context window
+      - 提供 run() / astream() 两种执行模式
+
+    不负责：
+      - Tool 选择（LLM Function Calling）
+      - Context 构建（ContextBuilder / Dispatcher）
+      - 任务规划（Coordinator）
+    """
 
     def __init__(
         self,
@@ -36,47 +49,48 @@ class BaseAgent:
         state: RuntimeState,
         *,
         agent_prompt: str = "",
-        default_skills: list[str] | None = None,
         max_iterations: int | None = None,
-    ):
-        self.name = name
-        self.llm = llm
-        self._base_tools = list(tools)
-        self._tools = list(tools)
-        self._checkpointer = checkpointer
-        self.state = state
-        self.agent_prompt = agent_prompt
-        self.default_skills = list(default_skills or [])
+    ) -> None:
+        self.name = name  # Agent 名称（coder / researcher / diagnosis / general）
+        self.llm = llm  # LLM 实例
+        self._tools = list(tools)  # 工具列表（创建后不变）
+        self._checkpointer = checkpointer  # LangGraph 持久化
+        self.state = state  # 共享运行时状态
+        self.agent_prompt = agent_prompt  # Agent 专属 system_prompt 片段
         self.max_iterations = max_iterations or settings.agent_max_iterations
 
+        # LangGraph Agent 懒初始化
         self._agent: CompiledStateGraph | None = None
-        self._agent_tools_hash: int = 0
+        self._agent_tools_hash: int = 0  # 检测工具是否变更
 
-    # ==================================================================
-    # LangGraph Agent
-    # ==================================================================
+    # ------------------------------------------------------------------
+    # LangGraph Agent（懒初始化）
+    # ------------------------------------------------------------------
 
     @staticmethod
     def _pre_model_hook(state: dict, config: RunnableConfig | None = None) -> dict:
+        """LLM 调用前的钩子：注入 system_prompt + 裁剪消息。"""
         sp = state.get("system_prompt", "")
         msgs = list(state.get("messages", []))
         if sp:
-            msgs = [SystemMessage(content=sp)] + msgs
+            msgs = [SystemMessage(content=sp)] + msgs  # system_prompt 放到最前
         trimmed = trim_messages(
             msgs,
             max_tokens=settings.context_window_tokens or 8000,
-            strategy="last",
+            strategy="last",  # 保留最新消息
             token_counter=count_tokens_approximately,
             include_system=True,
-            start_on="human",
+            start_on="human",  # 从 human 消息开始裁剪
         )
         return {"llm_input_messages": trimmed}
 
     def _get_agent(self) -> CompiledStateGraph:
+        """获取或创建 LangGraph ReAct Agent。工具变更时自动重建。"""
         tools_hash = hash(tuple(id(t) for t in self._tools))
         if self._agent is not None and self._agent_tools_hash == tools_hash:
-            return self._agent
+            return self._agent  # 缓存命中
 
+        # 工具未变，直接复用
         self._agent = create_react_agent(
             model=self.llm,
             tools=self._tools,
@@ -87,17 +101,18 @@ class BaseAgent:
         return self._agent
 
     def _build_config(self, system_prompt: str = "") -> dict:
+        """构建 LangGraph 执行配置。"""
         return {
             "configurable": {
-                "thread_id": self.state.session_id,
-                "system_prompt": system_prompt,
+                "thread_id": self.state.session_id,  # 会话隔离
+                "system_prompt": system_prompt,  # 通过 config 传入 hook
             },
             "recursion_limit": self.max_iterations * 2 + 10,
         }
 
-    # ==================================================================
-    # Execution
-    # ==================================================================
+    # ------------------------------------------------------------------
+    # 执行
+    # ------------------------------------------------------------------
 
     async def run(
         self,
@@ -106,6 +121,7 @@ class BaseAgent:
         system_prompt: str = "",
         **kwargs: Any,
     ) -> str:
+        """同步式执行（内部异步），返回完整响应文本。"""
         agent = self._get_agent()
         config = self._build_config(system_prompt=system_prompt)
 
@@ -126,6 +142,7 @@ class BaseAgent:
         system_prompt: str = "",
         **kwargs: Any,
     ) -> AsyncIterator[str]:
+        """流式执行，逐 token yield。"""
         agent = self._get_agent()
         config = self._build_config(system_prompt=system_prompt)
 
@@ -135,38 +152,26 @@ class BaseAgent:
             version="v2",
         ):
             kind = event.get("event", "")
-            if kind == "on_chat_model_stream":
+            if kind == "on_chat_model_stream":  # 仅提取 LLM 流式 token
                 chunk = event.get("data", {}).get("chunk")
                 if chunk and hasattr(chunk, "content") and chunk.content:
                     yield chunk.content
 
         self.state.turn_count += 1
 
-    # ==================================================================
-    # 工具绑定
-    # ==================================================================
-
-    @property
-    def base_tools(self) -> list[BaseTool]:
-        return self._base_tools
+    # ------------------------------------------------------------------
+    # 属性
+    # ------------------------------------------------------------------
 
     @property
     def tools(self) -> list[BaseTool]:
+        """当前绑定的工具列表。"""
         return self._tools
 
-    def set_tools(self, tools: list[BaseTool]) -> None:
-        """动态切换当前轮次可用工具（变更后重建 LangGraph Agent）。"""
-        self._tools = list(tools) if tools else list(self._base_tools)
-        self._agent = None
-
-    def restore_base_tools(self) -> None:
-        """恢复为 app.yaml 声明的静态工具上限。"""
-        self._tools = list(self._base_tools)
-        self._agent = None
-
-    # ==================================================================
-    # Lifecycle
-    # ==================================================================
+    # ------------------------------------------------------------------
+    # 生命周期
+    # ------------------------------------------------------------------
 
     def reset(self) -> None:
+        """重置 turn 计数（不清理 checkpointer 历史）。"""
         self.state.reset_turn()

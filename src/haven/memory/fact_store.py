@@ -1,13 +1,15 @@
-"""FactStore — 自然语言知识存储。
+"""FactStore —— SQLite 语义事实存储。
 
-SQLite 持久化的语义事实存储。基于 LLM 批量提取的自然语言事实陈述，
-支持 upsert 合并去重和关键词检索。
+存储自然语言事实句子，支持按实体查询和关键词检索。
+LangChain / LangGraph 没有"语义事实存储"这个能力，
+LangGraph Store 是通用 KV 存储，不处理自然语言事实的索引和去重。
+
+每条事实是一个完整的中文句子，如"用户有高血压病史"。
 """
 
 from __future__ import annotations
 
 from datetime import datetime
-import json
 import logging
 from pathlib import Path
 import sqlite3
@@ -19,156 +21,175 @@ logger = logging.getLogger("haven.memory.facts")
 
 
 class FactStore:
-    """SQLite 知识存储。每条事实是一个完整的中文句子。
+    """SQLite 语义事实存储。
 
-    Schema: semantic_facts (entity_name, fact_text, importance, source_episode_ids)
+    用途：存储从对话中提取的长期记忆事实，
+    检索结果注入 system_prompt 作为上下文。
+
+    Schema:
+      facts(id, entity_name, content, importance, source, created_at)
     """
 
-    _IMPORTANCE_MAP = {"high": 0.9, "medium": 0.6, "low": 0.3}
-
-    def __init__(self, db_path: str | Path | None = None):
+    def __init__(self, db_path: str | Path | None = None) -> None:
         if db_path is None:
-            db_path = Path.cwd() / ".data" / "memory.db"
+            db_path = Path.cwd() / "resource" / "memory.db"
         db_path = Path(db_path)
         db_path.parent.mkdir(parents=True, exist_ok=True)
+
         self._conn = sqlite3.connect(str(db_path), check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
+        self._conn.execute("PRAGMA journal_mode=WAL")  # 支持并发读
         self._init_schema()
 
     def _init_schema(self) -> None:
+        """建表（幂等）。"""
         self._conn.executescript("""
-            CREATE TABLE IF NOT EXISTS semantic_facts (
+            CREATE TABLE IF NOT EXISTS facts (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 entity_name TEXT NOT NULL,
-                fact_text TEXT NOT NULL,
-                source_episode_ids TEXT NOT NULL DEFAULT '[]',
-                importance TEXT NOT NULL DEFAULT 'medium',
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                content TEXT NOT NULL,
+                importance REAL NOT NULL DEFAULT 0.5,
+                source TEXT NOT NULL DEFAULT '',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
-            CREATE INDEX IF NOT EXISTS idx_sf_entity ON semantic_facts(entity_name);
-            CREATE INDEX IF NOT EXISTS idx_sf_importance ON semantic_facts(importance);
+            CREATE INDEX IF NOT EXISTS idx_facts_entity ON facts(entity_name);
         """)
         self._conn.commit()
 
-    def add_facts(
+    # ------------------------------------------------------------------
+    # 写入
+    # ------------------------------------------------------------------
+
+    def add(
         self,
         entity_name: str,
-        facts: list[dict],
-        source_episode_ids: list[str],
-    ) -> tuple[int, int]:
-        """批量写入事实，已有事实合并来源并更新 importance。
+        content: str,
+        *,
+        importance: float = 0.5,
+        source: str = "",
+    ) -> int:
+        """添加一条事实。返回新行的 id。
 
-        每条 fact: {"text": "...", "importance": "high|medium|low"}
-        返回 (inserted, updated)。
+        已存在的相同 (entity_name, content) 会更新 importance 而非重复插入。
         """
-        source_json = json.dumps(source_episode_ids, ensure_ascii=False)
-        inserted, updated = 0, 0
+        existing = self._conn.execute(
+            "SELECT id FROM facts WHERE entity_name = ? AND content = ?",
+            (entity_name, content),
+        ).fetchone()
 
-        for f in facts:
-            text = f["text"]
-            importance = f.get("importance", "medium")
+        if existing:
+            self._conn.execute(
+                "UPDATE facts SET importance = ?, source = ? WHERE id = ?",
+                (importance, source, existing["id"]),
+            )
+            self._conn.commit()
+            return existing["id"]
 
-            existing = self._conn.execute(
-                "SELECT id, source_episode_ids FROM semantic_facts "
-                "WHERE entity_name = ? AND fact_text = ?",
-                (entity_name, text),
-            ).fetchone()
-
-            if existing:
-                try:
-                    old_sources = json.loads(existing["source_episode_ids"])
-                except (json.JSONDecodeError, TypeError):
-                    old_sources = []
-                new_sources = json.loads(source_json)
-                merged_ids = list(set(old_sources + new_sources))
-
-                self._conn.execute(
-                    "UPDATE semantic_facts SET importance = ?, "
-                    "source_episode_ids = ?, updated_at = CURRENT_TIMESTAMP "
-                    "WHERE id = ?",
-                    (importance, json.dumps(merged_ids, ensure_ascii=False), existing["id"]),
-                )
-                updated += 1
-            else:
-                self._conn.execute(
-                    "INSERT INTO semantic_facts "
-                    "(entity_name, fact_text, source_episode_ids, importance) "
-                    "VALUES (?, ?, ?, ?)",
-                    (entity_name, text, source_json, importance),
-                )
-                inserted += 1
-
+        cur = self._conn.execute(
+            "INSERT INTO facts (entity_name, content, importance, source) "
+            "VALUES (?, ?, ?, ?)",
+            (entity_name, content, importance, source),
+        )
         self._conn.commit()
-        logger.debug("add_facts: %d inserted, %d updated for '%s'", inserted, updated, entity_name)
-        return inserted, updated
+        return cur.lastrowid
+
+    # ------------------------------------------------------------------
+    # 查询
+    # ------------------------------------------------------------------
 
     def search(
-        self, query: str = "", entity_name: str = "", top_k: int = 10,
+        self,
+        query: str = "",
+        *,
+        entity_name: str = "",
+        limit: int = 10,
     ) -> list[MemoryItem]:
-        """按关键词和实体检索事实。"""
-        where = ["1=1"]
+        """关键词检索事实（LIKE 匹配）。"""
+        where: list[str] = []
         params: list[Any] = []
 
         if entity_name:
             where.append("entity_name = ?")
             params.append(entity_name)
         if query:
-            where.append("fact_text LIKE ?")
+            where.append("content LIKE ?")
             params.append(f"%{query}%")
 
+        clause = " AND ".join(where) if where else "1=1"
         rows = self._conn.execute(
-            f"SELECT * FROM semantic_facts WHERE {' AND '.join(where)} "
-            "ORDER BY importance = 'high' DESC, created_at DESC LIMIT ?",
-            [*params, top_k],
+            f"SELECT * FROM facts WHERE {clause} "
+            "ORDER BY importance DESC, created_at DESC LIMIT ?",
+            (*params, limit),
         ).fetchall()
-        return [self._row_to_item(r) for r in rows]
+        return [_row_to_item(r) for r in rows]
 
     def get_all(self, entity_name: str) -> list[MemoryItem]:
-        """获取某实体的所有事实。"""
+        """获取某实体的全部事实（按重要性降序）。"""
         rows = self._conn.execute(
-            "SELECT * FROM semantic_facts WHERE entity_name = ? "
-            "ORDER BY importance = 'high' DESC, created_at DESC",
+            "SELECT * FROM facts WHERE entity_name = ? "
+            "ORDER BY importance DESC, created_at DESC",
             (entity_name,),
         ).fetchall()
-        return [self._row_to_item(r) for r in rows]
+        return [_row_to_item(r) for r in rows]
 
     def get_all_text(self, entity_name: str) -> str:
-        """获取某实体的所有事实，格式化为 '- 事实' 文本。"""
+        """获取某实体的全部事实，格式化为 '- 事实内容' 文本。
+
+        这是注入 system_prompt 的入口。
+        """
         rows = self._conn.execute(
-            "SELECT fact_text FROM semantic_facts WHERE entity_name = ? "
-            "ORDER BY importance = 'high' DESC, created_at DESC",
+            "SELECT content FROM facts WHERE entity_name = ? "
+            "ORDER BY importance DESC, created_at DESC",
             (entity_name,),
         ).fetchall()
-        return "\n".join(f"- {r['fact_text']}" for r in rows) if rows else ""
+        if not rows:
+            return ""
+        return "\n".join(f"- {r['content']}" for r in rows)
+
+    # ------------------------------------------------------------------
+    # 维护
+    # ------------------------------------------------------------------
 
     def delete(self, fact_id: int) -> None:
-        self._conn.execute("DELETE FROM semantic_facts WHERE id = ?", (fact_id,))
+        """按 ID 删除单条事实。"""
+        self._conn.execute("DELETE FROM facts WHERE id = ?", (fact_id,))
         self._conn.commit()
 
-    def clear(self) -> None:
-        self._conn.execute("DELETE FROM semantic_facts")
+    def clear(self, entity_name: str = "") -> None:
+        """清空全部事实，或指定实体的全部事实。"""
+        if entity_name:
+            self._conn.execute(
+                "DELETE FROM facts WHERE entity_name = ?", (entity_name,)
+            )
+        else:
+            self._conn.execute("DELETE FROM facts")
         self._conn.commit()
 
-    def expire_old(self, days: int = 90) -> int:
+    def expire(self, days: int = 90) -> int:
         """清理超过 N 天未更新的旧事实。返回删除数。"""
         self._conn.execute(
-            "DELETE FROM semantic_facts WHERE updated_at < datetime('now', ?)",
+            "DELETE FROM facts WHERE created_at < datetime('now', ?)",
             (f"-{days} days",),
         )
         self._conn.commit()
         return self._conn.total_changes
 
-    def _row_to_item(self, row: Any) -> MemoryItem:
-        return MemoryItem(
-            id=str(row["id"]),
-            content=row["fact_text"],
-            memory_type="semantic",
-            created_at=datetime.fromisoformat(row["created_at"]),
-            importance=self._IMPORTANCE_MAP.get(row["importance"], 0.5),
-            metadata={
-                "entity_name": row["entity_name"],
-                "importance": row["importance"],
-                "source_episode_ids": row["source_episode_ids"],
-            },
-        )
+    def close(self) -> None:
+        """关闭数据库连接。"""
+        self._conn.close()
+
+
+# ------------------------------------------------------------------
+# 内部
+# ------------------------------------------------------------------
+
+
+def _row_to_item(row: sqlite3.Row) -> MemoryItem:
+    """SQLite Row → MemoryItem。"""
+    return MemoryItem(
+        content=row["content"],
+        entity_name=row["entity_name"],
+        importance=row["importance"],
+        source=row["source"],
+        created_at=datetime.fromisoformat(row["created_at"]),
+    )

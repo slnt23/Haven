@@ -1,4 +1,11 @@
-"""CoordinatorFactory — ContextBuilder + 多专业 Agent + Coordinator 装配系统。"""
+"""Runtime 工厂 —— 装配完整的 Haven 运行时系统。
+
+创建流程：
+  Config → LLM → ToolLoader → Registry → ContextBuilder → BaseAgent → Coordinator → Dispatcher
+
+返回一个 Runtime 命名空间，包含 coordinator 和 dispatcher，
+以及便捷方法 execute() / execute_stream()。
+"""
 
 from __future__ import annotations
 
@@ -15,16 +22,103 @@ from haven.core.state import RuntimeState
 from haven.runtime.agents.base import BaseAgent
 from haven.runtime.context import ContextBuilder
 from haven.runtime.coordinator import Coordinator
+from haven.runtime.dispatcher import Dispatcher
 from haven.skills.loader import SkillLoader
 from haven.skills.registry import SkillRegistry
 
 logger = logging.getLogger("haven.factory")
 
-# 空 tools 列表时的默认工具（不再绑定全部工具）
-_DEFAULT_AGENT_TOOLS = ["web_search"]
+
+class Runtime:
+    """Haven 运行时容器。
+
+    持有 coordinator（规划）和 dispatcher（执行），
+    提供 execute() / execute_stream() 便捷方法。
+    """
+
+    __slots__ = (
+        "coordinator", "dispatcher", "llm", "tool_loader",
+        "checkpointer", "state", "agents", "_sqlite_conn",
+    )
+
+    def __init__(
+        self,
+        coordinator: Coordinator,
+        dispatcher: Dispatcher,
+        llm: Any,
+        tool_loader: Any,
+        checkpointer: Any,
+        state: RuntimeState,
+        agents: dict[str, BaseAgent],
+        sqlite_conn: Any = None,
+    ) -> None:
+        self.coordinator = coordinator
+        self.dispatcher = dispatcher
+        self.llm = llm
+        self.tool_loader = tool_loader
+        self.checkpointer = checkpointer
+        self.state = state
+        self.agents = agents
+        self._sqlite_conn = sqlite_conn  # 原始 aiosqlite 连接，用于 close()
+
+    async def execute(self, task: str) -> str:
+        """规划 + 执行：一步完成。"""
+        plan = await self.coordinator.plan(task)
+        return await self.dispatcher.dispatch(plan, task)
+
+    async def execute_stream(self, task: str):
+        """规划 + 流式执行。"""
+        plan = await self.coordinator.plan(task)
+        async for chunk in self.dispatcher.dispatch_stream(plan, task):
+            yield chunk
+
+    async def reset_session(self) -> None:
+        """清空当前会话。"""
+        self.state.reset_turn()
+        for agent in self.agents.values():
+            agent.reset()
+        if self.checkpointer is not None:
+            try:
+                await self.checkpointer.adelete_thread(self.state.session_id)
+            except Exception as exc:
+                logger.warning("清空 checkpointer 线程失败: %s", exc)
+
+    def reset(self) -> None:
+        """同步重置（仅 turn 状态）。"""
+        self.state.reset_turn()
+        for agent in self.agents.values():
+            agent.reset()
+
+    def switch_model(self, model_name: str) -> str:
+        """运行时切换模型。"""
+        for agent in self.agents.values():
+            if hasattr(agent, "llm"):
+                agent.llm = create_llm(model_name)
+                agent._agent = None  # 触发 Agent 重建
+        self.llm = self.agents.get("general").llm if self.agents.get("general") else self.llm
+        return model_name
+
+    async def close(self) -> None:
+        """优雅关闭：停止 ToolLoader → 关闭 SQLite 连接。
+
+        必须在事件循环关闭前调用，否则 aiosqlite 后台线程会报错。
+        """
+        # 1. 停止所有 Tool Provider（断开 MCP 连接等）
+        if self.tool_loader:
+            try:
+                await self.tool_loader.stop_all()
+            except Exception as exc:
+                logger.debug("ToolLoader close: %s", exc)
+
+        # 2. 关闭 SQLite 连接（必须在事件循环关闭前执行）
+        if self._sqlite_conn:
+            try:
+                await self._sqlite_conn.close()
+            except Exception as exc:
+                logger.debug("SQLite close: %s", exc)
 
 
-async def create_coordinator(
+async def create_runtime(
     session_id: str = "default",
     entity_name: str = "user",
     channel: str = "default",
@@ -32,11 +126,10 @@ async def create_coordinator(
     load_skills: bool = True,
     load_mcp: bool = True,
     use_memory: bool | None = None,
-) -> Coordinator:
-    """创建完整的 Haven 多智能体系统。
+) -> Runtime:
+    """创建完整的 Haven 运行时系统。
 
-    Returns:
-        Coordinator — ``coordinator.execute(task)`` 为唯一入口。
+    返回 Runtime 实例，其 execute(task) 为统一入口。
     """
     state = RuntimeState()
     state.session_id = session_id
@@ -50,21 +143,21 @@ async def create_coordinator(
     # 2. LLM
     llm = create_llm()
 
-    # 3. ToolManager + Providers
-    tool_registry, tool_manager = await _init_tools(load_mcp)
+    # 3. ToolLoader → Registry → list[BaseTool]
+    from haven.tools.loader import ToolLoader
+
+    loader = ToolLoader()
+    all_tools = await loader.load_all(load_mcp=load_mcp)
 
     # 4. Shared Checkpointer
-    db_dir = Path.cwd() / ".data"
+    db_dir = Path.cwd() / "resource"
     db_dir.mkdir(parents=True, exist_ok=True)
     conn = await aiosqlite.connect(str(db_dir / "checkpoint.db"))
     checkpointer = AsyncSqliteSaver(conn)
     await checkpointer.setup()
 
-    # 5. ContextBuilder + ToolResolver + FactStore
+    # 5. ContextBuilder + FactStore
     context_builder = ContextBuilder()
-    from haven.tools.resolver import ToolResolver
-
-    tool_resolver = ToolResolver(tool_manager)
 
     memory_on = settings.memory_enabled if use_memory is None else use_memory
     fact_store = None
@@ -74,55 +167,64 @@ async def create_coordinator(
         memory_path = Path.cwd() / settings.memory_db_path
         fact_store = FactStore(memory_path)
 
-    # 6. Create Agents
+    # 6. Create Agents — 所有 Agent 共享全部工具
     agent_defs = _load_agent_definitions()
-    _validate_agent_config(agent_defs, tool_registry)
 
     agents: dict[str, BaseAgent] = {}
     for name, ad in agent_defs.items():
-        tool_names = ad.get("tools", [])
-        if not tool_names:
-            tool_names = list(_DEFAULT_AGENT_TOOLS)
-        agent_tools = [t for t in tool_registry.values() if t.name in tool_names]
         agents[name] = BaseAgent(
             name=name,
             llm=llm,
-            tools=agent_tools,
+            tools=list(all_tools),
             checkpointer=checkpointer,
             state=state,
             agent_prompt=ad.get("prompt", ""),
-            default_skills=ad.get("skills", []),
         )
 
     # 7. 注册预定义工作流（side-effect import）
-    from haven.runtime.graphs import dev, diagnosis, research  # noqa: F401
+    from haven.runtime.workflows import dev, diagnosis, research  # noqa: F401
     from haven.runtime.registry import WorkflowRegistry
 
-    # 8. Coordinator
+    # 8. Coordinator（仅规划）
     coordinator = Coordinator(
-        agents=agents,
         llm=llm,
+        workflow_registry=WorkflowRegistry,
+    )
+
+    # 9. Dispatcher（执行调度）
+    dispatcher = Dispatcher(
+        agents=agents,
         workflow_registry=WorkflowRegistry,
         state=state,
         context_builder=context_builder,
-        tool_resolver=tool_resolver,
         fact_store=fact_store,
-        checkpointer=checkpointer,
         use_memory=memory_on,
     )
-    coordinator.tool_manager = tool_manager
+
+    # 10. 装配 Runtime（传入 SQLite 连接用于优雅关闭）
+    runtime = Runtime(
+        coordinator=coordinator,
+        dispatcher=dispatcher,
+        llm=llm,
+        tool_loader=loader,
+        checkpointer=checkpointer,
+        state=state,
+        agents=agents,
+        sqlite_conn=conn,
+    )
 
     logger.info(
-        "Coordinator ready: %d agents, %d skills, %d workflows",
+        "Runtime ready: %d agents, %d skills, %d workflows, %d tools",
         len(agents),
         len(SkillRegistry.list_all()),
         len(WorkflowRegistry.list_all()),
+        len(all_tools),
     )
-    return coordinator
+    return runtime
 
 
-def _load_agent_definitions() -> dict:
-    """从 haven.yaml 加载 Agent 定义。"""
+def _load_agent_definitions() -> dict[str, Any]:
+    """从 haven.yaml 加载 Agent 定义（仅 description + prompt）。"""
     from omegaconf import OmegaConf
 
     path = Path(__file__).resolve().parent.parent / "config" / "haven.yaml"
@@ -138,23 +240,6 @@ def _load_agent_definitions() -> dict:
     return dict(agents_cfg)
 
 
-def _validate_agent_config(agent_defs: dict, tool_registry: dict) -> None:
-    """启动时校验 Agent 配置与已加载资源的一致性。"""
-    available_tools = set(tool_registry.keys())
-    available_skills = set(SkillRegistry.list_all().keys())
-
-    for name, ad in agent_defs.items():
-        tool_names = ad.get("tools", [])
-        if tool_names:
-            missing = set(tool_names) - available_tools
-            if missing:
-                logger.warning("Agent '%s' 引用了不存在的工具: %s", name, sorted(missing))
-
-        for skill_name in ad.get("skills", []):
-            if skill_name not in available_skills:
-                logger.warning("Agent '%s' 引用了不存在的 skill: %s", name, skill_name)
-
-
 # ==================================================================
 # Skill 加载
 # ==================================================================
@@ -163,6 +248,7 @@ _SYSTEM_PERSONA = Path(__file__).resolve().parent.parent / "config" / "haven.md"
 
 
 def _load_all_skills() -> None:
+    """加载系统人格 + 用户领域技能。"""
     if _SYSTEM_PERSONA.is_file():
         persona = SkillLoader.load_single(_SYSTEM_PERSONA)
         if persona is not None:
@@ -172,46 +258,3 @@ def _load_all_skills() -> None:
     if user_dir.is_dir():
         for skill in SkillLoader.load_from_dir(user_dir):
             SkillRegistry.register_instance(skill)
-
-
-# ==================================================================
-# ToolManager + Provider 初始化
-# ==================================================================
-
-
-async def _init_tools(load_mcp: bool) -> tuple[dict[str, Any], Any]:
-    from haven.tools.manager import ToolManager
-    from haven.tools.providers.builtin import BuiltinProvider
-
-    tm = ToolManager()
-    tm.add_provider(BuiltinProvider())
-
-    if load_mcp and settings.mcp_enabled:
-        mcp_configs = _load_mcp_configs()
-        if mcp_configs:
-            from haven.tools.providers.mcp import MCPProvider
-
-            for cfg in mcp_configs:
-                tm.add_provider(MCPProvider(cfg))
-
-    await tm.start_all()
-
-    tools = {t.name: t for t in tm.list_all()}
-    logger.info("ToolManager: %d tools from %d provider(s)", len(tools), len(tm.list_providers()))
-    return tools, tm
-
-
-def _load_mcp_configs() -> list:
-    from haven.config import get_mcp_config
-    from haven.config.mcp import MCPServerConfig
-
-    raw = get_mcp_config()
-    configs = []
-    for entry in raw:
-        try:
-            cfg = MCPServerConfig(**entry)
-            if cfg.enabled:
-                configs.append(cfg)
-        except Exception:
-            continue
-    return configs

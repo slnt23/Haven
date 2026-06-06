@@ -7,26 +7,18 @@ agent:
 agents:
   coder:
     description: "代码生成、审查、调试"
-    tools: [web_search]
-    skills: []
     prompt: "你是一个专业软件工程师。按需求编写清晰、安全、可测试的代码。使用标准设计模式，遵循最佳实践。"
 
   researcher:
     description: "信息搜索、数据分析、报告生成"
-    tools: [web_search]
-    skills: []
     prompt: "你是一个专业研究员。先搜集信息再做分析，最后给出结构化报告。引用来源。"
 
   diagnosis:
     description: "症状分析、健康咨询、故障排查"
-    tools: [web_search]
-    skills: []
     prompt: "你是一个诊断助手。先收集信息再分析，给出分级建议。所有医疗建议仅供参考。"
 
   general:
     description: "通用对话与问答"
-    tools: [web_search]
-    skills: []
     prompt: ""
 
 # ==================== Context Builder ====================
@@ -62,7 +54,7 @@ daemon:
 
 # ==================== Memory ====================
 memory:
-  db_path: ".data/memory.db"
+  db_path: "resource/memory.db"
   enabled: true                              # 是否启用长期记忆（FactStore）
   context_window_tokens: 8000                # pre_model_hook 消息裁剪上限
 

@@ -1,3 +1,8 @@
+"""消息通道抽象接口。
+
+通道是消息的入口/出口——接收传入消息，通过共享 Runtime 处理，返回响应。
+"""
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
@@ -5,30 +10,32 @@ from typing import Any
 
 
 class BaseChannel(ABC):
-    """聊天通道抽象接口。
+    """聊天通道抽象基类。
 
-    通道是消息的入口/出口——接收传入消息，通过共享 Agent 处理，返回响应。
+    每个 Channel 共享同一个 Runtime 实例。
+    通过 Runtime.execute() 处理消息。
     """
 
     def __init__(self, name: str, enabled: bool = True) -> None:
         self.name = name
         self.enabled = enabled
-        self._agent: Any = None
+        self._runtime: Any = None
 
     @property
-    def agent(self) -> Any:
-        if self._agent is None:
-            raise RuntimeError(f"Channel '{self.name}': agent not set")
-        return self._agent
+    def runtime(self) -> Any:
+        """共享的 Runtime 实例（Coordinator + Dispatcher + Agents + Tools）。"""
+        if self._runtime is None:
+            raise RuntimeError(f"Channel '{self.name}': runtime not set")
+        return self._runtime
 
     async def handle_message(self, message: str) -> str:
-        """将消息路由到共享 agent 并返回响应。"""
-        return await self.agent.execute(message)
+        """将消息路由到 Runtime 并返回响应。"""
+        return await self.runtime.execute(message)
 
     @abstractmethod
-    async def start(self, agent: Any) -> None:
-        """用共享 agent 实例启动通道。"""
-        self._agent = agent
+    async def start(self, runtime: Any) -> None:
+        """用共享 Runtime 实例启动通道。"""
+        self._runtime = runtime
 
     @property
     def status_detail(self) -> str:
