@@ -23,20 +23,21 @@ uv run pytest tests/path  # 运行单个测试文件
 
 ## 架构
 
-**入口**：`factory.create_agent()` 创建单个 `PlannerAgent`（持有 `AgentRuntime`），无子 agent。系统通过 LLM 结构化输出动态选择 Skill 和 Workflow，替代 V1 硬编码的 4 分类路由。
+**入口**：`factory.create_coordinator()` 创建 `Coordinator`，持有 4 个专业 `BaseAgent`（Coder / Researcher / Diagnosis / General）。LLM 结构化输出动态选择 Skill + Agent + Workflow。
 
-**V2 执行模型（3 条路径）：**
+**V3 执行模型（多智能体 + 3 条路径）：**
 
 ```
-用户输入 → PlannerAgent.plan() → ExecutionPlan
-  ├─ 路径 1: 简单对话 → AgentRuntime.run() 直通（无工具/单轮）
-  ├─ 路径 2: 多步任务 → PlannerAgent._execute_steps() 顺序编排（拓扑排序）
+用户输入 → Coordinator.plan() → ExecutionPlan (含 agent_type)
+  ├─ 路径 1: 简单对话 → GeneralAgent.run() 直通
+  ├─ 路径 2: 多步任务 → Coordinator._execute_steps() 拓扑排序，每步用对应 Agent
   └─ 路径 3: 匹配工作流 → WorkflowGraph.run() DAG 引擎执行
 ```
 
-- **PlannerAgent** = 任务规划层。一次 LLM 调用（`with_structured_output(ExecutionPlan)`）完成意图分类 + Skill 选择 + 步骤拆解 + Workflow 匹配。输出 `ExecutionPlan` Pydantic 模型（`goal`、`intent`、`complexity`、`skills`、`workflow`、`steps`）。
-- **AgentRuntime** = 纯执行引擎。组合 LLM + Tool + State + Prompt。使用 LangGraph `SqliteSaver` checkpointer 自动持久化消息，`pre_model_hook` + `trim_messages()` 管理上下文窗口。
-- **WorkflowGraph** = DAG 工作流引擎（LangGraph 风格）。`add_node()` / `add_edge()` / `add_conditional_edge()` 构建图，`graph.run(state, runtime)` 执行。内置 3 个工作流：`dev_flow`、`research_flow`、`diagnosis_flow`，定义在 `runtime/graphs/` 中。
+- **Coordinator** = 任务规划 + Agent 调度。一次 LLM 调用完成意图分类 + Agent 选择 + Skill 选择 + 步骤拆解 + Workflow 匹配。
+- **BaseAgent** = 专业 Agent 基类（Coder / Researcher / Diagnosis / General），各持有特定 tool 子集 + skill 子集 + system_prompt。使用 LangGraph `create_react_agent` + `SqliteSaver` checkpointer + `pre_model_hook`。
+- **ContextBuilder** = 统一上下文构建。按优先级 + token 预算组装 system_prompt（Personality > Agent prompt > Skills > Files > History），替代 Middleware 管道。
+- **WorkflowGraph** = DAG 工作流引擎，定义在 `runtime/graphs/` 中。
 
 **核心分层（自底向上）：**
 
@@ -47,7 +48,7 @@ uv run pytest tests/path  # 运行单个测试文件
 | Memory | `src/haven/memory/` | `FactStore`（SQLite 语义事实）+ `VectorMemory`（ChromaDB，可选）。消息持久化由 LangGraph `SqliteSaver` checkpointer 自动管理 |
 | Skills | `src/haven/skills/` | `.md` 文件加载，YAML frontmatter 解析，`SkillRegistry` 依赖解析 |
 | Tools | `src/haven/tools/` | `ToolManager` + Provider 架构（Builtin + MCP），MCP 配置解析 |
-| Runtime | `src/haven/runtime/` | `PlannerAgent`（规划）+ `AgentRuntime`（执行）+ `WorkflowRegistry`（工作流引擎）+ `factory.create_agent()`（装配） |
+| Runtime | `src/haven/runtime/` | `Coordinator`（规划+调度）+ `BaseAgent`×4（专业执行）+ `ContextBuilder`（统一上下文）+ `WorkflowRegistry`（工作流引擎）+ `factory.create_coordinator()`（装配） |
 | CLI | `src/haven/cli/` | `main.py` 入口 + REPL 循环 + `RuntimeService` 桥梁 |
 | Services | `src/haven/services/` | 守护进程 + 渠道（TCP socket、邮件 IMAP/SMTP、飞书 WebSocket） |
 
@@ -58,7 +59,7 @@ uv run pytest tests/path  # 运行单个测试文件
 - **配置目录**：`src/haven/config/` 包含 `app.yaml`（框架默认参数）、`models.yaml`（内置模型定义）、`haven.md`（系统人格 prompt）。用户可在 CWD 下放置 `haven.yaml` 或 `models.yaml` 覆盖。
 - **模型 Key 解析**：`models.yaml` 中每模型声明 `api_key_env` 字段（如 `DEEPSEEK_API_KEY`），`loader.py:get_model_config()` 从 `os.environ` 动态读取。`settings.py` 中不硬编码任何 Key。
 - **Skill 文件**：Skill 通过 `skills/` 目录（CWD 相对，由 `app.yaml` 的 `skill_directory` 配置）中的 `.md` 文件加载，包含 YAML frontmatter（`name`、`description`、`tags`、`tools`、`dependencies`、`default`）。`default: true` = 系统人格 skill（`haven.md`），始终注入 system prompt。V2 中 PlannerAgent 通过 LLM 语义匹配选择领域 Skill（而非 V1 的 `trigger_keywords` 关键词匹配）。
-- **工具绑定**：通过 `AgentRuntime.register_tool()` 注册，`activate_tools()` 选择子集，`bind_tools_to_llm()` 执行 `llm.bind_tools()`。`switch_model()` 切换模型后工具自动重绑。
+- **工具绑定**：每个 `BaseAgent` 在创建时绑定特定 tool 子集（通过 `app.yaml` 的 `agents.<name>.tools` 配置）。`switch_model()` 切换模型后所有 Agent 的工具自动重绑。
 - **ToolManager + Provider 架构**：`ToolManager` 编排所有 `ToolProvider` 生命周期。`BuiltinProvider` 扫描内置工具（6 个模块），`MCPProvider` 管理单个 MCP 服务器连接。支持 stdio / HTTP SSE / WebSocket 传输。MCP 工具以 `{server_name}__{tool_name}` 命名避免冲突。Provider 状态机：UNINITIALIZED → CONNECTING → CONNECTED / DEGRADED / ERROR → DISCONNECTED。
 - **记忆系统**：基于 LangGraph 原生机制。`SqliteSaver` checkpointer 按 `thread_id` 自动持久化所有消息，`pre_model_hook` + `trim_messages()` 在 LLM 调用前裁剪消息确保不超 context window。可选组件：`FactStore`（SQLite 语义事实存储与检索）、`VectorMemory`（ChromaDB 向量语义检索，默认关闭）。
 - **MCP 工具**：从 CWD 下的 `mcp.json` 加载，标准 `mcpServers` 格式。`${VAR}` 语法自动解析环境变量。`"enabled": false` 的服务器跳过不加载。单服务器故障不影响其他。

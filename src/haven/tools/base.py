@@ -3,7 +3,7 @@
 继承 LangChain BaseTool，增加:
   - ToolMetadata: 声明式元数据（provider, category, permissions, rate_limit）
   - health_check(): 可用性检查
-  - 零摩擦接入 AgentRuntime
+  - 零摩擦接入 BaseAgent
 """
 
 from __future__ import annotations

@@ -31,7 +31,7 @@ class ResearchAgentState(AgentState, total=False):
 
 
 async def _searcher_node(state: ResearchAgentState, config: Runtime) -> dict:
-    rt = config["configurable"]["runtime"]
+    rt = config["configurable"]["agent"]
 
     prompt = f"""## 任务：信息搜集
 
@@ -51,7 +51,7 @@ async def _searcher_node(state: ResearchAgentState, config: Runtime) -> dict:
 
 
 async def _analyst_node(state: ResearchAgentState, config: Runtime) -> dict:
-    rt = config["configurable"]["runtime"]
+    rt = config["configurable"]["agent"]
 
     findings = "\n---\n".join(state.get("raw_findings", []))
     prompt = f"""## 任务：信息分析
@@ -80,7 +80,7 @@ async def _analyst_node(state: ResearchAgentState, config: Runtime) -> dict:
 
 
 async def _synthesizer_node(state: ResearchAgentState, config: Runtime) -> dict:
-    rt = config["configurable"]["runtime"]
+    rt = config["configurable"]["agent"]
 
     prompt = f"""## 任务：撰写报告
 

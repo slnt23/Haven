@@ -26,7 +26,7 @@ BANNER = """
 
 
 class HavenDaemon:
-    """长期运行守护进程，通过飞书 WebSocket 共享单个 PlannerAgent。"""
+    """长期运行守护进程，通过飞书 WebSocket 共享单个 Coordinator。"""
 
     def __init__(self) -> None:
         self.agent: Any = None
@@ -60,9 +60,8 @@ class HavenDaemon:
             except Exception as exc:
                 logger.warning("Error stopping channel '%s': %s", ch.name, exc)
 
-        if self.agent and hasattr(self.agent, "runtime"):
-            rt = self.agent.runtime
-            tm = getattr(rt, "tool_manager", None)
+        if self.agent:
+            tm = getattr(self.agent, "tool_manager", None)
             if tm:
                 try:
                     await tm.stop_all()
@@ -85,9 +84,9 @@ class HavenDaemon:
     # ------------------------------------------------------------------
 
     async def _init_agent(self) -> None:
-        from haven.runtime.factory import create_agent
+        from haven.runtime.factory import create_coordinator
 
-        self.agent = await create_agent(
+        self.agent = await create_coordinator(
             session_id="daemon",
             entity_name="daemon_user",
             channel="daemon",

@@ -25,7 +25,7 @@ class DiagnosisAgentState(AgentState, total=False):
 
 
 async def _collector_node(state: DiagnosisAgentState, config: Runtime) -> dict:
-    rt = config["configurable"]["runtime"]
+    rt = config["configurable"]["agent"]
 
     prompt = f"""## 任务：信息收集
 
@@ -45,7 +45,7 @@ async def _collector_node(state: DiagnosisAgentState, config: Runtime) -> dict:
 
 
 async def _analyzer_node(state: DiagnosisAgentState, config: Runtime) -> dict:
-    rt = config["configurable"]["runtime"]
+    rt = config["configurable"]["agent"]
 
     prompt = f"""## 任务：症状分析
 
@@ -69,7 +69,7 @@ async def _analyzer_node(state: DiagnosisAgentState, config: Runtime) -> dict:
 
 
 async def _adviser_node(state: DiagnosisAgentState, config: Runtime) -> dict:
-    rt = config["configurable"]["runtime"]
+    rt = config["configurable"]["agent"]
 
     prompt = f"""## 任务：给出建议
 

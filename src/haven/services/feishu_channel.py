@@ -90,7 +90,7 @@ class FeishuChannel(BaseChannel):
             self.enabled = False
             return
 
-        self._session = agent  # PlannerAgent 实例，直接调用 execute()
+        self._session = agent  # Coordinator 实例，直接调用 execute()
 
         loop = asyncio.get_running_loop()
 
@@ -206,7 +206,7 @@ class FeishuChannel(BaseChannel):
         self.agent.state.entity_name = f"feishu_{open_id}"
         self.agent.state.channel = "feishu"
 
-        # 通过 PlannerAgent 处理
+        # 通过 Coordinator 处理
         try:
             response = await self._session.execute(text)
         except Exception:

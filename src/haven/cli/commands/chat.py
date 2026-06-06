@@ -203,30 +203,15 @@ def _handle_slash(text: str, cli_ctx: CLIContext) -> bool:
                 render_info("(Runtime 未初始化)")
                 return False
 
-            tm = getattr(rt, "_tool_manager", None)
-            if tm:
-                tools = tm.list_all()
-                lines = [
-                    f"已加载 {len(tools)} 个工具 (来自 {len(tm.list_providers())} 个 provider):"
-                ]
-                for t in sorted(tools, key=lambda x: x.name):
-                    provider = tm._tool_to_provider.get(t.name, "?")
-                    desc = getattr(t, "description", "") or ""
-                    lines.append(
-                        f"  {t.name} [{provider}] — {desc}" if desc else f"  {t.name} [{provider}]"
-                    )
-                render_info("\n".join(lines))
+            tools = getattr(rt, "_tools", [])
+            if not tools:
+                render_info("(未加载工具)")
             else:
-                tools = getattr(rt, "_tools", {})
-                if not tools:
-                    render_info("(未加载工具)")
-                else:
-                    lines = [f"已加载 {len(tools)} 个工具:"]
-                    for name in sorted(tools.keys()):
-                        t = tools[name]
-                        desc = getattr(t, "description", "") or ""
-                        lines.append(f"  {name} — {desc}" if desc else f"  {name}")
-                    render_info("\n".join(lines))
+                lines = [f"已加载 {len(tools)} 个工具 (通用 Agent):"]
+                for t in sorted(tools, key=lambda x: x.name):
+                    desc = getattr(t, "description", "") or ""
+                    lines.append(f"  {t.name} — {desc}" if desc else f"  {t.name}")
+                render_info("\n".join(lines))
         except Exception as exc:
             render_error(str(exc))
         return False

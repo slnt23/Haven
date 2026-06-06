@@ -40,7 +40,7 @@ class DevAgentState(AgentState, total=False):
 
 
 async def _planner_node(state: DevAgentState, config: Runtime) -> dict:
-    rt = config["configurable"]["runtime"]
+    rt = config["configurable"]["agent"]
 
     prompt = f"""## 任务：需求分析
 
@@ -59,7 +59,7 @@ async def _planner_node(state: DevAgentState, config: Runtime) -> dict:
 
 
 async def _architect_node(state: DevAgentState, config: Runtime) -> dict:
-    rt = config["configurable"]["runtime"]
+    rt = config["configurable"]["agent"]
 
     plan = state.get("node_outputs", {}).get("planner", "")
     prompt = f"""## 任务：架构设计
@@ -84,7 +84,7 @@ async def _architect_node(state: DevAgentState, config: Runtime) -> dict:
 
 
 async def _coder_node(state: DevAgentState, config: Runtime) -> dict:
-    rt = config["configurable"]["runtime"]
+    rt = config["configurable"]["agent"]
 
     arch = state.get("architecture_doc", "")
     review_feedback = state.get("node_outputs", {}).get("reviewer", "")
@@ -110,7 +110,7 @@ async def _coder_node(state: DevAgentState, config: Runtime) -> dict:
 
 
 async def _reviewer_node(state: DevAgentState, config: Runtime) -> dict:
-    rt = config["configurable"]["runtime"]
+    rt = config["configurable"]["agent"]
 
     prompt = f"""## 任务：代码审查
 
@@ -139,7 +139,7 @@ async def _reviewer_node(state: DevAgentState, config: Runtime) -> dict:
 
 
 async def _tester_node(state: DevAgentState, config: Runtime) -> dict:
-    rt = config["configurable"]["runtime"]
+    rt = config["configurable"]["agent"]
 
     prompt = f"""## 任务：测试验证
 

@@ -3,6 +3,37 @@ agent:
   max_iterations: 20
   max_execution_time: 300
 
+# ==================== Specialized Agents ====================
+agents:
+  coder:
+    description: "代码生成、审查、调试"
+    tools: [code_exec, file_ops]
+    skills: [coder, code_review]
+    prompt: "你是一个专业软件工程师。按需求编写清晰、安全、可测试的代码。使用标准设计模式，遵循最佳实践。"
+
+  researcher:
+    description: "信息搜索、数据分析、报告生成"
+    tools: [web_search, rag_search]
+    skills: [data_analysis, summarization]
+    prompt: "你是一个专业研究员。先搜集信息再做分析，最后给出结构化报告。引用来源。"
+
+  diagnosis:
+    description: "症状分析、健康咨询、故障排查"
+    tools: [medical]
+    skills: [medical]
+    prompt: "你是一个诊断助手。先收集信息再分析，给出分级建议。所有医疗建议仅供参考。"
+
+  general:
+    description: "通用对话与问答"
+    tools: []
+    skills: []
+    prompt: ""
+
+# ==================== Context Builder ====================
+context:
+  token_budget: 8000
+  file_max_tokens: 500
+
 # ==================== Web Search ====================
 web_search:
   engine: bing

@@ -1,6 +1,6 @@
 """WorkflowRegistry — 工作流注册与发现。
 
-PlannerAgent 通过此注册表获取可用工作流列表，供 LLM 规划和选择。
+Coordinator 通过此注册表获取可用工作流列表，供 LLM 规划和选择。
 """
 
 from __future__ import annotations
