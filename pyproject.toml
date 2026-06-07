@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "haven"
-version = "1.0.0"
+version = "1.0.1"
 description = "多智能体交互框架"
 requires-python = ">=3.14"
 dependencies = [

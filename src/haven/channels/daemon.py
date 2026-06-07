@@ -27,7 +27,7 @@ def _daemon_banner() -> str:
     try:
         from haven import __version__ as ver
     except Exception:
-        ver = "1.0.0"
+        ver = "1.0.1"
     return f"""
   +--------------------------------------------------------------+
   |                    Haven Daemon v{ver}                       |
