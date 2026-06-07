@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from langgraph.constants import END
 from langgraph.graph import StateGraph
-from langgraph.runtime import Runtime
+from langchain_core.runnables import RunnableConfig
 
 from haven.runtime.workflows import create_checkpointer
 from haven.runtime.workflows._helpers import run_agent_node
@@ -25,7 +25,7 @@ class DiagnosisAgentState(AgentState, total=False):
     recommendations: str
 
 
-async def _collector_node(state: DiagnosisAgentState, config: Runtime) -> dict:
+async def _collector_node(state: DiagnosisAgentState, config: RunnableConfig) -> dict:
     task = state.get("task", "")
     prompt = f"""## 任务：信息收集
 
@@ -46,7 +46,7 @@ async def _collector_node(state: DiagnosisAgentState, config: Runtime) -> dict:
     }
 
 
-async def _analyzer_node(state: DiagnosisAgentState, config: Runtime) -> dict:
+async def _analyzer_node(state: DiagnosisAgentState, config: RunnableConfig) -> dict:
     task = state.get("task", "")
     prompt = f"""## 任务：症状分析
 
@@ -71,7 +71,7 @@ async def _analyzer_node(state: DiagnosisAgentState, config: Runtime) -> dict:
     }
 
 
-async def _adviser_node(state: DiagnosisAgentState, config: Runtime) -> dict:
+async def _adviser_node(state: DiagnosisAgentState, config: RunnableConfig) -> dict:
     task = state.get("task", "")
     prompt = f"""## 任务：给出建议
 

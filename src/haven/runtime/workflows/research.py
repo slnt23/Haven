@@ -13,7 +13,7 @@ from typing import Annotated
 
 from langgraph.constants import END
 from langgraph.graph import StateGraph
-from langgraph.runtime import Runtime
+from langchain_core.runnables import RunnableConfig
 
 from haven.runtime.workflows import create_checkpointer
 from haven.runtime.workflows._helpers import run_agent_node
@@ -31,7 +31,7 @@ class ResearchAgentState(AgentState, total=False):
     sources: Annotated[list[str], add]
 
 
-async def _searcher_node(state: ResearchAgentState, config: Runtime) -> dict:
+async def _searcher_node(state: ResearchAgentState, config: RunnableConfig) -> dict:
     task = state.get("task", "")
     prompt = f"""## 任务：信息搜集
 
@@ -52,7 +52,7 @@ async def _searcher_node(state: ResearchAgentState, config: Runtime) -> dict:
     }
 
 
-async def _analyst_node(state: ResearchAgentState, config: Runtime) -> dict:
+async def _analyst_node(state: ResearchAgentState, config: RunnableConfig) -> dict:
     task = state.get("task", "")
     findings = "\n---\n".join(state.get("raw_findings", []))
     prompt = f"""## 任务：信息分析
@@ -80,7 +80,7 @@ async def _analyst_node(state: ResearchAgentState, config: Runtime) -> dict:
     }
 
 
-async def _synthesizer_node(state: ResearchAgentState, config: Runtime) -> dict:
+async def _synthesizer_node(state: ResearchAgentState, config: RunnableConfig) -> dict:
     task = state.get("task", "")
     prompt = f"""## 任务：撰写报告
 

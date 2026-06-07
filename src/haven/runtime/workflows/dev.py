@@ -13,7 +13,7 @@ from typing import Annotated
 
 from langgraph.constants import END
 from langgraph.graph import StateGraph
-from langgraph.runtime import Runtime
+from langchain_core.runnables import RunnableConfig
 
 from haven.runtime.workflows import create_checkpointer
 from haven.runtime.workflows._helpers import run_agent_node
@@ -40,7 +40,7 @@ class DevAgentState(AgentState, total=False):
 # ====================================================================
 
 
-async def _planner_node(state: DevAgentState, config: Runtime) -> dict:
+async def _planner_node(state: DevAgentState, config: RunnableConfig) -> dict:
     task = state.get("task", "")
     prompt = f"""## 任务：需求分析
 
@@ -60,7 +60,7 @@ async def _planner_node(state: DevAgentState, config: Runtime) -> dict:
     return _node_result("planner", output)
 
 
-async def _architect_node(state: DevAgentState, config: Runtime) -> dict:
+async def _architect_node(state: DevAgentState, config: RunnableConfig) -> dict:
     task = state.get("task", "")
     plan = state.get("node_outputs", {}).get("planner", "")
     prompt = f"""## 任务：架构设计
@@ -86,7 +86,7 @@ async def _architect_node(state: DevAgentState, config: Runtime) -> dict:
     return result
 
 
-async def _coder_node(state: DevAgentState, config: Runtime) -> dict:
+async def _coder_node(state: DevAgentState, config: RunnableConfig) -> dict:
     task = state.get("task", "")
     arch = state.get("architecture_doc", "")
     review_feedback = state.get("node_outputs", {}).get("reviewer", "")
@@ -113,7 +113,7 @@ async def _coder_node(state: DevAgentState, config: Runtime) -> dict:
     return result
 
 
-async def _reviewer_node(state: DevAgentState, config: Runtime) -> dict:
+async def _reviewer_node(state: DevAgentState, config: RunnableConfig) -> dict:
     task = state.get("task", "")
     prompt = f"""## 任务：代码审查
 
@@ -141,7 +141,7 @@ async def _reviewer_node(state: DevAgentState, config: Runtime) -> dict:
     return result
 
 
-async def _tester_node(state: DevAgentState, config: Runtime) -> dict:
+async def _tester_node(state: DevAgentState, config: RunnableConfig) -> dict:
     task = state.get("task", "")
     prompt = f"""## 任务：测试验证
 
