@@ -44,7 +44,6 @@ class FactStore:
     def _init_schema(self) -> None:
         """建表（幂等）。"""
         self._conn.executescript("""
-            DROP TABLE IF EXISTS semantic_facts;  -- 清理旧版 schema
             CREATE TABLE IF NOT EXISTS facts (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 entity_name TEXT NOT NULL,
@@ -67,11 +66,11 @@ class FactStore:
         content: str,
         *,
         importance: float = 0.5,
-        source: str = "",
+        source: str = "daily conversation",
     ) -> int:
         """添加一条事实。返回新行的 id。
 
-        已存在的相同 (entity_name, content) 会更新 importance 而非重复插入。
+        已存在的相同 (entity_name, content) 会更新 importance 而非重复插入。TODO：但是对于意思相同但是表达相近的还是有问题，例如：用户叫阿林，用户名叫阿林，
         """
         existing = self._conn.execute(
             "SELECT id FROM facts WHERE entity_name = ? AND content = ?",
