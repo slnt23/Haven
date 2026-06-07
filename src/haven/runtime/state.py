@@ -28,6 +28,8 @@ class AgentState(TypedDict, total=False):
     node_retry_counts: Annotated[dict[str, int], _merge_dict]  # noqa: F821
     max_retries_per_node: int
 
+    plan_skills: list[str]
+
     status: str
     final_output: str
 

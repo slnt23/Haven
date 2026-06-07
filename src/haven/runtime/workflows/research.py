@@ -42,7 +42,7 @@ async def _searcher_node(state: ResearchAgentState, config: RunnableConfig) -> d
 要求: 从多个来源搜集信息，记录来源URL，提炼核心观点。"""
 
     output = await run_agent_node(
-        config, prompt, agent_type="researcher", task=task,
+        config, prompt, state=state, agent_type="researcher", task=task,
     )
     return {
         "current_step": "searcher",
@@ -70,7 +70,7 @@ async def _analyst_node(state: ResearchAgentState, config: RunnableConfig) -> di
 4. 仍存在的知识缺口"""
 
     output = await run_agent_node(
-        config, prompt, skill_names=["data_analysis"], agent_type="researcher", task=task,
+        config, prompt, skill_tags=["analysis"], state=state, agent_type="researcher", task=task,
     )
     return {
         "current_step": "analyst",
@@ -95,7 +95,7 @@ async def _synthesizer_node(state: ResearchAgentState, config: RunnableConfig) -
 ## 概述 / ## 核心发现 / ## 详细分析 / ## 结论与建议 / ## 信息来源"""
 
     output = await run_agent_node(
-        config, prompt, skill_names=["summarization"], agent_type="researcher", task=task,
+        config, prompt, skill_tags=["writing", "synthesis"], state=state, agent_type="researcher", task=task,
     )
     return {
         "current_step": "synthesizer",

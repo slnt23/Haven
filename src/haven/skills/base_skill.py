@@ -1,4 +1,4 @@
-"""BaseSkill — V2 Skill 数据类。
+"""BaseSkill — V1 Skill 数据类。
 
 LLM 根据 ``description`` 字段判断是否激活此 skill。
 ``tags`` + ``tools`` + ``dependencies`` 支持多 skill 组合和依赖解析。

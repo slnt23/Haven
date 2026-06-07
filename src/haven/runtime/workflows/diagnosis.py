@@ -36,7 +36,7 @@ async def _collector_node(state: DiagnosisAgentState, config: RunnableConfig) ->
 询问并收集: 持续时间、伴随症状、既往病史、用药情况。"""
 
     output = await run_agent_node(
-        config, prompt, skill_names=["medical"], agent_type="diagnosis", task=task,
+        config, prompt, skill_tags=["medical"], state=state, agent_type="diagnosis", task=task,
     )
     return {
         "current_step": "collector",
@@ -61,7 +61,7 @@ async def _analyzer_node(state: DiagnosisAgentState, config: RunnableConfig) -> 
 3. 建议的下一步"""
 
     output = await run_agent_node(
-        config, prompt, skill_names=["medical"], agent_type="diagnosis", task=task,
+        config, prompt, skill_tags=["medical"], state=state, agent_type="diagnosis", task=task,
     )
     return {
         "current_step": "analyzer",
@@ -87,7 +87,7 @@ async def _adviser_node(state: DiagnosisAgentState, config: RunnableConfig) -> d
 4. 免责声明: AI建议仅供参考"""
 
     output = await run_agent_node(
-        config, prompt, skill_names=["medical"], agent_type="diagnosis", task=task,
+        config, prompt, skill_tags=["medical"], state=state, agent_type="diagnosis", task=task,
     )
     return {
         "current_step": "adviser",

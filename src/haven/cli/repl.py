@@ -86,7 +86,17 @@ async def run_repl() -> None:
                     sys.stdout.flush()
                 console.print()
             except KeyboardInterrupt:
-                console.print("\n  [yellow]已中断[/yellow]")
+                console.print("\n  [yellow]已中断，正在清理会话...[/yellow]")
+                try:
+                    await runtime.reset_session()
+                except Exception:
+                    pass
+            except Exception as exc:
+                console.print(f"\n  [red]执行出错: {exc}[/red]")
+                try:
+                    await runtime.reset_session()
+                except Exception:
+                    pass
     finally:
         await runtime.close()
 

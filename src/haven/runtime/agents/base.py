@@ -85,6 +85,50 @@ class BaseAgent:
             "recursion_limit": self.max_iterations * 2 + 10,
         }
 
+    async def _repair_checkpoint(self, config: dict) -> bool:
+        """检查并修复孤立的 tool_calls，注入合成 ToolMessage 以通过验证。
+
+        当上一轮对话被中断时，checkpointer 可能保存了 AIMessage(tool_calls=...)
+        但对应的 ToolMessage 尚未生成，导致 LangGraph _validate_chat_history 失败。
+        """
+        try:
+            state = await self._agent.aget_state(config)
+            if not state or not state.values:
+                return False
+            messages = state.values.get("messages", [])
+
+            tool_call_ids: set[str] = set()
+            for m in messages:
+                if hasattr(m, "tool_calls") and m.tool_calls:
+                    for tc in m.tool_calls:
+                        tool_call_ids.add(tc["id"])
+
+            tool_results: set[str] = {
+                m.tool_call_id
+                for m in messages
+                if hasattr(m, "tool_call_id")
+            }
+
+            orphaned = tool_call_ids - tool_results
+            if not orphaned:
+                return False
+
+            from langchain_core.messages import ToolMessage
+
+            repair_msgs = [
+                ToolMessage(
+                    content="[中断恢复] 此工具调用被中断，未获取结果。",
+                    tool_call_id=tid,
+                )
+                for tid in orphaned
+            ]
+            await self._agent.aupdate_state(config, {"messages": repair_msgs})
+            logger.warning("修复了 %d 个孤立的 tool_calls: %s", len(orphaned), orphaned)
+            return True
+        except Exception as exc:
+            logger.debug("检查点修复检查失败（非致命）: %s", exc)
+            return False
+
     # ------------------------------------------------------------------
     # 执行
     # ------------------------------------------------------------------
@@ -94,11 +138,20 @@ class BaseAgent:
         task: str,
         *,
         system_prompt: str = "",
+        thread_id: str | None = None,
         **kwargs: Any,
     ) -> str:
-        """执行任务，返回完整响应文本。"""
+        """执行任务，返回完整响应文本。
+
+        thread_id 为 None 时使用 session_id（多轮对话），
+        传入具体值时用于隔离上下文（如工作流节点）。
+        """
         agent = self._get_agent()
         config = self._build_config()
+        if thread_id is not None:
+            config["configurable"]["thread_id"] = thread_id
+
+        await self._repair_checkpoint(config)
 
         # system_prompt 以 SystemMessage 形式直接放到 messages 列表最前面
         msgs: list = []
@@ -123,6 +176,8 @@ class BaseAgent:
         """流式执行，逐 token yield。"""
         agent = self._get_agent()
         config = self._build_config()
+
+        await self._repair_checkpoint(config)
 
         msgs: list = []
         if system_prompt:

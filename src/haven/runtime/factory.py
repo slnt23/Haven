@@ -102,7 +102,14 @@ class Runtime:
             try:
                 await self.checkpointer.adelete_thread(self.state.session_id)
             except Exception as exc:
-                logger.warning("清空 checkpointer 线程失败: %s", exc)
+                logger.warning("清空 checkpointer 线程失败，尝试覆盖: %s", exc)
+                try:
+                    for agent in self.agents.values():
+                        if agent._agent is not None:
+                            config = agent._build_config()
+                            await agent._agent.aupdate_state(config, {"messages": []})
+                except Exception:
+                    pass
 
     def reset(self) -> None:
         """同步重置（仅 turn 状态）。"""

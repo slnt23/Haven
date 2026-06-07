@@ -55,7 +55,7 @@ async def _planner_node(state: DevAgentState, config: RunnableConfig) -> dict:
 4. 验收标准"""
 
     output = await run_agent_node(
-        config, prompt, skill_names=["coder"], agent_type="coder", task=task,
+        config, prompt, skill_tags=["development"], state=state, agent_type="coder", task=task,
     )
     return _node_result("planner", output)
 
@@ -79,7 +79,7 @@ async def _architect_node(state: DevAgentState, config: RunnableConfig) -> dict:
 4. 关键接口定义"""
 
     output = await run_agent_node(
-        config, prompt, skill_names=["coder"], agent_type="coder", task=task,
+        config, prompt, skill_tags=["development"], state=state, agent_type="coder", task=task,
     )
     result = _node_result("architect", output)
     result["architecture_doc"] = output
@@ -106,7 +106,7 @@ async def _coder_node(state: DevAgentState, config: RunnableConfig) -> dict:
     parts.append("\n输出: 完整的可运行代码，包含注释。")
 
     output = await run_agent_node(
-        config, "\n".join(parts), skill_names=["coder"], agent_type="coder", task=task,
+        config, "\n".join(parts), skill_tags=["development"], state=state, agent_type="coder", task=task,
     )
     result = _node_result("coder", output)
     result["source_code"] = _extract_code_block(output)
@@ -132,7 +132,7 @@ async def _reviewer_node(state: DevAgentState, config: RunnableConfig) -> dict:
 - 建议项:"""
 
     output = await run_agent_node(
-        config, prompt, skill_names=["code_review"], agent_type="coder", task=task,
+        config, prompt, skill_tags=["review"], state=state, agent_type="coder", task=task,
     )
     result = _node_result("reviewer", output)
     result["review_feedback"] = output
@@ -157,7 +157,7 @@ async def _tester_node(state: DevAgentState, config: RunnableConfig) -> dict:
 - 测试覆盖:"""
 
     output = await run_agent_node(
-        config, prompt, skill_names=["coder"], agent_type="coder", task=task,
+        config, prompt, skill_tags=["development"], state=state, agent_type="coder", task=task,
     )
     passed = "通过: yes" in output or "通过：是" in output or "PASS" in output.upper()
     result = _node_result("tester", output)

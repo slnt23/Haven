@@ -81,6 +81,19 @@ class SkillRegistry(Registry):
         }
 
     @classmethod
+    def resolve_by_tags(cls, tags: list[str]) -> list[str]:
+        """按标签交集匹配 skill，返回名称列表。
+
+        一个 skill 只要其 tags 与输入有任一交集即视为匹配。
+        用于工作流节点声明 skill 意图而非硬编码名称。
+        """
+        matching: list[str] = []
+        for name, skill in cls._items.items():
+            if any(tag in skill.tags for tag in tags):
+                matching.append(name)
+        return matching
+
+    @classmethod
     def get_by_tool(cls, tool_name: str) -> dict[str, BaseSkill]:
         """查找使用指定工具的所有 skill。"""
         return {

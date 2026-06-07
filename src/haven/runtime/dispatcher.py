@@ -164,6 +164,7 @@ class Dispatcher:
             return f"[错误] 工作流 '{wf_name}' 构建失败: {exc}"
 
         state = self._make_workflow_state(wf_name, task)
+        state["plan_skills"] = list(plan.skills) if plan.skills else []
         agent = self._pick_agent(plan)
 
         try:
