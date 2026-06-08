@@ -48,28 +48,53 @@ class WebSearchTool(HavenTool):
     # ------------------------------------------------------------------
 
     async def _search(self, query: str, num_results: int = 5) -> list[dict[str, str]]:
-        """异步搜索 —— DuckDuckGo。"""
+        """异步搜索 —— DuckDuckGo（15 秒超时）。"""
         from ddgs import DDGS
 
         loop = asyncio.get_running_loop()
-        raw = await loop.run_in_executor(
-            None,
-            lambda: list(DDGS().text(query, max_results=num_results)),
-        )
+        try:
+            raw = await asyncio.wait_for(
+                loop.run_in_executor(
+                    None,
+                    lambda: list(DDGS().text(query, max_results=num_results)),
+                ),
+                timeout=15,
+            )
+        except TimeoutError:
+            raise TimeoutError("搜索超时（15s），请检查网络连接或稍后重试")
         return [
             {"title": r["title"], "url": r["href"], "snippet": r["body"]}
             for r in raw
         ]
 
     def _search_sync(self, query: str, num_results: int = 5) -> list[dict[str, str]]:
-        """同步搜索 —— DuckDuckGo。"""
+        """同步搜索 —— DuckDuckGo（15 秒超时）。"""
+        import threading
+
         from ddgs import DDGS
 
-        raw = list(DDGS().text(query, max_results=num_results))
-        return [
-            {"title": r["title"], "url": r["href"], "snippet": r["body"]}
-            for r in raw
-        ]
+        result: list[dict[str, str]] = []
+        error: Exception | None = None
+
+        def _run():
+            nonlocal result, error
+            try:
+                raw = list(DDGS().text(query, max_results=num_results))
+                result = [
+                    {"title": r["title"], "url": r["href"], "snippet": r["body"]}
+                    for r in raw
+                ]
+            except Exception as exc:
+                error = exc
+
+        thread = threading.Thread(target=_run, daemon=True)
+        thread.start()
+        thread.join(timeout=15)
+        if thread.is_alive():
+            raise TimeoutError("搜索超时（15s），请检查网络连接或稍后重试")
+        if error:
+            raise error
+        return result
 
     # ------------------------------------------------------------------
     # 格式化

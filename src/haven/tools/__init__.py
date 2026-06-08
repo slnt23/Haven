@@ -4,7 +4,7 @@
 不负责工具的选择、推理、规划、调度 —— 这些由 Runtime 层和 LLM 自行处理。
 
 设计原则：
-  1. 所有工具统一为 ``BaseTool`` 子类，直接传入 ``create_react_agent``
+  1. 所有工具统一为 ``BaseTool`` 子类，直接传入 ``create_agent``
   2. 工具选择完全交给 LLM Function Calling（name + description）
   3. 内置工具放在 ``builtin/`` 目录下，启动时自动扫描发现
   4. MCP 工具通过 ``mcp.json`` 配置，每个服务器一个 Provider

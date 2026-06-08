@@ -85,7 +85,8 @@ Analyze the user's request and produce a structured execution plan in JSON.
    - "complex" — multi-step with dependencies
 5. **skills**: List skill names genuinely needed. Empty list for casual chat.
 6. **workflow**: If a predefined workflow fits perfectly, use its name. Otherwise null.
-7. **steps**: Break task into ordered steps.
+   IMPORTANT: workflow must be a SINGLE name string from the menu — do NOT put step objects here.
+7. **steps**: Break task into ordered steps. This is SEPARATE from workflow — only fill steps when NOT using a workflow.
 
 ## Important
 - For casual chat: agent_type="general", skills=[], steps=[].
@@ -214,6 +215,7 @@ class Coordinator:
 
         structured_llm = llm_for_planning.with_structured_output(ExecutionPlan)
 
+        logger.info("规划中... task=%.60s", task)
         try:
             plan: ExecutionPlan = await structured_llm.ainvoke([
                 SystemMessage(content=system),
@@ -267,6 +269,19 @@ class Coordinator:
     @staticmethod
     def _validate_plan(plan: ExecutionPlan) -> ExecutionPlan:
         """校验计划中的 skill 和 workflow 引用是否存在。"""
+        # ---- 规范化 workflow 字段 ----------------------------------------
+        wf = plan.workflow
+        if wf is not None:
+            wf_stripped = wf.strip().lower()
+            if wf_stripped in ("", "null", "none"):
+                plan.workflow = None
+            else:
+                from haven.runtime.registry import WorkflowRegistry
+                available_wf = WorkflowRegistry.list_all()
+                if wf not in available_wf:
+                    logger.warning("计划引用了不存在的 workflow: '%s'，已忽略。可用: %s", wf, available_wf)
+                    plan.workflow = None
+        # ------------------------------------------------------------------
         available = set(SkillRegistry.list_all().keys())
         valid_skills = [s for s in plan.skills if s in available]
         invalid = set(plan.skills) - set(valid_skills)

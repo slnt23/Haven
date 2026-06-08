@@ -23,6 +23,7 @@ from haven.core.state import RuntimeState
 from haven.runtime.agents.base import BaseAgent
 from haven.runtime.context import ContextBuilder
 from haven.runtime.coordinator import Coordinator
+from haven.runtime.stream import StreamChunk
 from haven.runtime.dispatcher import Dispatcher
 from haven.skills.loader import SkillLoader
 from haven.skills.registry import SkillRegistry
@@ -80,12 +81,16 @@ class Runtime:
         流式结束后触发长期记忆提取（后台非阻塞）。
         """
         plan = await self.coordinator.plan(task)
-        # 收集完整响应用于记忆提取
-        chunks: list[str] = []
+        yield StreamChunk(
+            kind="plan",
+            content=f"{plan.intent} → {plan.agent_type} (复杂度: {plan.complexity})",
+        )
+        text_chunks: list[str] = []
         async for chunk in self.dispatcher.dispatch_stream(plan, task):
-            chunks.append(chunk)
+            if chunk.kind == "text":
+                text_chunks.append(chunk.content)
             yield chunk
-        self._trigger_memory(task, "".join(chunks))
+        self._trigger_memory(task, "".join(text_chunks))
 
     def _trigger_memory(self, user_input: str, agent_response: str) -> None:
         """后台触发长期记忆提取，不阻塞主流程。"""

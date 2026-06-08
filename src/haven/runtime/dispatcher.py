@@ -15,6 +15,7 @@ import logging
 from typing import Any, AsyncIterator
 
 from haven.runtime.context import ContextBuilder
+from haven.runtime.stream import StreamChunk
 from haven.skills.registry import SkillRegistry
 
 logger = logging.getLogger("haven.dispatcher")
@@ -58,7 +59,8 @@ class Dispatcher:
     async def dispatch(self, plan: Any, task: str) -> str:
         """根据 ExecutionPlan 选择路径并执行。"""
         # 路径 1：工作流
-        if plan.workflow and self._workflow_registry:
+        wf = plan.workflow
+        if wf and self._workflow_registry and wf in self._workflow_registry.list_all():
             return await self._execute_via_workflow(plan, task)
 
         # 路径 2：多步编排
@@ -70,22 +72,33 @@ class Dispatcher:
         system_prompt = await self.prepare_agent(agent, plan.skills, task=task)
         return await agent.run(task, system_prompt=system_prompt)
 
-    async def dispatch_stream(self, plan: Any, task: str) -> AsyncIterator[str]:
+    async def dispatch_stream(self, plan: Any, task: str) -> AsyncIterator[StreamChunk]:
         """流式版本的 dispatch。"""
         # 路径 1：工作流（工作流暂不支持流式，整体执行后一次性返回）
-        if plan.workflow and self._workflow_registry:
+        wf = plan.workflow
+        if wf and self._workflow_registry and wf in self._workflow_registry.list_all():
+            yield StreamChunk(kind="status", content=f"分发执行: 工作流 {plan.workflow}")
             try:
                 result = await self._execute_via_workflow(plan, task)
-                yield result
+                yield StreamChunk(kind="text", content=result)
             except Exception as exc:
-                yield f"[错误] 工作流执行失败: {exc}"
+                yield StreamChunk(kind="text", content=f"[错误] 工作流执行失败: {exc}")
             return
 
         # 路径 2：多步编排（仅最后一步流式输出）
         if plan.steps:
             ordered = self._topological_sort(plan.steps)
+            total = len(ordered)
+            yield StreamChunk(
+                kind="status",
+                content=f"分发执行: 多步编排 ({total} 步) → {plan.agent_type}",
+            )
             step_outputs: dict[int, str] = {}
-            for step in ordered:
+            for idx, step in enumerate(ordered, 1):
+                yield StreamChunk(
+                    kind="status",
+                    content=f"[步骤 {idx}/{total}] {step.description}",
+                )
                 step_task = self._build_step_task(task, step)
                 agent = self._pick_agent_for_step(step, plan.agent_type)
                 step_skills = self._skills_for_step(plan.skills, step.skill)
@@ -94,7 +107,8 @@ class Dispatcher:
                 if step.order == ordered[-1].order:
                     collected: list[str] = []
                     async for chunk in agent.astream(step_task, system_prompt=system_prompt):
-                        collected.append(chunk)
+                        if chunk.kind == "text":
+                            collected.append(chunk.content)
                         yield chunk
                     step_outputs[step.order] = "".join(collected)
                 else:
@@ -105,6 +119,7 @@ class Dispatcher:
         # 路径 3：直接对话流式
         agent = self._pick_agent(plan)
         system_prompt = await self.prepare_agent(agent, plan.skills, task=task)
+        yield StreamChunk(kind="status", content="分发执行: 直接对话")
         async for chunk in agent.astream(task, system_prompt=system_prompt):
             yield chunk
 

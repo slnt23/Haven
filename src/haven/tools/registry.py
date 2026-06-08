@@ -54,7 +54,7 @@ class ToolRegistry:
         return self._tools.get(name)
 
     def list(self) -> list[BaseTool]:
-        """返回全部已注册工具的扁平列表，可直接传入 create_react_agent。"""
+        """返回全部已注册工具的扁平列表，可直接传入 create_agent。"""
         return list(self._tools.values())
 
     def list_names(self) -> list[str]:

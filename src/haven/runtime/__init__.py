@@ -5,7 +5,7 @@
   - 任务规划       — Coordinator.plan() → ExecutionPlan
   - 执行调度       — Dispatcher.dispatch() → Workflow / Agent
   - 上下文构建     — ContextBuilder → system_prompt
-  - Agent 执行     — BaseAgent → create_react_agent() → LLM
+  - Agent 执行     — BaseAgent → create_agent() → LLM
 
 不负责：
   - Tool 解析/选择  — 全部交给 LangChain + LLM Function Calling
@@ -20,6 +20,7 @@ from haven.runtime.context import ContextBuilder
 from haven.runtime.coordinator import Coordinator, ExecutionPlan, PlanStep
 from haven.runtime.dispatcher import Dispatcher
 from haven.runtime.factory import Runtime, create_runtime
+from haven.runtime.stream import StreamChunk
 from haven.runtime.registry import WorkflowRegistry
 from haven.runtime.state import AgentState
 from haven.runtime.workflows import create_checkpointer
@@ -36,4 +37,5 @@ __all__ = [
     "AgentState",
     "WorkflowRegistry",
     "create_checkpointer",
+    "StreamChunk",
 ]

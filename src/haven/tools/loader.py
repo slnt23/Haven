@@ -7,7 +7,7 @@
 
     loader = ToolLoader()
     tools = await loader.load_all(load_mcp=True)
-    agent = create_react_agent(model=model, tools=tools)
+    agent = create_agent(model=model, tools=tools)
 """
 
 from __future__ import annotations

@@ -18,6 +18,7 @@ from haven.config import settings
 
 logger = logging.getLogger("haven.context")
 
+# 这个可以转移到config中统一管理，
 _PERSONA_PATH = Path(__file__).resolve().parent.parent / "config" / "haven.md"
 
 

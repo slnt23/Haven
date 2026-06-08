@@ -15,7 +15,7 @@ from haven.tools.metadata import ToolMetadata
 class HavenTool(LCBaseTool):
     """Haven 工具基类，兼容 LangChain BaseTool。
 
-    可直接传入 ``create_react_agent(model=..., tools=[...])``。
+    可直接传入 ``create_agent(model=..., tools=[...])``。
 
     子类需实现：
       - name: str           — 工具名称（LLM 据此选择）

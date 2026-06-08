@@ -7,12 +7,14 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import sys
 
 from rich.console import Console
 
 from haven import __version__
 from haven.runtime.factory import create_runtime
+from haven.runtime.stream import StreamChunk
 
 _BANNER = f"""
   Haven v{__version__}  |  多智能体交互框架
@@ -25,6 +27,7 @@ _HELP = """\
   /agents       查看可用 Agent
   /clear        清除当前会话记忆
   /memory-clear 清除长期记忆
+  /log [on|off|debug]  查看/切换日志级别
   /exit         退出对话
 """
 
@@ -75,6 +78,8 @@ async def run_repl() -> None:
                     console.print("  [green]会话记忆已清除[/green]")
                 elif cmd == "/memory-clear":
                     _clear_memory(console, runtime)
+                elif cmd.startswith("/log"):
+                    _toggle_log(cmd)
                 else:
                     console.print(f"  [yellow]未知命令: {cmd}[/yellow]")
                 continue
@@ -82,8 +87,13 @@ async def run_repl() -> None:
             # 流式对话：Runtime.execute_stream() → Dispatcher → Agent → LLM
             try:
                 async for chunk in runtime.execute_stream(user_input):
-                    sys.stdout.write(chunk)
-                    sys.stdout.flush()
+                    if chunk.kind == "text":
+                        sys.stdout.write(chunk.content)
+                        sys.stdout.flush()
+                    elif chunk.kind == "plan":
+                        console.print(f"  {chunk.content}", style="bold cyan")
+                    elif chunk.kind == "status":
+                        console.print(f"  {chunk.content}", style="dim")
                 console.print()
             except KeyboardInterrupt:
                 console.print("\n  [yellow]已中断，正在清理会话...[/yellow]")
@@ -137,6 +147,26 @@ def _show_agents(console: Console, runtime) -> None:
     for name, agent in agents.items():
         prompt = getattr(agent, "agent_prompt", "")[:60]
         console.print(f"    • [cyan]{name}[/cyan]  {prompt}")
+
+
+def _toggle_log(cmd: str) -> None:
+    """切换 haven 日志级别。"""
+    haven_logger = logging.getLogger("haven")
+    parts = cmd.strip().split()
+    arg = parts[1] if len(parts) > 1 else ""
+
+    if arg in ("on", "info"):
+        haven_logger.setLevel(logging.INFO)
+        print("  日志级别: INFO", file=sys.stderr)
+    elif arg == "debug":
+        haven_logger.setLevel(logging.DEBUG)
+        print("  日志级别: DEBUG", file=sys.stderr)
+    elif arg == "off":
+        haven_logger.setLevel(logging.WARNING)
+        print("  日志级别: WARNING (仅警告)", file=sys.stderr)
+    else:
+        level = logging.getLevelName(haven_logger.level)
+        print(f"  日志级别: {level}  |  用法: /log [on|off|debug]", file=sys.stderr)
 
 
 def _clear_memory(console: Console, runtime) -> None:

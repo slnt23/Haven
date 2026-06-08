@@ -11,14 +11,13 @@ from __future__ import annotations
 from operator import add
 from typing import Annotated
 
-from langgraph.constants import END
-from langgraph.graph import StateGraph
 from langchain_core.runnables import RunnableConfig
+from langgraph.graph import StateGraph
 
-from haven.runtime.workflows import create_checkpointer
-from haven.runtime.workflows._helpers import run_agent_node
 from haven.runtime.registry import WorkflowRegistry
 from haven.runtime.state import AgentState
+from haven.runtime.workflows import create_checkpointer
+from haven.runtime.workflows._helpers import run_agent_node
 
 
 class ResearchAgentState(AgentState, total=False):
@@ -44,11 +43,14 @@ async def _searcher_node(state: ResearchAgentState, config: RunnableConfig) -> d
     output = await run_agent_node(
         config, prompt, state=state, agent_type="researcher", task=task,
     )
+    retries = dict(state.get("node_retry_counts", {}))
+    retries["searcher"] = retries.get("searcher", 0) + 1
     return {
         "current_step": "searcher",
         "completed_steps": ["searcher"],
         "node_outputs": {"searcher": output},
         "raw_findings": [output],
+        "node_retry_counts": retries,
     }
 
 

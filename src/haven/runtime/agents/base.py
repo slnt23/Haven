@@ -1,14 +1,14 @@
-"""BaseAgent —— 专业 Agent 基类，封装 LangGraph ReAct Agent。
+"""BaseAgent —— 专业 Agent 基类，封装 LangChain ``create_agent``。
 
 每个 Agent 实例 = LangChain 工具集 + system_prompt。
 工具在创建时一次性绑定，LLM 通过 Function Calling 自行决定调用哪个。
 
-System_prompt 直接作为 SystemMessage 放到 messages 列表最前面 ——
-不依赖 LangGraph 版本的 prompt 参数行为差异。
+System_prompt 以 SystemMessage 形式注入 messages，支持动态构建。
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any, AsyncIterator
 
@@ -17,16 +17,17 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.tools import BaseTool
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.graph.state import CompiledStateGraph
-from langgraph.prebuilt import create_react_agent
+from langchain.agents import create_agent
 
 from haven.config import settings
 from haven.core.state import RuntimeState
+from haven.runtime.stream import StreamChunk
 
 logger = logging.getLogger("haven.agent")
 
 
 class BaseAgent:
-    """LangGraph ReAct Agent 的轻量包装。
+    """LangChain ``create_agent`` 的轻量包装。
 
     职责：
       - 持有 LLM + 工具 + checkpointer
@@ -66,12 +67,12 @@ class BaseAgent:
     # ------------------------------------------------------------------
 
     def _get_agent(self) -> CompiledStateGraph:
-        """获取或创建 LangGraph ReAct Agent。"""
+        """获取或创建 LangChain Agent。"""
         tools_hash = hash(tuple(id(t) for t in self._tools))
         if self._agent is not None and self._agent_tools_hash == tools_hash:
             return self._agent
 
-        self._agent = create_react_agent(
+        self._agent = create_agent(
             model=self.llm,
             tools=self._tools,
             checkpointer=self._checkpointer,
@@ -126,7 +127,7 @@ class BaseAgent:
             logger.warning("修复了 %d 个孤立的 tool_calls: %s", len(orphaned), orphaned)
             return True
         except Exception as exc:
-            logger.debug("检查点修复检查失败（非致命）: %s", exc)
+            logger.warning("检查点修复检查失败（非致命）: %s", exc)
             return False
 
     # ------------------------------------------------------------------
@@ -159,7 +160,16 @@ class BaseAgent:
             msgs.append(SystemMessage(content=system_prompt))
         msgs.append(HumanMessage(content=task))
 
-        result = await agent.ainvoke({"messages": msgs}, config=config)
+        try:
+            result = await asyncio.wait_for(
+                agent.ainvoke({"messages": msgs}, config=config),
+                timeout=settings.agent_max_execution_time,
+            )
+        except asyncio.TimeoutError:
+            # 超时后清理可能残留的孤立 tool_calls
+            await self._repair_checkpoint(config)
+            self.state.turn_count += 1
+            return "执行超时，请检查网络连接或简化问题后重试。"
         output = result["messages"][-1]
         output_text = output.content if hasattr(output, "content") else str(output)
 
@@ -172,7 +182,7 @@ class BaseAgent:
         *,
         system_prompt: str = "",
         **kwargs: Any,
-    ) -> AsyncIterator[str]:
+    ) -> AsyncIterator[StreamChunk]:
         """流式执行，逐 token yield。"""
         agent = self._get_agent()
         config = self._build_config()
@@ -184,14 +194,26 @@ class BaseAgent:
             msgs.append(SystemMessage(content=system_prompt))
         msgs.append(HumanMessage(content=task))
 
-        async for event in agent.astream_events(
-            {"messages": msgs}, config=config, version="v2",
-        ):
-            kind = event.get("event", "")
-            if kind == "on_chat_model_stream":
-                chunk = event.get("data", {}).get("chunk")
-                if chunk and hasattr(chunk, "content") and chunk.content:
-                    yield chunk.content
+        try:
+            async with asyncio.timeout(settings.agent_max_execution_time):
+                async for event in agent.astream_events(
+                    {"messages": msgs}, config=config,
+                ):
+                    kind = event.get("event", "")
+                    if kind == "on_chat_model_stream":
+                        chunk = event.get("data", {}).get("chunk")
+                        if chunk and hasattr(chunk, "content") and chunk.content:
+                            yield StreamChunk(kind="text", content=chunk.content)
+                    elif kind == "on_tool_start":
+                        tool_name = event.get("name", "unknown")
+                        yield StreamChunk(kind="status", content=f"调用工具: {tool_name}")
+                    elif kind == "on_tool_end":
+                        tool_name = event.get("name", "unknown")
+                        yield StreamChunk(kind="status", content=f"工具完成: {tool_name}")
+        except TimeoutError:
+            # 超时后清理可能残留的孤立 tool_calls
+            await self._repair_checkpoint(config)
+            yield StreamChunk(kind="status", content="执行超时，请检查网络连接或简化问题后重试。")
 
         self.state.turn_count += 1
 
