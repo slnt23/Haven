@@ -1,7 +1,7 @@
 """Haven REPL —— 异步对话循环，流式输出。
 
 通过 Runtime.execute_stream() 与 Agent 交互。
-所有入口只能调用 Runtime —— 禁止直接调用 Agent / Memory / Tool。
+使用 Rich Markdown 渲染 Agent 输出，终端友好展示。
 """
 
 from __future__ import annotations
@@ -11,6 +11,8 @@ import logging
 import sys
 
 from rich.console import Console
+from rich.live import Live
+from rich.markdown import Markdown
 
 from haven import __version__
 from haven.runtime.factory import create_runtime
@@ -64,15 +66,19 @@ async def run_repl() -> None:
 
             # 所有执行通过 Runtime.execute_stream() —— 禁止直接调用 Agent
             try:
-                async for chunk in runtime.execute_stream(user_input):
-                    if chunk.kind == "text":
-                        sys.stdout.write(chunk.content)
-                        sys.stdout.flush()
-                    elif chunk.kind == "plan":
-                        console.print(f"  {chunk.content}", style="bold cyan")
-                    elif chunk.kind == "status":
-                        console.print(f"  {chunk.content}", style="dim")
-                console.print()
+                buffer: list[str] = []
+                with Live(
+                    Markdown(""), refresh_per_second=10, console=console,
+                    vertical_overflow="visible",
+                ) as live:
+                    async for chunk in runtime.execute_stream(user_input):
+                        if chunk.kind == "text":
+                            buffer.append(chunk.content)
+                            live.update(Markdown("".join(buffer)))
+                        elif chunk.kind == "plan":
+                            live.console.print(f"  [bold cyan]{chunk.content}[/bold cyan]")
+                        elif chunk.kind == "status":
+                            live.console.print(f"  [dim]{chunk.content}[/dim]")
             except KeyboardInterrupt:
                 console.print("\n  [yellow]已中断，正在清理会话...[/yellow]")
                 try:

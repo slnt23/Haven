@@ -27,12 +27,15 @@ _PERSONA_PATH = Path(__file__).resolve().parent.parent / "config" / "haven.md"
 _CHANNEL_HINTS: dict[str, str] = {
     "cli": (
         "[Output Environment]\n"
-        "You are replying in a terminal (channel=cli). "
-        "Prefer terminal-friendly formatting: plain paragraphs, numbered or bullet lists, "
-        "and clear indentation. Avoid Markdown tables and multi-level headings (###). "
-        "Code blocks (```) are fine. "
-        "IMPORTANT: if the user explicitly requests Markdown, HTML, JSON, code, or any "
-        "specific format, always follow the user's request - it takes priority."
+        "You are communicating via a terminal (channel=cli). "
+        "Format your response for terminal display: use plain paragraphs, "
+        "numbered or bullet lists, and indentation. "
+        "Do NOT use Markdown tables (|---|---|), horizontal rules (---), "
+        "or multi-level headings (###). "
+        "Code blocks (```) are acceptable. "
+        "IMPORTANT: if the user explicitly requests Markdown, HTML, JSON, code, "
+        "or any specific format, ALWAYS follow the user's request - "
+        "the user's request overrides this environment preference."
     ),
     "web": (
         "[Output Environment]\n"
