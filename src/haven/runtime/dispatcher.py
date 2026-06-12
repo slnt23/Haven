@@ -1,12 +1,7 @@
 """调度器 —— 接收 ExecutionPlan，路由到正确的执行路径。
 
 Dispatcher 是 Coordinator（规划）和 BaseAgent（执行）之间的桥梁。
-它不负责规划，只负责"怎么执行这个计划"。
-
-三条执行路径：
-  1. 工作流路径   — plan.workflow 存在 → WorkflowGraph 执行
-  2. 多步编排路径 — plan.steps 非空 → 拓扑排序后逐步执行
-  3. 直接对话路径 — 其余情况 → 单个 Agent 直通
+Session 状态由 SessionManager 管理，Dispatcher 不持有 session 状态。
 """
 
 from __future__ import annotations
@@ -14,6 +9,8 @@ from __future__ import annotations
 import logging
 from typing import Any, AsyncIterator
 
+from haven.session.manager import SessionManager
+from haven.session.models import Session
 from haven.capability.registry import CapabilityRegistry
 from haven.runtime.context import ContextBuilder
 from haven.runtime.stream import StreamChunk
@@ -24,14 +21,7 @@ logger = logging.getLogger("haven.dispatcher")
 class Dispatcher:
     """执行路径调度器。
 
-    职责：
-      - 根据 ExecutionPlan 选择执行路径（Workflow / 多步 / 直接）
-      - 构建 system_prompt（通过 ContextBuilder）
-      - 调用 Agent 执行
-
-    不负责：
-      - 任务规划（由 Coordinator 负责）
-      - Tool 选择（由 LLM Function Calling 负责）
+    Session 状态通过 SessionManager 管理。
     """
 
     def __init__(
@@ -39,7 +29,7 @@ class Dispatcher:
         agents: dict[str, Any],
         *,
         workflow_registry: Any = None,
-        state: Any = None,
+        session_manager: SessionManager | None = None,
         context_builder: ContextBuilder | None = None,
         capability_registry: CapabilityRegistry | None = None,
         fact_store: Any = None,
@@ -47,7 +37,7 @@ class Dispatcher:
     ) -> None:
         self.agents = agents
         self._workflow_registry = workflow_registry
-        self.state = state
+        self._session_manager = session_manager
         self._context_builder = context_builder or ContextBuilder()
         self._capability = capability_registry
         self._fact_store = fact_store
@@ -58,36 +48,38 @@ class Dispatcher:
     # 公开 API
     # ------------------------------------------------------------------
 
-    async def dispatch(self, plan: Any, task: str) -> str:
+    async def dispatch(self, plan: Any, task: str, session: Session) -> str:
         """根据 ExecutionPlan 选择路径并执行。"""
-        # 路径 1：工作流
+        thread_id = session.id
         wf = plan.workflow
         if wf and self._workflow_registry and wf in self._workflow_registry.list_all():
-            return await self._execute_via_workflow(plan, task)
+            return await self._execute_via_workflow(plan, task, session)
 
-        # 路径 2：多步编排
         if plan.steps:
-            return await self._execute_steps(plan, task)
+            return await self._execute_steps(plan, task, session)
 
-        # 路径 3：直接对话
         agent = self._pick_agent(plan)
-        system_prompt = await self.prepare_agent(agent, plan.skills, task=task)
-        return await agent.run(task, system_prompt=system_prompt)
+        system_prompt = await self._prepare_agent(agent, plan.skills, session, task=task)
+        result = await agent.run(task, system_prompt=system_prompt, thread_id=thread_id)
+        self._after_turn(session)
+        return result
 
-    async def dispatch_stream(self, plan: Any, task: str) -> AsyncIterator[StreamChunk]:
+    async def dispatch_stream(
+        self, plan: Any, task: str, session: Session,
+    ) -> AsyncIterator[StreamChunk]:
         """流式版本的 dispatch。"""
-        # 路径 1：工作流（工作流暂不支持流式，整体执行后一次性返回）
+        thread_id = session.id
         wf = plan.workflow
         if wf and self._workflow_registry and wf in self._workflow_registry.list_all():
             yield StreamChunk(kind="status", content=f"分发执行: 工作流 {plan.workflow}")
             try:
-                result = await self._execute_via_workflow(plan, task)
+                result = await self._execute_via_workflow(plan, task, session)
                 yield StreamChunk(kind="text", content=result)
             except Exception as exc:
                 yield StreamChunk(kind="text", content=f"[错误] 工作流执行失败: {exc}")
+            self._after_turn(session)
             return
 
-        # 路径 2：多步编排（仅最后一步流式输出）
         if plan.steps:
             ordered = self._topological_sort(plan.steps)
             total = len(ordered)
@@ -104,54 +96,61 @@ class Dispatcher:
                 step_task = self._build_step_task(task, step)
                 agent = self._pick_agent_for_step(step, plan.agent_type)
                 step_skills = self._skills_for_step(plan.skills, step.skill)
-                system_prompt = await self.prepare_agent(agent, step_skills, task=task)
+                system_prompt = await self._prepare_agent(agent, step_skills, session, task=task)
 
                 if step.order == ordered[-1].order:
                     collected: list[str] = []
-                    async for chunk in agent.astream(step_task, system_prompt=system_prompt):
+                    async for chunk in agent.astream(step_task, system_prompt=system_prompt, thread_id=thread_id):
                         if chunk.kind == "text":
                             collected.append(chunk.content)
                         yield chunk
                     step_outputs[step.order] = "".join(collected)
                 else:
-                    result = await agent.run(step_task, system_prompt=system_prompt)
+                    result = await agent.run(step_task, system_prompt=system_prompt, thread_id=thread_id)
                     step_outputs[step.order] = result
+            self._after_turn(session)
             return
 
-        # 路径 3：直接对话流式
         agent = self._pick_agent(plan)
-        system_prompt = await self.prepare_agent(agent, plan.skills, task=task)
+        system_prompt = await self._prepare_agent(agent, plan.skills, session, task=task)
         yield StreamChunk(kind="status", content="分发执行: 直接对话")
-        async for chunk in agent.astream(task, system_prompt=system_prompt):
+        async for chunk in agent.astream(task, system_prompt=system_prompt, thread_id=thread_id):
             yield chunk
+        self._after_turn(session)
 
     # ------------------------------------------------------------------
-    # 上下文准备（供 Workflow 节点复用）
+    # 上下文准备
     # ------------------------------------------------------------------
 
-    async def prepare_agent(
+    async def _prepare_agent(
         self,
         agent: Any,
         skill_names: list[str],
+        session: Session,
         *,
         task: str = "",
     ) -> str:
-        """为 Agent 构建 system_prompt。"""
+        """为 Agent 构建 system_prompt，并更新 session state。"""
         resolved = self._resolve_skill_deps(list(skill_names))
-        if self.state:
-            self.state.active_skills = resolved
-        return self._build_system_prompt(agent, resolved, task=task)
+        if self._session_manager is not None:
+            state = self._session_manager.get_or_create_state(session.id)
+            state.active_skills = resolved
+        return self._build_system_prompt(agent, resolved, session, task=task)
+
+    def _after_turn(self, session: Session) -> None:
+        """每轮对话后更新 turn_count。"""
+        if self._session_manager is not None:
+            state = self._session_manager.get_or_create_state(session.id)
+            state.turn_count += 1
 
     # ------------------------------------------------------------------
     # 内部：路径选择
     # ------------------------------------------------------------------
 
     def _pick_agent(self, plan: Any) -> Any:
-        """根据 plan.agent_type 选择 Agent。"""
         return self.agents.get(plan.agent_type, self._fallback_agent)
 
     def _pick_agent_for_step(self, step: Any, default_type: str) -> Any:
-        """根据 step.skill 选择合适的 Agent（启发式）。"""
         if step.skill:
             for agent_type, agent in self.agents.items():
                 if agent_type in step.skill.lower():
@@ -162,13 +161,12 @@ class Dispatcher:
     # 内部：三条执行路径
     # ------------------------------------------------------------------
 
-    async def _execute_via_workflow(self, plan: Any, task: str) -> str:
-        """路径 1：工作流执行。"""
+    async def _execute_via_workflow(self, plan: Any, task: str, session: Session) -> str:
         wf_name = plan.workflow
         if not wf_name or self._workflow_registry is None:
             agent = self._pick_agent(plan)
-            system_prompt = await self.prepare_agent(agent, plan.skills, task=task)
-            return await agent.run(task, system_prompt=system_prompt)
+            system_prompt = await self._prepare_agent(agent, plan.skills, session, task=task)
+            return await agent.run(task, system_prompt=system_prompt, thread_id=session.id)
 
         try:
             compiled_graph = self._workflow_registry.build(wf_name)
@@ -176,7 +174,7 @@ class Dispatcher:
             logger.error("构建工作流 '%s' 失败: %s", wf_name, exc)
             return f"[错误] 工作流 '{wf_name}' 构建失败: {exc}"
 
-        state = self._make_workflow_state(wf_name, task)
+        state = self._make_workflow_state(wf_name, task, session)
         state["plan_skills"] = list(plan.skills) if plan.skills else []
         agent = self._pick_agent(plan)
 
@@ -185,11 +183,11 @@ class Dispatcher:
                 state,
                 config={
                     "configurable": {
-                        "thread_id": self.state.session_id if self.state else "default",
+                        "thread_id": session.id,
                         "agent": agent,
                         "agents": self.agents,
                         "context_builder": self._context_builder,
-                        "dispatcher": self,  # 供 Workflow 节点复用
+                        "dispatcher": self,
                     }
                 },
             )
@@ -205,8 +203,7 @@ class Dispatcher:
         logger.info("工作流 '%s' 完成", wf_name)
         return result.get("final_output") or "(工作流完成，无输出)"
 
-    async def _execute_steps(self, plan: Any, task: str) -> str:
-        """路径 2：多步编排执行。"""
+    async def _execute_steps(self, plan: Any, task: str, session: Session) -> str:
         ordered = self._topological_sort(plan.steps)
         final = ""
 
@@ -214,8 +211,8 @@ class Dispatcher:
             step_task = self._build_step_task(task, step)
             agent = self._pick_agent_for_step(step, plan.agent_type)
             step_skills = self._skills_for_step(plan.skills, step.skill)
-            system_prompt = await self.prepare_agent(agent, step_skills, task=task)
-            final = await agent.run(step_task, system_prompt=system_prompt)
+            system_prompt = await self._prepare_agent(agent, step_skills, session, task=task)
+            final = await agent.run(step_task, system_prompt=system_prompt, thread_id=session.id)
 
         return final
 
@@ -227,10 +224,10 @@ class Dispatcher:
         self,
         agent: Any,
         skill_names: list[str],
+        session: Session,
         *,
         task: str = "",
     ) -> str:
-        """通过 ContextBuilder 组装 system_prompt。"""
         skills: list[Any] = []
         seen: set[str] = set()
         if self._capability is not None:
@@ -244,8 +241,8 @@ class Dispatcher:
                     pass
 
         history_summary = ""
-        if self._use_memory and self._fact_store and self.state:
-            facts_text = self._fact_store.get_all_text(self.state.entity_name)
+        if self._use_memory and self._fact_store:
+            facts_text = self._fact_store.get_all_text(session.user_id)
             if facts_text:
                 history_summary = f"[长期记忆]\n{facts_text}"
 
@@ -262,14 +259,12 @@ class Dispatcher:
     # ------------------------------------------------------------------
 
     def _resolve_skill_deps(self, names: list[str]) -> list[str]:
-        """解析 Skill 依赖。"""
         if self._capability is None:
             return list(names)
         from haven.capability.resolver import DependencyResolver
         return DependencyResolver.resolve(list(names), self._capability)
 
     def _skills_for_step(self, plan_skills: list[str], step_skill: str | None) -> list[str]:
-        """合并 plan 级与 step 级 skill 并解析依赖。"""
         names = list(plan_skills)
         if step_skill and step_skill not in names:
             names.append(step_skill)
@@ -277,7 +272,6 @@ class Dispatcher:
 
     @staticmethod
     def _build_step_task(task: str, step: Any) -> str:
-        """为多步执行的单步构建 prompt。"""
         parts = [f"原始任务: {task}", f"当前步骤: {step.description}"]
         if step.expected_output:
             parts.append(f"预期产出: {step.expected_output}")
@@ -285,7 +279,6 @@ class Dispatcher:
 
     @staticmethod
     def _topological_sort(steps: list[Any]) -> list[Any]:
-        """拓扑排序 —— 确保依赖关系正确的执行顺序。"""
         step_map = {s.order: s for s in steps}
         in_degree: dict[int, int] = {s.order: len(s.depends_on) for s in steps}
         adj: dict[int, list[int]] = {s.order: [] for s in steps}
@@ -305,11 +298,10 @@ class Dispatcher:
                     queue.append(nb)
         return result
 
-    def _make_workflow_state(self, wf_name: str, task: str) -> dict:
-        """构建工作流初始状态字典。"""
+    def _make_workflow_state(self, wf_name: str, task: str, session: Session) -> dict:
         base = {
             "task": task,
-            "session_id": self.state.session_id if self.state else "default",
+            "session_id": session.id,
             "messages": [],
             "errors": [],
             "completed_steps": [],
@@ -321,7 +313,6 @@ class Dispatcher:
             "final_output": "",
             "started_at": 0.0,
         }
-        # 按工作流类型附加特定字段
         if "dev" in wf_name:
             base.update({
                 "architecture_doc": "", "source_code": "", "code_language": "python",
