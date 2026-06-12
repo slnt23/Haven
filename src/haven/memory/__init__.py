@@ -1,27 +1,28 @@
-"""Haven Memory —— 长期语义记忆模块。
+"""Haven Memory —— 统一记忆层。
 
-两套记忆系统：
+短期记忆：LangGraph SqliteSaver 自动管理（消息持久化）。
+长期记忆：MemoryManager（FactStore + FactExtractor + VectorMemory）。
 
-  短期记忆（对话历史）
-    → LangGraph AsyncSqliteSaver checkpointer 全自动管理
-    → 存储于 resource/checkpoint.db
-    → Haven 不参与，全部交给 LangGraph
-
-  长期记忆（语义事实）
-    → MemoryPipeline 编排提取→存储流程
-    → FactExtractor 用辅助 LLM 从对话中提取事实
-    → FactStore 提供 SQLite CRUD
-    → 存储于 resource/memory.db
+提供统一的 remember / recall / forget 接口。
+ContextBuilder 通过 MemoryManager 获取上下文。
 """
 
 from haven.memory.base import MemoryItem
 from haven.memory.extractor import FactExtractor
 from haven.memory.fact_store import FactStore
-from haven.memory.pipeline import MemoryPipeline
+from haven.memory.manager import MemoryManager
+from haven.memory.vector_memory import VectorMemory
+from haven.memory.conflict_resolver import ConflictResolver
+
+# Legacy alias
+MemoryPipeline = MemoryManager
 
 __all__ = [
     "MemoryItem",
     "FactStore",
     "FactExtractor",
+    "MemoryManager",
     "MemoryPipeline",
+    "VectorMemory",
+    "ConflictResolver",
 ]

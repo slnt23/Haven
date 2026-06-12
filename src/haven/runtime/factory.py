@@ -41,7 +41,7 @@ class Runtime:
 
     __slots__ = (
         "executor", "llm", "registry", "checkpointer",
-        "session_manager", "agents", "_sqlite_conn", "_pipeline",
+        "session_manager", "agents", "_sqlite_conn", "_memory",
     )
 
     def __init__(
@@ -53,7 +53,7 @@ class Runtime:
         session_manager: SessionManager,
         agents: dict[str, Agent],
         sqlite_conn: Any = None,
-        pipeline: Any = None,
+        memory_manager: Any = None,
     ) -> None:
         self.executor = executor
         self.llm = llm
@@ -62,7 +62,7 @@ class Runtime:
         self.session_manager = session_manager
         self.agents = agents
         self._sqlite_conn = sqlite_conn
-        self._pipeline = pipeline
+        self._memory = memory_manager
 
     async def execute(self, task: str, session_id: str = "default") -> str:
         """规划 + 执行：通过 Executor。"""
@@ -82,9 +82,9 @@ class Runtime:
         self._trigger_memory(task, "".join(text_chunks))
 
     def _trigger_memory(self, user_input: str, agent_response: str) -> None:
-        if self._pipeline is None:
+        if self._memory is None:
             return
-        asyncio.create_task(self._pipeline.after_turn(user_input, agent_response))
+        asyncio.create_task(self._memory.after_turn(user_input, agent_response))
 
     async def reset_session(self, session_id: str = "default") -> None:
         self.session_manager.reset(session_id)
@@ -152,25 +152,28 @@ async def create_runtime(
     session_manager = SessionManager(checkpointer=checkpointer)
     session_manager.create(session_id, user_id=entity_name, channel=channel)
 
-    # 5. ContextBuilder + Memory
-    context_builder = ContextBuilder()
-
+    # 5. MemoryManager + ContextBuilder
     memory_on = settings.memory_enabled if use_memory is None else use_memory
-    fact_store = None
-    memory_pipeline = None
+    memory_manager = None
     if memory_on:
         from haven.memory.fact_store import FactStore
+        from haven.memory.manager import MemoryManager
+        from haven.config import get_auxiliary_model
+        from haven.memory.extractor import FactExtractor
+
         memory_path = Path.cwd() / settings.memory_db_path
         fact_store = FactStore(memory_path)
 
-        from haven.config import get_auxiliary_model
-        from haven.memory.extractor import FactExtractor
-        from haven.memory.pipeline import MemoryPipeline
-
         aux_llm = create_llm(get_auxiliary_model())
-        memory_pipeline = MemoryPipeline(
-            FactExtractor(aux_llm), fact_store, entity_name=entity_name,
+        extractor = FactExtractor(aux_llm)
+
+        memory_manager = MemoryManager(
+            fact_store,
+            extractor=extractor,
+            entity_name=entity_name,
         )
+
+    context_builder = ContextBuilder(memory_manager=memory_manager)
 
     # 6. Agents — 使用 Agent 层
     agent_defs = _load_agent_definitions()
@@ -198,8 +201,7 @@ async def create_runtime(
         session_manager=session_manager,
         context_builder=context_builder,
         capability_registry=registry,
-        fact_store=fact_store,
-        use_memory=memory_on,
+        memory_manager=memory_manager,
     )
 
     executor = Executor(
@@ -217,7 +219,7 @@ async def create_runtime(
         session_manager=session_manager,
         agents=agents,
         sqlite_conn=conn,
-        pipeline=memory_pipeline,
+        memory_manager=memory_manager,
     )
 
     logger.info(

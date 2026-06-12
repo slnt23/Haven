@@ -36,8 +36,7 @@ class ExecutionPipeline:
         session_manager: SessionManager | None = None,
         context_builder: Any = None,
         capability_registry: CapabilityRegistry | None = None,
-        fact_store: Any = None,
-        use_memory: bool = True,
+        memory_manager: Any = None,
     ) -> None:
         self.agents = agents
         self._workflow_registry = workflow_registry
@@ -47,8 +46,7 @@ class ExecutionPipeline:
             context_builder = ContextBuilder()
         self._context_builder = context_builder
         self._capability = capability_registry
-        self._fact_store = fact_store
-        self._use_memory = use_memory and fact_store is not None
+        self._memory = memory_manager
         self._fallback = agents.get("general")
 
     # ------------------------------------------------------------------
@@ -215,8 +213,8 @@ class ExecutionPipeline:
                     pass
 
         history = ""
-        if self._use_memory and self._fact_store:
-            facts = self._fact_store.get_all_text(session.user_id)
+        if self._memory is not None:
+            facts = self._memory.recall_text(entity=session.user_id)
             if facts:
                 history = f"[长期记忆]\n{facts}"
 
