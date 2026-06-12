@@ -1,10 +1,9 @@
 """Runtime 工厂 —— 装配完整的 Haven 运行时系统。
 
 创建流程：
-  Config → LLM → CapabilityLoader → SessionManager → ContextBuilder → BaseAgent → Coordinator → Dispatcher
+  Config → LLM → CapabilityLoader → SessionManager → Executor → Runtime
 
-返回 Runtime 命名空间，提供 execute() / execute_stream() 便捷方法。
-Session 状态由 SessionManager 管理，Runtime 不保存 session 状态。
+Runtime 通过 Executor 执行任务，不直接接触 Agent。
 """
 
 from __future__ import annotations
@@ -22,11 +21,13 @@ from haven.core.llm import create_llm
 from haven.session.manager import SessionManager
 from haven.runtime.agents.base import BaseAgent
 from haven.runtime.context import ContextBuilder
-from haven.runtime.coordinator import Coordinator
 from haven.runtime.stream import StreamChunk
-from haven.runtime.dispatcher import Dispatcher
 from haven.capability.registry import CapabilityRegistry
 from haven.capability.loader import CapabilityLoader
+from haven.execution.planner import Planner
+from haven.execution.pipeline import ExecutionPipeline
+from haven.execution.executor import Executor
+from haven.execution.request import ExecutionRequest
 
 logger = logging.getLogger("haven.factory")
 
@@ -34,19 +35,18 @@ logger = logging.getLogger("haven.factory")
 class Runtime:
     """Haven 运行时容器。
 
-    持有 Coordinator（规划）、Dispatcher（执行）、SessionManager（会话）。
-    不直接保存 session 状态 —— 状态由 SessionManager 管理。
+    持有 Executor（唯一执行入口）。
+    Runtime 不直接接触 Agent、Planner、或 Pipeline。
     """
 
     __slots__ = (
-        "coordinator", "dispatcher", "llm", "registry",
-        "checkpointer", "session_manager", "agents", "_sqlite_conn", "_pipeline",
+        "executor", "llm", "registry", "checkpointer",
+        "session_manager", "agents", "_sqlite_conn", "_pipeline",
     )
 
     def __init__(
         self,
-        coordinator: Coordinator,
-        dispatcher: Dispatcher,
+        executor: Executor,
         llm: Any,
         registry: CapabilityRegistry,
         checkpointer: Any,
@@ -55,8 +55,7 @@ class Runtime:
         sqlite_conn: Any = None,
         pipeline: Any = None,
     ) -> None:
-        self.coordinator = coordinator
-        self.dispatcher = dispatcher
+        self.executor = executor
         self.llm = llm
         self.registry = registry
         self.checkpointer = checkpointer
@@ -66,30 +65,21 @@ class Runtime:
         self._pipeline = pipeline
 
     async def execute(self, task: str, session_id: str = "default") -> str:
-        """规划 + 执行。"""
-        session = self._ensure_session(session_id)
-        plan = await self.coordinator.plan(task)
-        result = await self.dispatcher.dispatch(plan, task, session)
-        self._trigger_memory(task, result)
-        return result
+        """规划 + 执行：通过 Executor。"""
+        request = ExecutionRequest(task=task, session_id=session_id)
+        response = await self.executor.execute(request)
+        self._trigger_memory(task, response.result)
+        return response.result
 
     async def execute_stream(self, task: str, session_id: str = "default"):
-        """规划 + 流式执行。"""
-        session = self._ensure_session(session_id)
-        plan = await self.coordinator.plan(task)
-        yield StreamChunk(
-            kind="plan",
-            content=f"{plan.intent} → {plan.agent_type} (复杂度: {plan.complexity})",
-        )
+        """规划 + 流式执行：通过 Executor。"""
+        request = ExecutionRequest(task=task, session_id=session_id)
         text_chunks: list[str] = []
-        async for chunk in self.dispatcher.dispatch_stream(plan, task, session):
+        async for chunk in self.executor.execute_stream(request):
             if chunk.kind == "text":
                 text_chunks.append(chunk.content)
             yield chunk
         self._trigger_memory(task, "".join(text_chunks))
-
-    def _ensure_session(self, session_id: str):
-        return self.session_manager.get_or_create(session_id)
 
     def _trigger_memory(self, user_input: str, agent_response: str) -> None:
         if self._pipeline is None:
@@ -152,7 +142,7 @@ async def create_runtime(
     )
     all_tools = registry.list_langchain_tools()
 
-    # 4. Shared Checkpointer + SessionManager
+    # 4. Checkpointer + SessionManager
     db_dir = Path.cwd() / "resource"
     db_dir.mkdir(parents=True, exist_ok=True)
     conn = await aiosqlite.connect(str(db_dir / "checkpoint.db"))
@@ -162,15 +152,14 @@ async def create_runtime(
     session_manager = SessionManager(checkpointer=checkpointer)
     session_manager.create(session_id, user_id=entity_name, channel=channel)
 
-    # 5. ContextBuilder + 长期记忆
+    # 5. ContextBuilder + Memory
     context_builder = ContextBuilder()
 
     memory_on = settings.memory_enabled if use_memory is None else use_memory
     fact_store = None
-    pipeline = None
+    memory_pipeline = None
     if memory_on:
         from haven.memory.fact_store import FactStore
-
         memory_path = Path.cwd() / settings.memory_db_path
         fact_store = FactStore(memory_path)
 
@@ -179,38 +168,31 @@ async def create_runtime(
         from haven.memory.pipeline import MemoryPipeline
 
         aux_llm = create_llm(get_auxiliary_model())
-        pipeline = MemoryPipeline(
-            FactExtractor(aux_llm),
-            fact_store,
-            entity_name=entity_name,
+        memory_pipeline = MemoryPipeline(
+            FactExtractor(aux_llm), fact_store, entity_name=entity_name,
         )
 
-    # 6. Create Agents — 不持有 session 状态
+    # 6. Agents
     agent_defs = _load_agent_definitions()
-
     agents: dict[str, BaseAgent] = {}
     for name, ad in agent_defs.items():
         agents[name] = BaseAgent(
-            name=name,
-            llm=llm,
-            tools=list(all_tools),
-            checkpointer=checkpointer,
-            agent_prompt=ad.get("prompt", ""),
+            name=name, llm=llm, tools=list(all_tools),
+            checkpointer=checkpointer, agent_prompt=ad.get("prompt", ""),
         )
 
     # 7. WorkflowRegistry
     from haven.runtime.workflows import dev, diagnosis, research  # noqa: F401
     from haven.runtime.registry import WorkflowRegistry
 
-    # 8. Coordinator
-    coordinator = Coordinator(
+    # 8. Execution Layer (Planner → Pipeline → Executor)
+    planner = Planner(
         llm=llm,
         workflow_registry=WorkflowRegistry,
         capability_registry=registry,
     )
 
-    # 9. Dispatcher
-    dispatcher = Dispatcher(
+    pipeline = ExecutionPipeline(
         agents=agents,
         workflow_registry=WorkflowRegistry,
         session_manager=session_manager,
@@ -220,25 +202,28 @@ async def create_runtime(
         use_memory=memory_on,
     )
 
-    # 10. 装配 Runtime
+    executor = Executor(
+        planner=planner,
+        pipeline=pipeline,
+        session_manager=session_manager,
+    )
+
+    # 9. 装配 Runtime
     runtime = Runtime(
-        coordinator=coordinator,
-        dispatcher=dispatcher,
+        executor=executor,
         llm=llm,
         registry=registry,
         checkpointer=checkpointer,
         session_manager=session_manager,
         agents=agents,
         sqlite_conn=conn,
-        pipeline=pipeline,
+        pipeline=memory_pipeline,
     )
 
     logger.info(
         "Runtime ready: %d agents, %d skills, %d workflows, %d tools",
-        len(agents),
-        registry.skill_count,
-        len(WorkflowRegistry.list_all()),
-        registry.tool_count,
+        len(agents), registry.skill_count,
+        len(WorkflowRegistry.list_all()), registry.tool_count,
     )
     return runtime
 
@@ -251,7 +236,6 @@ def _load_agent_definitions() -> dict[str, Any]:
     user_path = Path.cwd() / "haven.yaml"
     if user_path.is_file():
         config = OmegaConf.merge(config, OmegaConf.load(user_path))
-
     agents_cfg = config.get("agents", {})
     if hasattr(agents_cfg, "items"):
         return {k: dict(v) for k, v in agents_cfg.items()}
