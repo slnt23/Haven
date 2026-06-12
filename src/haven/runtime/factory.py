@@ -185,7 +185,7 @@ async def create_runtime(
         )
 
     # 7. WorkflowRegistry + WorkflowEngine
-    from haven.workflow.definitions import dev, diagnosis, research  # noqa: F401
+    from haven.workflow.definitions import dev, diagnosis, research, triage  # noqa: F401
     from haven.workflow.registry import WorkflowRegistry
     from haven.workflow.engine import WorkflowEngine
 
