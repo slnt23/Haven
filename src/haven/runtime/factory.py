@@ -19,7 +19,7 @@ from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from haven.config import settings
 from haven.core.llm import create_llm
 from haven.session.manager import SessionManager
-from haven.runtime.agents.base import BaseAgent
+from haven.agent.base import Agent
 from haven.runtime.context import ContextBuilder
 from haven.runtime.stream import StreamChunk
 from haven.capability.registry import CapabilityRegistry
@@ -51,7 +51,7 @@ class Runtime:
         registry: CapabilityRegistry,
         checkpointer: Any,
         session_manager: SessionManager,
-        agents: dict[str, BaseAgent],
+        agents: dict[str, Agent],
         sqlite_conn: Any = None,
         pipeline: Any = None,
     ) -> None:
@@ -172,11 +172,11 @@ async def create_runtime(
             FactExtractor(aux_llm), fact_store, entity_name=entity_name,
         )
 
-    # 6. Agents
+    # 6. Agents — 使用 Agent 层
     agent_defs = _load_agent_definitions()
-    agents: dict[str, BaseAgent] = {}
+    agents: dict[str, Agent] = {}
     for name, ad in agent_defs.items():
-        agents[name] = BaseAgent(
+        agents[name] = Agent(
             name=name, llm=llm, tools=list(all_tools),
             checkpointer=checkpointer, agent_prompt=ad.get("prompt", ""),
         )

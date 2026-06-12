@@ -6,7 +6,7 @@
 Runtime 通过 Executor 执行任务，不直接接触 Agent。
 """
 
-from haven.runtime.agents.base import BaseAgent
+from haven.agent.base import Agent
 from haven.runtime.context import ContextBuilder
 from haven.runtime.factory import Runtime, create_runtime
 from haven.runtime.stream import StreamChunk
@@ -20,7 +20,7 @@ from haven.execution.request import ExecutionPlan, PlanStep
 __all__ = [
     "Runtime",
     "create_runtime",
-    "BaseAgent",
+    "Agent",
     "ContextBuilder",
     "ExecutionPlan",
     "PlanStep",

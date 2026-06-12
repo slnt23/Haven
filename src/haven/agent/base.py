@@ -1,7 +1,16 @@
-"""BaseAgent —— 专业 Agent 基类，封装 LangChain ``create_agent``。
+"""Agent —— 专业 Agent，封装 LangChain ``create_agent``。
 
-Agent 不知道 Session —— 只接收 thread_id 作为参数。
-Session 状态由 Dispatcher 通过 SessionManager 管理。
+Agent 职责：
+  - 任务理解与模型调用
+  - Capability (Tool) 调用
+  - ReAct 循环管理
+
+Agent 不负责：
+  - CLI / Interface（由 Interface 层负责）
+  - Session 状态（由 SessionManager 负责）
+  - Memory 存储（由 Memory 层负责）
+
+优先基于 LangChain 官方 Agent/Runnable 封装。
 """
 
 from __future__ import annotations
@@ -13,20 +22,20 @@ from typing import Any, AsyncIterator
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.tools import BaseTool
-from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph.state import CompiledStateGraph
 from langchain.agents import create_agent
 
 from haven.config import settings
-from haven.runtime.stream import StreamChunk
 
 logger = logging.getLogger("haven.agent")
 
 
-class BaseAgent:
+class Agent:
     """LangChain ``create_agent`` 的轻量包装。
 
-    不持有 session 状态。session_id 通过方法参数传入。
+    不持有 session / CLI / memory 状态。
+    thread_id 通过方法参数传入，工具在创建时绑定。
     """
 
     def __init__(
@@ -34,7 +43,7 @@ class BaseAgent:
         name: str,
         llm: BaseChatModel,
         tools: list[BaseTool],
-        checkpointer: AsyncSqliteSaver,
+        checkpointer: BaseCheckpointSaver,
         *,
         agent_prompt: str = "",
         max_iterations: int | None = None,
@@ -74,10 +83,10 @@ class BaseAgent:
 
     async def _repair_checkpoint(self, config: dict) -> bool:
         try:
-            state = await self._agent.aget_state(config)
-            if not state or not state.values:
+            st = await self._agent.aget_state(config)
+            if not st or not st.values:
                 return False
-            messages = state.values.get("messages", [])
+            messages = st.values.get("messages", [])
 
             tool_call_ids: set[str] = set()
             for m in messages:
@@ -86,9 +95,7 @@ class BaseAgent:
                         tool_call_ids.add(tc["id"])
 
             tool_results: set[str] = {
-                m.tool_call_id
-                for m in messages
-                if hasattr(m, "tool_call_id")
+                m.tool_call_id for m in messages if hasattr(m, "tool_call_id")
             }
 
             orphaned = tool_call_ids - tool_results
@@ -97,14 +104,11 @@ class BaseAgent:
 
             from langchain_core.messages import ToolMessage
 
-            repair_msgs = [
-                ToolMessage(
-                    content="[中断恢复] 此工具调用被中断，未获取结果。",
-                    tool_call_id=tid,
-                )
+            repair = [
+                ToolMessage(content="[中断恢复] 此工具调用被中断，未获取结果。", tool_call_id=tid)
                 for tid in orphaned
             ]
-            await self._agent.aupdate_state(config, {"messages": repair_msgs})
+            await self._agent.aupdate_state(config, {"messages": repair})
             logger.warning("修复了 %d 个孤立的 tool_calls: %s", len(orphaned), orphaned)
             return True
         except Exception as exc:
@@ -126,7 +130,6 @@ class BaseAgent:
         """执行任务，返回完整响应文本。"""
         agent = self._get_agent()
         config = self._build_config(thread_id)
-
         await self._repair_checkpoint(config)
 
         msgs: list = []
@@ -153,11 +156,12 @@ class BaseAgent:
         system_prompt: str = "",
         thread_id: str = "default",
         **kwargs: Any,
-    ) -> AsyncIterator[StreamChunk]:
-        """流式执行，逐 token yield。"""
+    ) -> AsyncIterator:
+        """流式执行，逐 token yield StreamChunk。"""
+        from haven.runtime.stream import StreamChunk
+
         agent = self._get_agent()
         config = self._build_config(thread_id)
-
         await self._repair_checkpoint(config)
 
         msgs: list = []
@@ -174,35 +178,32 @@ class BaseAgent:
                     if kind == "on_chat_model_stream":
                         chunk = event.get("data", {}).get("chunk")
                         if chunk and hasattr(chunk, "content") and chunk.content:
-                            yield StreamChunk(
-                                kind="text",
-                                content=self._sanitize(chunk.content),
-                            )
+                            yield StreamChunk(kind="text", content=self._sanitize(chunk.content))
                     elif kind == "on_tool_start":
-                        tool_name = event.get("name", "unknown")
-                        yield StreamChunk(kind="status", content=f"调用工具: {tool_name}")
+                        yield StreamChunk(kind="status", content=f"调用工具: {event.get('name', 'unknown')}")
                     elif kind == "on_tool_end":
-                        tool_name = event.get("name", "unknown")
-                        yield StreamChunk(kind="status", content=f"工具完成: {tool_name}")
+                        yield StreamChunk(kind="status", content=f"工具完成: {event.get('name', 'unknown')}")
         except TimeoutError:
             await self._repair_checkpoint(config)
             yield StreamChunk(kind="status", content="执行超时，请检查网络连接或简化问题后重试。")
 
     # ------------------------------------------------------------------
-    # 工具方法
-    # ------------------------------------------------------------------
-
-    @staticmethod
-    def _sanitize(text: str) -> str:
-        return text.encode("utf-8", errors="surrogateescape").decode("utf-8", errors="replace")
-
-    # ------------------------------------------------------------------
-    # 属性
+    # 工具
     # ------------------------------------------------------------------
 
     @property
     def tools(self) -> list[BaseTool]:
         return self._tools
 
+    def bind_tools(self, tools: list[BaseTool]) -> None:
+        """替换工具集，下次调用时重新创建 LangGraph agent。"""
+        self._tools = list(tools)
+        self._agent = None
+
     def reset(self) -> None:
-        pass
+        """重置 agent 状态。"""
+        self._agent = None
+
+    @staticmethod
+    def _sanitize(text: str) -> str:
+        return text.encode("utf-8", errors="surrogateescape").decode("utf-8", errors="replace")
