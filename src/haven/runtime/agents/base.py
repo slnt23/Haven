@@ -203,7 +203,10 @@ class BaseAgent:
                     if kind == "on_chat_model_stream":
                         chunk = event.get("data", {}).get("chunk")
                         if chunk and hasattr(chunk, "content") and chunk.content:
-                            yield StreamChunk(kind="text", content=chunk.content)
+                            yield StreamChunk(
+                                kind="text",
+                                content=self._sanitize(chunk.content),
+                            )
                     elif kind == "on_tool_start":
                         tool_name = event.get("name", "unknown")
                         yield StreamChunk(kind="status", content=f"调用工具: {tool_name}")
@@ -216,6 +219,19 @@ class BaseAgent:
             yield StreamChunk(kind="status", content="执行超时，请检查网络连接或简化问题后重试。")
 
         self.state.turn_count += 1
+
+    # ------------------------------------------------------------------
+    # 工具方法
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _sanitize(text: str) -> str:
+        """移除非法 surrogate 字符，避免 UTF-8 编码崩溃。
+
+        DeepSeek 等模型的流式输出偶尔包含 ``\\udcXX`` 这类
+        孤立 surrogate 字符，Python 的 UTF-8 codec 会拒绝编码。
+        """
+        return text.encode("utf-8", errors="surrogateescape").decode("utf-8", errors="replace")
 
     # ------------------------------------------------------------------
     # 属性
