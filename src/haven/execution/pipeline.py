@@ -211,6 +211,7 @@ class ExecutionPipeline:
             skills=skills,
             task=task,
             history_summary=history,
+            channel=session.channel,
         )
         return ctx.system_prompt
 
