@@ -1,8 +1,6 @@
-"""LLM 生命周期管理。
+"""LLM 工厂 —— 委托给新 ModelFactory 的兼容层。
 
-从 ``models.yaml`` 加载模型定义，根据 provider 创建对应的 LangChain 模型实例。
-支持 DeepSeek（ChatDeepSeek）和 OpenAI 兼容 provider（ChatOpenAI，含阿里云 DashScope）。
-API Key 通过 ``models.yaml`` 中 ``api_key_env`` 字段声明的环境变量注入。
+Phase 7 (Agent) 后移除此文件，代码直接使用 ModelFactory。
 """
 
 from __future__ import annotations
@@ -11,52 +9,32 @@ import logging
 
 from langchain_core.language_models import BaseChatModel
 
-from haven.config import get_default_model, get_model_config
+from haven.config import load_config
+from haven.model.llm import ModelFactory
 
 logger = logging.getLogger("haven.core.llm")
 
+_factory: ModelFactory | None = None
+
+
+def _get_factory() -> ModelFactory:
+    global _factory
+    if _factory is None:
+        _factory = ModelFactory(load_config())
+    return _factory
+
 
 def create_llm(model_name: str | None = None) -> BaseChatModel:
-    """从 ``models.yaml`` 加载配置并创建 LangChain 模型实例。
+    """创建 LangChain 模型实例（兼容旧代码）。
 
     Args:
-        model_name: 模型名（对应 models.yaml 中 models 键）。
-                    为 None 时使用 default_model。
+        model_name: 模型名，为 None 时使用默认模型。
 
     Returns:
-        已配置的 LangChain BaseChatModel 实例。
+        已配置的 LangChain BaseChatModel。
 
     Raises:
-        ValueError: provider 不在支持的列表中。
-        KeyError: model_name 在 models.yaml 中不存在。
+        ModelError: 模型不存在或 provider 不支持。
     """
-    model_name = model_name or get_default_model()
-    cfg = get_model_config(model_name)
-    provider = cfg["provider"]
-
-    if provider == "deepseek":
-        from langchain_deepseek import ChatDeepSeek
-
-        model = ChatDeepSeek(
-            model=cfg["name"],
-            api_key=cfg["api_key"],
-            api_base=cfg["base_url"],
-            temperature=cfg["temperature"],
-            max_tokens=cfg["max_tokens"],
-        )
-    elif provider in ("openai", "aliyun"):
-        from langchain_openai import ChatOpenAI
-
-        model = ChatOpenAI(
-            model=cfg["name"],
-            api_key=cfg["api_key"],
-            base_url=cfg["base_url"],
-            temperature=cfg["temperature"],
-            max_tokens=cfg["max_tokens"],
-        )
-    else:
-        raise ValueError(
-            f"Unknown provider: {provider}. Supported: deepseek, openai, aliyun"
-        )
-
-    return model
+    client = _get_factory().create(model_name)
+    return client._raw
