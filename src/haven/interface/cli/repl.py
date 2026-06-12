@@ -1,7 +1,7 @@
 """Haven REPL —— 异步对话循环，流式输出。
 
 通过 Runtime.execute_stream() 与 Agent 交互。
-支持内建命令：/model /tools /help /exit
+所有入口只能调用 Runtime —— 禁止直接调用 Agent / Memory / Tool。
 """
 
 from __future__ import annotations
@@ -14,7 +14,6 @@ from rich.console import Console
 
 from haven import __version__
 from haven.runtime.factory import create_runtime
-from haven.runtime.stream import StreamChunk
 
 _BANNER = f"""
   Haven v{__version__}  |  多智能体交互框架
@@ -33,7 +32,6 @@ _HELP = """\
 
 
 async def _async_input(prompt: str) -> str:
-    """异步读取一行输入。"""
     loop = asyncio.get_running_loop()
     return (await loop.run_in_executor(None, input, prompt)).strip()
 
@@ -42,7 +40,6 @@ async def run_repl() -> None:
     """启动 Haven REPL 对话循环。"""
     console = Console(highlight=False)
 
-    # 创建 Runtime（包含 Coordinator + Dispatcher + Agents + Tools）
     runtime = await create_runtime(channel="cli")
     model_name = getattr(runtime.llm, "model_name", "unknown")
 
@@ -61,30 +58,11 @@ async def run_repl() -> None:
             if not user_input:
                 continue
 
-            # 内建命令
             if user_input.startswith("/"):
-                cmd = user_input.strip()
-                if cmd == "/exit":
-                    break
-                elif cmd == "/model":
-                    model_name = getattr(runtime.llm, "model_name", "unknown")
-                    console.print(f"  当前模型: [bold]{model_name}[/bold]")
-                elif cmd == "/tools":
-                    _show_tools(console, runtime)
-                elif cmd == "/agents":
-                    _show_agents(console, runtime)
-                elif cmd == "/clear":
-                    await runtime.reset_session()
-                    console.print("  [green]会话记忆已清除[/green]")
-                elif cmd == "/memory-clear":
-                    _clear_memory(console, runtime)
-                elif cmd.startswith("/log"):
-                    _toggle_log(cmd)
-                else:
-                    console.print(f"  [yellow]未知命令: {cmd}[/yellow]")
+                _handle_command(console, runtime, user_input.strip())
                 continue
 
-            # 流式对话：Runtime.execute_stream() → Dispatcher → Agent → LLM
+            # 所有执行通过 Runtime.execute_stream() —— 禁止直接调用 Agent
             try:
                 async for chunk in runtime.execute_stream(user_input):
                     if chunk.kind == "text":
@@ -112,32 +90,55 @@ async def run_repl() -> None:
 
 
 # ------------------------------------------------------------------
-# 内建命令实现
+# 内建命令
 # ------------------------------------------------------------------
 
 
+def _handle_command(console: Console, runtime, cmd: str) -> None:
+    if cmd == "/exit":
+        raise KeyboardInterrupt()
+    elif cmd == "/model":
+        model_name = getattr(runtime.llm, "model_name", "unknown")
+        console.print(f"  当前模型: [bold]{model_name}[/bold]")
+    elif cmd == "/tools":
+        _show_tools(console, runtime)
+    elif cmd == "/agents":
+        _show_agents(console, runtime)
+    elif cmd == "/clear":
+        asyncio.create_task(_async_clear(console, runtime))
+    elif cmd == "/memory-clear":
+        _clear_memory(console, runtime)
+    elif cmd.startswith("/log"):
+        _toggle_log(cmd)
+    else:
+        console.print(f"  [yellow]未知命令: {cmd}[/yellow]")
+
+
+async def _async_clear(console, runtime) -> None:
+    await runtime.reset_session()
+    console.print("  [green]会话记忆已清除[/green]")
+
+
 def _show_tools(console: Console, runtime) -> None:
-    """显示已加载的工具列表。"""
-    loader = getattr(runtime, "tool_loader", None)
-    if loader is None:
-        console.print("  [yellow]工具加载器不可用[/yellow]")
+    """通过 CapabilityRegistry 显示已加载工具。"""
+    registry = getattr(runtime, "registry", None)
+    if registry is None:
+        console.print("  [yellow]工具注册表不可用[/yellow]")
         return
 
-    tools = loader.registry.list()
+    tools = registry.list_tools()
     if not tools:
         console.print("  (无已加载工具)")
         return
 
     console.print(f"  [bold]已加载工具 ({len(tools)}):[/bold]")
     for t in tools:
-        provider = getattr(t, "metadata", None)
-        provider_name = getattr(provider, "provider", "?") if provider else "?"
-        desc = getattr(t, "description", "")[:60]
-        console.print(f"    • [cyan]{t.name}[/cyan]  [{provider_name}]  {desc}")
+        provider = t.metadata.provider
+        desc = t.description[:60]
+        console.print(f"    * [cyan]{t.name}[/cyan]  [{provider}]  {desc}")
 
 
 def _show_agents(console: Console, runtime) -> None:
-    """显示可用 Agent 列表。"""
     agents = getattr(runtime, "agents", {})
     if not agents:
         console.print("  (无可用 Agent)")
@@ -146,11 +147,10 @@ def _show_agents(console: Console, runtime) -> None:
     console.print(f"  [bold]可用 Agent ({len(agents)}):[/bold]")
     for name, agent in agents.items():
         prompt = getattr(agent, "agent_prompt", "")[:60]
-        console.print(f"    • [cyan]{name}[/cyan]  {prompt}")
+        console.print(f"    * [cyan]{name}[/cyan]  {prompt}")
 
 
 def _toggle_log(cmd: str) -> None:
-    """切换 haven 日志级别。"""
     haven_logger = logging.getLogger("haven")
     parts = cmd.strip().split()
     arg = parts[1] if len(parts) > 1 else ""
@@ -170,13 +170,13 @@ def _toggle_log(cmd: str) -> None:
 
 
 def _clear_memory(console: Console, runtime) -> None:
-    """清除长期记忆（通过 MemoryPipeline）。"""
-    pipeline = getattr(runtime, "_pipeline", None)
-    if pipeline is None:
+    """通过 MemoryManager 清除长期记忆。"""
+    memory = getattr(runtime, "_memory", None)
+    if memory is None:
         console.print("  [yellow]长期记忆未启用[/yellow]")
         return
     try:
-        pipeline.clear()
+        memory.forget()
         console.print("  [green]长期记忆已清除[/green]")
     except Exception as exc:
         console.print(f"  [red]清除失败: {exc}[/red]")

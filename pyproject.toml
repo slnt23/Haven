@@ -28,7 +28,7 @@ dependencies = [
 ]
 
 [project.scripts]
-haven = "haven.cli.main:main_cli"
+haven = "haven.interface.cli.main:main_cli"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/haven"]

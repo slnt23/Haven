@@ -7,7 +7,7 @@ import threading
 from typing import Any
 
 from haven.config import settings
-from haven.channels.base_channel import BaseChannel
+from haven.interface.channels.base import BaseChannel
 
 logger = logging.getLogger("haven.feishu_channel")
 

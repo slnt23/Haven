@@ -173,7 +173,7 @@ async def create_runtime(
             entity_name=entity_name,
         )
 
-    context_builder = ContextBuilder(memory_manager=memory_manager)
+    context_builder = ContextBuilder()
 
     # 6. Agents — 使用 Agent 层
     agent_defs = _load_agent_definitions()

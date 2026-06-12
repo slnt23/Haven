@@ -17,8 +17,8 @@ from haven.core.pidfile import is_running
 from haven.core.pidfile import read as pid_read
 from haven.core.pidfile import remove as pid_remove
 from haven.core.pidfile import write as pid_write
-from haven.channels.base_channel import BaseChannel
-from haven.channels.feishu_channel import FeishuChannel
+from haven.interface.channels.base import BaseChannel
+from haven.interface.channels.feishu import FeishuChannel
 
 logger = logging.getLogger("haven.daemon")
 
