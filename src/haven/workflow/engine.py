@@ -79,7 +79,7 @@ class WorkflowEngine:
         dispatcher: Any = None,
     ) -> AsyncIterator:
         """流式执行工作流。"""
-        from haven.runtime.stream import StreamChunk
+        from haven.infrastructure.types import StreamChunk
 
         graph = self._build(workflow_name)
         state = self._make_state(workflow_name, task, session, plan_skills)

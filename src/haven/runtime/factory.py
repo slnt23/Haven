@@ -21,7 +21,7 @@ from haven.core.llm import create_llm
 from haven.session.manager import SessionManager
 from haven.agent.base import Agent
 from haven.runtime.context import ContextBuilder
-from haven.runtime.stream import StreamChunk
+from haven.infrastructure.types import StreamChunk
 from haven.capability.registry import CapabilityRegistry
 from haven.capability.loader import CapabilityLoader
 from haven.execution.planner import Planner

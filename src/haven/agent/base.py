@@ -158,7 +158,7 @@ class Agent:
         **kwargs: Any,
     ) -> AsyncIterator:
         """流式执行，逐 token yield StreamChunk。"""
-        from haven.runtime.stream import StreamChunk
+        from haven.infrastructure.types import StreamChunk
 
         agent = self._get_agent()
         config = self._build_config(thread_id)

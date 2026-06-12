@@ -9,7 +9,7 @@ Runtime 通过 Executor 执行任务，不直接接触 Agent。
 from haven.agent.base import Agent
 from haven.runtime.context import ContextBuilder
 from haven.runtime.factory import Runtime, create_runtime
-from haven.runtime.stream import StreamChunk
+from haven.infrastructure.types import StreamChunk
 from haven.workflow.registry import WorkflowRegistry
 from haven.workflow.state import AgentState
 from haven.workflow.helpers import create_checkpointer

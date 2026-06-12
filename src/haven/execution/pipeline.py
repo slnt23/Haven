@@ -74,7 +74,7 @@ class ExecutionPipeline:
         self, plan: ExecutionPlan, task: str, session: Session,
     ) -> AsyncIterator:
         """流式执行版本。"""
-        from haven.runtime.stream import StreamChunk
+        from haven.infrastructure.types import StreamChunk
         thread_id = session.id
         wf = plan.workflow
 

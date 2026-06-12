@@ -1,3 +1,5 @@
+"""公共类型定义 —— StreamChunk 流式管道数据块。"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass

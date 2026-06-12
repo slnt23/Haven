@@ -72,7 +72,7 @@ class Executor:
         self, request: ExecutionRequest,
     ) -> AsyncIterator:
         """流式执行版本。"""
-        from haven.runtime.stream import StreamChunk
+        from haven.infrastructure.types import StreamChunk
         trace_id = request.trace_id or str(uuid.uuid4())
         ctx = TraceContext(trace_id=trace_id, span_id=str(uuid.uuid4()))
         set_current_trace(ctx)
