@@ -124,18 +124,11 @@ class ContextBuilder:
     # ==================================================================
 
     def _build_skill_prompt(self, skills: list[Any]) -> str:
-        from haven.skills.registry import SkillRegistry
-
         prompts: list[str] = []
         for s in skills:
-            name = getattr(s, "name", str(s))
-            try:
-                sk = SkillRegistry.get(name)
-                prompt = getattr(sk, "prompt_extension", None) or getattr(sk, "prompt", None)
-                if prompt:
-                    prompts.append(prompt)
-            except KeyError:
-                pass
+            prompt = getattr(s, "prompt", None)
+            if prompt:
+                prompts.append(prompt)
         return "\n\n".join(prompts)
 
     def _list_files(self, max_tokens: int = 500) -> str:

@@ -24,7 +24,7 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 
-from haven.skills.registry import SkillRegistry
+from haven.capability.registry import CapabilityRegistry
 
 logger = logging.getLogger("haven.coordinator")
 
@@ -125,10 +125,12 @@ class Coordinator:
         llm: BaseChatModel,
         *,
         workflow_registry: Any = None,
+        capability_registry: CapabilityRegistry | None = None,
     ) -> None:
         self.llm = llm
         self._workflow_registry = workflow_registry
-        self._plan_cache: dict[str, ExecutionPlan] = {}  # 计划缓存
+        self._capability = capability_registry
+        self._plan_cache: dict[str, ExecutionPlan] = {}
 
     # ------------------------------------------------------------------
     # 公开 API
@@ -160,7 +162,7 @@ class Coordinator:
 
         # LLM 规划
         plan = await self._llm_plan(task)
-        plan.skills = SkillRegistry.resolve_dependencies(plan.skills)
+        plan.skills = self._resolve_skill_deps(plan.skills)
         plan = self._validate_plan(plan)
 
         # 写入缓存
@@ -244,10 +246,11 @@ class Coordinator:
         except Exception:
             return "(工作流注册表不可用)"
 
-    @staticmethod
-    def _build_skill_menu() -> str:
+    def _build_skill_menu(self) -> str:
         """构建领域 Skill 菜单（供 Planner LLM 选择）。"""
-        domain = SkillRegistry.get_domain_skills()
+        if self._capability is None:
+            return "(无可用领域技能)"
+        domain = self._capability.get_domain_skills()
         if not domain:
             return "(无可用领域技能)"
 
@@ -266,10 +269,8 @@ class Coordinator:
     # 计划校验
     # ------------------------------------------------------------------
 
-    @staticmethod
-    def _validate_plan(plan: ExecutionPlan) -> ExecutionPlan:
+    def _validate_plan(self, plan: ExecutionPlan) -> ExecutionPlan:
         """校验计划中的 skill 和 workflow 引用是否存在。"""
-        # ---- 规范化 workflow 字段 ----------------------------------------
         wf = plan.workflow
         if wf is not None:
             wf_stripped = wf.strip().lower()
@@ -281,8 +282,11 @@ class Coordinator:
                 if wf not in available_wf:
                     logger.warning("计划引用了不存在的 workflow: '%s'，已忽略。可用: %s", wf, available_wf)
                     plan.workflow = None
-        # ------------------------------------------------------------------
-        available = set(SkillRegistry.list_all().keys())
+
+        if self._capability is not None:
+            available = set(self._capability.list_skills().keys())
+        else:
+            available = set()
         valid_skills = [s for s in plan.skills if s in available]
         invalid = set(plan.skills) - set(valid_skills)
         if invalid:
@@ -292,3 +296,10 @@ class Coordinator:
                 step.skill = None
         plan.skills = valid_skills
         return plan
+
+    def _resolve_skill_deps(self, names: list[str]) -> list[str]:
+        """解析 Skill 依赖（传递闭包）。"""
+        if self._capability is None:
+            return names
+        from haven.capability.resolver import DependencyResolver
+        return DependencyResolver.resolve(names, self._capability)

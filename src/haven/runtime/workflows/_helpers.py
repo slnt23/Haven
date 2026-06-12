@@ -12,7 +12,7 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-from haven.skills.registry import SkillRegistry
+from haven.capability.registry import CapabilityRegistry
 
 
 def get_agent(config: dict[str, Any], prefer: str = "general") -> Any:
@@ -54,7 +54,10 @@ async def run_agent_node(
 
     tag_matched: list[str] = []
     if skill_tags:
-        tag_matched = SkillRegistry.resolve_by_tags(list(skill_tags))
+        dispatcher_obj = cfg.get("dispatcher")
+        cap_registry = getattr(dispatcher_obj, "_capability", None) if dispatcher_obj else None
+        if cap_registry is not None:
+            tag_matched = cap_registry.resolve_by_tags(list(skill_tags))
 
     # 并集：plan_skills + tag_matched
     names = list(set(plan_skills) | set(tag_matched))
@@ -71,7 +74,8 @@ async def run_agent_node(
     # 回退路径：Dispatcher 不可用时直接用 ContextBuilder
     context_builder = cfg.get("context_builder")
     if context_builder is not None:
-        skills = _resolve_skills(names)
+        cap_registry = getattr(dispatcher_obj, "_capability", None) if dispatcher_obj else None
+        skills = _resolve_skills(cap_registry, names)
         ctx = context_builder.build(
             agent_prompt=getattr(rt, "agent_prompt", ""),
             skills=skills,
@@ -83,13 +87,16 @@ async def run_agent_node(
     return await rt.run(prompt, thread_id=node_thread)
 
 
-def _resolve_skills(names: list[str]) -> list[Any]:
+def _resolve_skills(registry: CapabilityRegistry | None, names: list[str]) -> list[Any]:
     """将 skill 名称列表解析为 Skill 对象列表，含依赖解析。"""
-    resolved = SkillRegistry.resolve_dependencies(list(names))
+    if registry is None:
+        return []
+    from haven.capability.resolver import DependencyResolver
+    resolved = DependencyResolver.resolve(list(names), registry)
     skills: list[Any] = []
     for name in resolved:
         try:
-            skills.append(SkillRegistry.get(name))
+            skills.append(registry.get_skill(name))
         except KeyError:
             pass
     return skills

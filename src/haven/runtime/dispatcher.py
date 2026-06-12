@@ -14,9 +14,9 @@ from __future__ import annotations
 import logging
 from typing import Any, AsyncIterator
 
+from haven.capability.registry import CapabilityRegistry
 from haven.runtime.context import ContextBuilder
 from haven.runtime.stream import StreamChunk
-from haven.skills.registry import SkillRegistry
 
 logger = logging.getLogger("haven.dispatcher")
 
@@ -41,13 +41,15 @@ class Dispatcher:
         workflow_registry: Any = None,
         state: Any = None,
         context_builder: ContextBuilder | None = None,
+        capability_registry: CapabilityRegistry | None = None,
         fact_store: Any = None,
         use_memory: bool = True,
     ) -> None:
-        self.agents = agents  # name → BaseAgent
-        self._workflow_registry = workflow_registry  # WorkflowRegistry
-        self.state = state  # RuntimeState
+        self.agents = agents
+        self._workflow_registry = workflow_registry
+        self.state = state
         self._context_builder = context_builder or ContextBuilder()
+        self._capability = capability_registry
         self._fact_store = fact_store
         self._use_memory = use_memory and fact_store is not None
         self._fallback_agent = agents.get("general")
@@ -134,12 +136,8 @@ class Dispatcher:
         *,
         task: str = "",
     ) -> str:
-        """为 Agent 构建 system_prompt。
-
-        Skill 仅影响 system_prompt 内容。工具在 Agent 创建时已绑定，
-        LLM 自行决定调用哪个 —— 此处不做任何工具解析。
-        """
-        resolved = SkillRegistry.resolve_dependencies(list(skill_names))
+        """为 Agent 构建 system_prompt。"""
+        resolved = self._resolve_skill_deps(list(skill_names))
         if self.state:
             self.state.active_skills = resolved
         return self._build_system_prompt(agent, resolved, task=task)
@@ -235,14 +233,15 @@ class Dispatcher:
         """通过 ContextBuilder 组装 system_prompt。"""
         skills: list[Any] = []
         seen: set[str] = set()
-        for name in skill_names:
-            if name in seen:
-                continue
-            try:
-                skills.append(SkillRegistry.get(name))
-                seen.add(name)
-            except KeyError:
-                pass
+        if self._capability is not None:
+            for name in skill_names:
+                if name in seen:
+                    continue
+                try:
+                    skills.append(self._capability.get_skill(name))
+                    seen.add(name)
+                except KeyError:
+                    pass
 
         history_summary = ""
         if self._use_memory and self._fact_store and self.state:
@@ -262,13 +261,19 @@ class Dispatcher:
     # 内部：辅助方法
     # ------------------------------------------------------------------
 
-    @staticmethod
-    def _skills_for_step(plan_skills: list[str], step_skill: str | None) -> list[str]:
+    def _resolve_skill_deps(self, names: list[str]) -> list[str]:
+        """解析 Skill 依赖。"""
+        if self._capability is None:
+            return list(names)
+        from haven.capability.resolver import DependencyResolver
+        return DependencyResolver.resolve(list(names), self._capability)
+
+    def _skills_for_step(self, plan_skills: list[str], step_skill: str | None) -> list[str]:
         """合并 plan 级与 step 级 skill 并解析依赖。"""
         names = list(plan_skills)
         if step_skill and step_skill not in names:
             names.append(step_skill)
-        return SkillRegistry.resolve_dependencies(names)
+        return self._resolve_skill_deps(names)
 
     @staticmethod
     def _build_step_task(task: str, step: Any) -> str:

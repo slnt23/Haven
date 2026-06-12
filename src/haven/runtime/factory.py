@@ -1,10 +1,9 @@
 """Runtime 工厂 —— 装配完整的 Haven 运行时系统。
 
 创建流程：
-  Config → LLM → ToolLoader → Registry → ContextBuilder → BaseAgent → Coordinator → Dispatcher
+  Config → LLM → CapabilityLoader → Registry → ContextBuilder → BaseAgent → Coordinator → Dispatcher
 
-返回一个 Runtime 命名空间，包含 coordinator 和 dispatcher，
-以及便捷方法 execute() / execute_stream()。
+返回 Runtime 命名空间，提供 execute() / execute_stream() 便捷方法。
 """
 
 from __future__ import annotations
@@ -25,21 +24,17 @@ from haven.runtime.context import ContextBuilder
 from haven.runtime.coordinator import Coordinator
 from haven.runtime.stream import StreamChunk
 from haven.runtime.dispatcher import Dispatcher
-from haven.skills.loader import SkillLoader
-from haven.skills.registry import SkillRegistry
+from haven.capability.registry import CapabilityRegistry
+from haven.capability.loader import CapabilityLoader, SkillLoader
 
 logger = logging.getLogger("haven.factory")
 
 
 class Runtime:
-    """Haven 运行时容器。
-
-    持有 coordinator（规划）和 dispatcher（执行），
-    提供 execute() / execute_stream() 便捷方法。
-    """
+    """Haven 运行时容器。"""
 
     __slots__ = (
-        "coordinator", "dispatcher", "llm", "tool_loader",
+        "coordinator", "dispatcher", "llm", "registry",
         "checkpointer", "state", "agents", "_sqlite_conn", "_pipeline",
     )
 
@@ -48,7 +43,7 @@ class Runtime:
         coordinator: Coordinator,
         dispatcher: Dispatcher,
         llm: Any,
-        tool_loader: Any,
+        registry: CapabilityRegistry,
         checkpointer: Any,
         state: RuntimeState,
         agents: dict[str, BaseAgent],
@@ -58,28 +53,20 @@ class Runtime:
         self.coordinator = coordinator
         self.dispatcher = dispatcher
         self.llm = llm
-        self.tool_loader = tool_loader
+        self.registry = registry
         self.checkpointer = checkpointer
         self.state = state
         self.agents = agents
-        self._sqlite_conn = sqlite_conn  # 原始 aiosqlite 连接，用于 close()
-        self._pipeline = pipeline  # 长期记忆管道（可能为 None）
+        self._sqlite_conn = sqlite_conn
+        self._pipeline = pipeline
 
     async def execute(self, task: str) -> str:
-        """规划 + 执行：一步完成。
-
-        执行完毕后触发长期记忆提取（后台非阻塞）。
-        """
         plan = await self.coordinator.plan(task)
         result = await self.dispatcher.dispatch(plan, task)
         self._trigger_memory(task, result)
         return result
 
     async def execute_stream(self, task: str):
-        """规划 + 流式执行。
-
-        流式结束后触发长期记忆提取（后台非阻塞）。
-        """
         plan = await self.coordinator.plan(task)
         yield StreamChunk(
             kind="plan",
@@ -93,13 +80,11 @@ class Runtime:
         self._trigger_memory(task, "".join(text_chunks))
 
     def _trigger_memory(self, user_input: str, agent_response: str) -> None:
-        """后台触发长期记忆提取，不阻塞主流程。"""
         if self._pipeline is None:
             return
         asyncio.create_task(self._pipeline.after_turn(user_input, agent_response))
 
     async def reset_session(self) -> None:
-        """清空当前会话。"""
         self.state.reset_turn()
         for agent in self.agents.values():
             agent.reset()
@@ -117,33 +102,26 @@ class Runtime:
                     pass
 
     def reset(self) -> None:
-        """同步重置（仅 turn 状态）。"""
         self.state.reset_turn()
         for agent in self.agents.values():
             agent.reset()
 
     def switch_model(self, model_name: str) -> str:
-        """运行时切换模型。"""
         for agent in self.agents.values():
             if hasattr(agent, "llm"):
                 agent.llm = create_llm(model_name)
-                agent._agent = None  # 触发 Agent 重建
+                agent._agent = None
         self.llm = self.agents.get("general").llm if self.agents.get("general") else self.llm
         return model_name
 
     async def close(self) -> None:
-        """优雅关闭：停止 ToolLoader → 关闭 SQLite 连接。
-
-        必须在事件循环关闭前调用，否则 aiosqlite 后台线程会报错。
-        """
-        # 1. 停止所有 Tool Provider（断开 MCP 连接等）
-        if self.tool_loader:
+        if self.registry:
             try:
-                await self.tool_loader.stop_all()
+                from haven.capability.loader import CapabilityLoader
+                loader = CapabilityLoader(self.registry)
+                await loader.stop_all()
             except Exception as exc:
-                logger.debug("ToolLoader close: %s", exc)
-
-        # 2. 关闭 SQLite 连接（必须在事件循环关闭前执行）
+                logger.debug("CapabilityLoader close: %s", exc)
         if self._sqlite_conn:
             try:
                 await self._sqlite_conn.close()
@@ -160,27 +138,26 @@ async def create_runtime(
     load_mcp: bool = True,
     use_memory: bool | None = None,
 ) -> Runtime:
-    """创建完整的 Haven 运行时系统。
-
-    返回 Runtime 实例，其 execute(task) 为统一入口。
-    """
+    """创建完整的 Haven 运行时系统。"""
     state = RuntimeState()
     state.session_id = session_id
     state.entity_name = entity_name
     state.channel = channel
 
-    # 1. Skills
-    if load_skills:
-        _load_all_skills()
+    # 1. CapabilityRegistry —— 统一的能力注册中心
+    registry = CapabilityRegistry()
 
     # 2. LLM
     llm = create_llm()
 
-    # 3. ToolLoader → Registry → list[BaseTool]
-    from haven.tools.loader import ToolLoader
-
-    loader = ToolLoader()
-    all_tools = await loader.load_all(load_mcp=load_mcp)
+    # 3. CapabilityLoader —— 加载 Tools + Skills
+    cap_loader = CapabilityLoader(registry)
+    await cap_loader.load_all(
+        skill_dir=settings.skill_directory,
+        load_mcp=load_mcp,
+        mcp_enabled=settings.mcp_enabled,
+    )
+    all_tools = registry.list_langchain_tools()
 
     # 4. Shared Checkpointer
     db_dir = Path.cwd() / "resource"
@@ -189,7 +166,7 @@ async def create_runtime(
     checkpointer = AsyncSqliteSaver(conn)
     await checkpointer.setup()
 
-    # 5. ContextBuilder + 长期记忆 (FactStore + MemoryPipeline)
+    # 5. ContextBuilder + 长期记忆
     context_builder = ContextBuilder()
 
     memory_on = settings.memory_enabled if use_memory is None else use_memory
@@ -201,7 +178,6 @@ async def create_runtime(
         memory_path = Path.cwd() / settings.memory_db_path
         fact_store = FactStore(memory_path)
 
-        # MemoryPipeline 负责后台事实提取→写入
         from haven.config import get_auxiliary_model
         from haven.memory.extractor import FactExtractor
         from haven.memory.pipeline import MemoryPipeline
@@ -213,7 +189,7 @@ async def create_runtime(
             entity_name=entity_name,
         )
 
-    # 6. Create Agents — 所有 Agent 共享全部工具
+    # 6. Create Agents —— 共享 registry 中的工具
     agent_defs = _load_agent_definitions()
 
     agents: dict[str, BaseAgent] = {}
@@ -227,22 +203,24 @@ async def create_runtime(
             agent_prompt=ad.get("prompt", ""),
         )
 
-    # 7. 注册预定义工作流（side-effect import）
+    # 7. WorkflowRegistry
     from haven.runtime.workflows import dev, diagnosis, research  # noqa: F401
     from haven.runtime.registry import WorkflowRegistry
 
-    # 8. Coordinator（仅规划）
+    # 8. Coordinator
     coordinator = Coordinator(
         llm=llm,
         workflow_registry=WorkflowRegistry,
+        capability_registry=registry,
     )
 
-    # 9. Dispatcher（执行调度）
+    # 9. Dispatcher
     dispatcher = Dispatcher(
         agents=agents,
         workflow_registry=WorkflowRegistry,
         state=state,
         context_builder=context_builder,
+        capability_registry=registry,
         fact_store=fact_store,
         use_memory=memory_on,
     )
@@ -252,7 +230,7 @@ async def create_runtime(
         coordinator=coordinator,
         dispatcher=dispatcher,
         llm=llm,
-        tool_loader=loader,
+        registry=registry,
         checkpointer=checkpointer,
         state=state,
         agents=agents,
@@ -263,20 +241,18 @@ async def create_runtime(
     logger.info(
         "Runtime ready: %d agents, %d skills, %d workflows, %d tools",
         len(agents),
-        len(SkillRegistry.list_all()),
+        registry.skill_count,
         len(WorkflowRegistry.list_all()),
-        len(all_tools),
+        registry.tool_count,
     )
     return runtime
 
 
 def _load_agent_definitions() -> dict[str, Any]:
-    """从 haven.yaml 加载 Agent 定义（仅 description + prompt）。"""
     from omegaconf import OmegaConf
 
     path = Path(__file__).resolve().parent.parent / "config" / "haven.yaml"
     config = OmegaConf.load(path)
-    # 用户覆盖
     user_path = Path.cwd() / "haven.yaml"
     if user_path.is_file():
         config = OmegaConf.merge(config, OmegaConf.load(user_path))
@@ -285,23 +261,3 @@ def _load_agent_definitions() -> dict[str, Any]:
     if hasattr(agents_cfg, "items"):
         return {k: dict(v) for k, v in agents_cfg.items()}
     return dict(agents_cfg)
-
-
-# ==================================================================
-# Skill 加载
-# ==================================================================
-
-_SYSTEM_PERSONA = Path(__file__).resolve().parent.parent / "config" / "haven.md"
-
-
-def _load_all_skills() -> None:
-    """加载系统人格 + 用户领域技能。"""
-    if _SYSTEM_PERSONA.is_file():
-        persona = SkillLoader.load_single(_SYSTEM_PERSONA)
-        if persona is not None:
-            SkillRegistry.register_instance(persona)
-
-    user_dir = find_user_path(settings.skill_directory)
-    if user_dir.is_dir():
-        for skill in SkillLoader.load_from_dir(user_dir):
-            SkillRegistry.register_instance(skill)

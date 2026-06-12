@@ -1,25 +1,16 @@
-"""网络搜索工具 —— DuckDuckGo 实现。
-
-LLM 调用方式：
-  - 工具名: web_search
-  - 输入: 搜索关键词字符串
-  - 输出: 格式化的搜索结果文本（标题 + URL + 摘要）
-"""
+"""网络搜索工具 —— DuckDuckGo 实现。"""
 
 from __future__ import annotations
 
 import asyncio
-from typing import Any
+from typing import Any, ClassVar
 
-from haven.tools.base import HavenTool
-from haven.tools.metadata import ToolMetadata
+from langchain_core.tools import BaseTool
+from pydantic import Field
 
 
-class WebSearchTool(HavenTool):
-    """搜索互联网获取最新信息。
-
-    LLM 通过 Function Calling 自动调用，无需框架层介入选择。
-    """
+class WebSearchTool(BaseTool):
+    """搜索互联网获取最新信息。"""
 
     name: str = "web_search"
     description: str = (
@@ -27,28 +18,16 @@ class WebSearchTool(HavenTool):
         "Input: a search query string. "
         "Returns: formatted search results with titles, URLs, and snippets."
     )
-    metadata: ToolMetadata = ToolMetadata(provider="builtin")
-
-    # ------------------------------------------------------------------
-    # LangChain BaseTool 接口
-    # ------------------------------------------------------------------
 
     async def _arun(self, query: str) -> str:
-        """异步执行搜索并格式化为文本。"""
         results = await self._search(query)
         return self._format(results)
 
     def _run(self, query: str) -> str:
-        """同步执行搜索（回退路径）。"""
         results = self._search_sync(query)
         return self._format(results)
 
-    # ------------------------------------------------------------------
-    # 搜索实现
-    # ------------------------------------------------------------------
-
     async def _search(self, query: str, num_results: int = 5) -> list[dict[str, str]]:
-        """异步搜索 —— DuckDuckGo（15 秒超时）。"""
         from ddgs import DDGS
 
         loop = asyncio.get_running_loop()
@@ -68,9 +47,7 @@ class WebSearchTool(HavenTool):
         ]
 
     def _search_sync(self, query: str, num_results: int = 5) -> list[dict[str, str]]:
-        """同步搜索 —— DuckDuckGo（15 秒超时）。"""
         import threading
-
         from ddgs import DDGS
 
         result: list[dict[str, str]] = []
@@ -95,10 +72,6 @@ class WebSearchTool(HavenTool):
         if error:
             raise error
         return result
-
-    # ------------------------------------------------------------------
-    # 格式化
-    # ------------------------------------------------------------------
 
     @staticmethod
     def _format(results: list[dict[str, str]]) -> str:
