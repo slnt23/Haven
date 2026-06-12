@@ -1,7 +1,9 @@
 """WorkflowEngine —— 基于 LangGraph 的工作流执行引擎。
 
-Workflow 本质也是 Execution：接收任务，返回结果，统一事件输出。
-优先使用 LangGraph StateGraph。
+Workflow 本质也是 Execution：接收任务，返回 WorkflowResult。
+所有 Workflow 必须遵守输出契约：state["final_output"]。
+
+Pipeline 只读取 WorkflowResult.output，不接触 raw state dict。
 """
 
 from __future__ import annotations
@@ -13,6 +15,7 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph.state import CompiledStateGraph
 
 from haven.session.models import Session
+from haven.workflow.result import WorkflowResult
 
 logger = logging.getLogger("haven.workflow.engine")
 
@@ -23,7 +26,9 @@ class WorkflowEngine:
     封装工作流的构建与执行。每个注册的工作流是一个 factory 函数，
     返回编译后的 LangGraph StateGraph。
 
-    统一事件输出：通过 yield 流式返回执行状态。
+    输出契约：
+      Workflow 的终端节点必须设置 state["final_output"]。
+      Engine 只读取此字段，不做任何猜测或 fallback。
     """
 
     def __init__(self, registry: Any = None) -> None:
@@ -41,8 +46,8 @@ class WorkflowEngine:
         agents: dict[str, Any] | None = None,
         context_builder: Any = None,
         dispatcher: Any = None,
-    ) -> str:
-        """执行工作流，返回最终结果。"""
+    ) -> WorkflowResult:
+        """执行工作流，返回 WorkflowResult。"""
         graph = self._build(workflow_name)
         state = self._make_state(workflow_name, task, session, plan_skills)
 
@@ -57,14 +62,24 @@ class WorkflowEngine:
         }
 
         try:
-            result = await graph.ainvoke(state, config=config)
+            result_state = await graph.ainvoke(state, config=config)
         except Exception as exc:
             logger.error("工作流 '%s' 执行失败: %s", workflow_name, exc)
-            return f"[错误] 工作流执行失败: {exc}"
+            return WorkflowResult(
+                output=f"[错误] 工作流执行失败: {exc}",
+                errors=[str(exc)],
+            )
 
-        if result.get("status") == "failed":
-            return "[工作流失败]\n" + "\n".join(result.get("errors", []))
-        return result.get("final_output") or "(工作流完成)"
+        wf_result = WorkflowResult.from_state(result_state)
+
+        if not wf_result.output:
+            logger.warning(
+                "工作流 '%s' 未设置 final_output。"
+                "请确保终端节点在 state 中设置 'final_output' 字段。",
+                workflow_name,
+            )
+
+        return wf_result
 
     async def run_stream(
         self,
@@ -78,7 +93,7 @@ class WorkflowEngine:
         context_builder: Any = None,
         dispatcher: Any = None,
     ) -> AsyncIterator:
-        """流式执行工作流。"""
+        """流式执行工作流。yield token/status 事件并通过最终 state 提取输出。"""
         from haven.infrastructure.types import StreamChunk
 
         graph = self._build(workflow_name)
@@ -94,6 +109,7 @@ class WorkflowEngine:
             }
         }
 
+        final_state: dict = {}
         try:
             async for event in graph.astream_events(state, config=config):
                 kind = event.get("event", "")
@@ -105,9 +121,23 @@ class WorkflowEngine:
                     yield StreamChunk(kind="status", content=f"调用工具: {event.get('name', 'unknown')}")
                 elif kind == "on_tool_end":
                     yield StreamChunk(kind="status", content=f"工具完成: {event.get('name', 'unknown')}")
+                elif kind == "on_chain_end" and event.get("name") == workflow_name:
+                    final_state = event.get("data", {}).get("output", {})
         except Exception as exc:
             logger.error("工作流 '%s' 流式执行失败: %s", workflow_name, exc)
             yield StreamChunk(kind="text", content=f"[错误] {exc}")
+            return
+
+        # 流式输出 token 后，附加最终结果文本
+        wf_result = WorkflowResult.from_state(final_state)
+        if wf_result.output:
+            yield StreamChunk(kind="text", content="\n" + wf_result.output)
+        else:
+            logger.warning(
+                "工作流 '%s' 未设置 final_output。"
+                "请确保终端节点在 state 中设置 'final_output' 字段。",
+                workflow_name,
+            )
 
     def _build(self, workflow_name: str) -> CompiledStateGraph:
         if self._registry is None:
@@ -121,7 +151,6 @@ class WorkflowEngine:
         session: Session,
         plan_skills: list[str] | None = None,
     ) -> dict:
-        """构建工作流初始状态。"""
         base = {
             "task": task,
             "session_id": session.id,

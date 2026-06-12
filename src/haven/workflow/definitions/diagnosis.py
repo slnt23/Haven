@@ -94,6 +94,7 @@ async def _adviser_node(state: DiagnosisAgentState, config: RunnableConfig) -> d
         "completed_steps": ["adviser"],
         "node_outputs": {"adviser": output},
         "recommendations": output,
+        "final_output": output,
     }
 
 

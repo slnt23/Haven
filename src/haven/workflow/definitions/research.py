@@ -104,6 +104,7 @@ async def _synthesizer_node(state: ResearchAgentState, config: RunnableConfig) -
         "completed_steps": ["synthesizer"],
         "node_outputs": {"synthesizer": output},
         "final_report": output,
+        "final_output": output,
     }
 
 

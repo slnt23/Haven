@@ -164,6 +164,7 @@ async def _tester_node(state: DevAgentState, config: RunnableConfig) -> dict:
     result["test_report"] = output
     result["test_passed"] = passed
     result["test_failures"] = _parse_failures(output)
+    result["final_output"] = output
     return result
 
 

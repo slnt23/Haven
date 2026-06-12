@@ -158,7 +158,7 @@ class ExecutionPipeline:
         engine = WorkflowEngine(registry=self._workflow_registry)
         agent = self._pick_agent(plan)
 
-        return await engine.run(
+        result = await engine.run(
             workflow_name=wf_name,
             task=task,
             session=session,
@@ -168,6 +168,7 @@ class ExecutionPipeline:
             context_builder=self._context_builder,
             dispatcher=self,
         )
+        return result.output
 
     async def _via_steps(self, plan: ExecutionPlan, task: str, session: Session) -> str:
         ordered = self._topological_sort(plan.steps)

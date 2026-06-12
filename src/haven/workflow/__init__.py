@@ -7,10 +7,12 @@ from haven.workflow.state import AgentState
 from haven.workflow.registry import WorkflowRegistry
 from haven.workflow.helpers import create_checkpointer
 from haven.workflow.engine import WorkflowEngine
+from haven.workflow.result import WorkflowResult
 
 __all__ = [
     "AgentState",
     "WorkflowRegistry",
     "create_checkpointer",
     "WorkflowEngine",
+    "WorkflowResult",
 ]
