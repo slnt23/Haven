@@ -154,33 +154,20 @@ class ExecutionPipeline:
             sp = await self._prepare(agent, plan.skills, session, task=task)
             return await agent.run(task, system_prompt=sp, thread_id=session.id)
 
-        try:
-            compiled_graph = self._workflow_registry.build(wf_name)
-        except Exception as exc:
-            logger.error("构建工作流 '%s' 失败: %s", wf_name, exc)
-            return f"[错误] 工作流构建失败: {exc}"
-
-        state = _make_workflow_state(wf_name, task, session)
-        state["plan_skills"] = list(plan.skills)
+        from haven.workflow.engine import WorkflowEngine
+        engine = WorkflowEngine(registry=self._workflow_registry)
         agent = self._pick_agent(plan)
 
-        try:
-            result = await compiled_graph.ainvoke(state, config={
-                "configurable": {
-                    "thread_id": session.id,
-                    "agent": agent,
-                    "agents": self.agents,
-                    "context_builder": self._context_builder,
-                    "dispatcher": self,
-                }
-            })
-        except Exception as exc:
-            logger.error("工作流 '%s' 执行失败: %s", wf_name, exc)
-            return f"[错误] 工作流执行失败: {exc}"
-
-        if result.get("status") == "failed":
-            return "[工作流失败]\n" + "\n".join(result.get("errors", []))
-        return result.get("final_output") or "(工作流完成)"
+        return await engine.run(
+            workflow_name=wf_name,
+            task=task,
+            session=session,
+            plan_skills=list(plan.skills),
+            agent=agent,
+            agents=self.agents,
+            context_builder=self._context_builder,
+            dispatcher=self,
+        )
 
     async def _via_steps(self, plan: ExecutionPlan, task: str, session: Session) -> str:
         ordered = self._topological_sort(plan.steps)
@@ -268,30 +255,3 @@ class ExecutionPipeline:
                 if in_degree[nb] == 0:
                     queue.append(nb)
         return result
-
-
-def _make_workflow_state(wf_name: str, task: str, session: Session) -> dict:
-    base = {
-        "task": task, "session_id": session.id,
-        "messages": [], "errors": [], "completed_steps": [],
-        "current_step": "", "node_outputs": {}, "node_retry_counts": {},
-        "max_retries_per_node": 3, "status": "pending",
-        "final_output": "", "started_at": 0.0,
-    }
-    if "dev" in wf_name:
-        base.update({
-            "architecture_doc": "", "source_code": "", "code_language": "python",
-            "review_feedback": "", "review_score": 0.0, "review_blockers": [],
-            "test_report": "", "test_passed": False, "test_failures": [],
-        })
-    elif "research" in wf_name:
-        base.update({
-            "research_topic": "", "raw_findings": [], "analyzed_insights": "",
-            "final_report": "", "sources": [],
-        })
-    elif "diagnosis" in wf_name:
-        base.update({
-            "symptoms": "", "collected_info": "", "possible_causes": "",
-            "diagnosis": "", "recommendations": [],
-        })
-    return base

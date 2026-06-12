@@ -184,9 +184,10 @@ async def create_runtime(
             checkpointer=checkpointer, agent_prompt=ad.get("prompt", ""),
         )
 
-    # 7. WorkflowRegistry
-    from haven.runtime.workflows import dev, diagnosis, research  # noqa: F401
-    from haven.runtime.registry import WorkflowRegistry
+    # 7. WorkflowRegistry + WorkflowEngine
+    from haven.workflow.definitions import dev, diagnosis, research  # noqa: F401
+    from haven.workflow.registry import WorkflowRegistry
+    from haven.workflow.engine import WorkflowEngine
 
     # 8. Execution Layer (Planner → Pipeline → Executor)
     planner = Planner(

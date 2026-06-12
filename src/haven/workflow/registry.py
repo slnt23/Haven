@@ -1,36 +1,45 @@
-"""WorkflowRegistry — 工作流注册与发现。
-
-Coordinator 通过此注册表获取可用工作流列表，供 LLM 规划和选择。
-"""
+"""WorkflowRegistry —— 工作流注册与发现。"""
 
 from __future__ import annotations
 
 from typing import Any
 
-from haven.core.registry import Registry
 
-
-class WorkflowRegistry(Registry):
+class WorkflowRegistry:
     """工作流注册表。
 
     注册的 factory 函数返回编译后的 LangGraph StateGraph 实例。
-
-    用法::
-
-        @WorkflowRegistry.register("dev_flow")
-        def create_dev_workflow() -> CompiledStateGraph: ...
-
-        menu = WorkflowRegistry.get_selection_context()
     """
 
     _label = "Workflow"
+    _items: dict[str, Any] = {}
+
+    @classmethod
+    def register(cls, name: str) -> Any:
+        def decorator(factory: Any) -> Any:
+            cls._items[name] = factory
+            return factory
+        return decorator
+
+    @classmethod
+    def get(cls, name: str) -> Any:
+        if name not in cls._items:
+            raise KeyError(f"Workflow '{name}' not found. Available: {list(cls._items.keys())}")
+        return cls._items[name]
+
+    @classmethod
+    def list_all(cls) -> list[str]:
+        return list(cls._items.keys())
+
+    @classmethod
+    def build(cls, name: str) -> Any:
+        factory = cls.get(name)
+        return factory()
 
     @classmethod
     def get_selection_context(cls) -> str:
-        """格式化可用工作流列表（供 Planner LLM 选择）。"""
         if not cls._items:
             return "(无可用工作流)"
-
         lines: list[str] = []
         for name, factory in cls._items.items():
             desc = ""
@@ -44,17 +53,13 @@ class WorkflowRegistry(Registry):
                 use_cases = factory.use_cases
             if hasattr(factory, "step_count"):
                 step_count = str(factory.step_count)
-
             lines.append(f"- name: {name}")
             lines.append(f"  description: {desc}")
             if use_cases:
                 lines.append(f"  use_cases: {use_cases}")
             lines.append(f"  steps: {step_count}")
-
         return "\n".join(lines)
 
     @classmethod
-    def build(cls, name: str) -> Any:
-        """调用注册的 factory 函数，返回编译后的 LangGraph StateGraph。"""
-        factory = cls.get(name)
-        return factory()
+    def clear(cls) -> None:
+        cls._items.clear()
