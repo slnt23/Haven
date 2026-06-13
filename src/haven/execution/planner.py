@@ -4,7 +4,7 @@
 规划过程本身是一个 LangGraph StateGraph：
   classify → select_skills → build_plan → validate
 
-已删除旧 Coordinator.hardcoded_trivial_set、MD5 缓存等 —— 全部由 LLM 决定。
+规划过程由 LangGraph StateGraph 驱动，LLM Structured Output 决定。
 """
 
 from __future__ import annotations

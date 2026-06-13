@@ -225,52 +225,42 @@ class ConfigLoader:
 # ============================================================================
 
 
+_cached_config: AppConfig | None = None
+
+
+def clear_config_cache() -> None:
+    """清除缓存的配置（测试用）。"""
+    global _cached_config
+    _cached_config = None
+
+
 def load_config(*, overrides: dict[str, Any] | None = None) -> AppConfig:
-    """按优先级链加载配置。
+    """按优先级链加载配置（有缓存，无 overrides 时复用）。
 
     外部模块的唯一配置入口。返回所有模块可依赖的类型化 AppConfig。
     """
-    return ConfigLoader.load(overrides=overrides)
+    global _cached_config
+    if overrides is None and _cached_config is not None:
+        return _cached_config
+    cfg = ConfigLoader.load(overrides=overrides)
+    if overrides is None:
+        _cached_config = cfg
+    return cfg
 
 
 # ============================================================================
-# 模型配置查询（向后兼容）
+# 工具函数
 # ============================================================================
 
 
-def get_model_config(model_name: str) -> dict[str, Any]:
-    """解析单个模型配置为字典（兼容旧代码）。
-
-    新代码应通过 AppConfig.models[model_name] 获取 ModelConfig 对象。
-    """
-    models = _load_models_config()
-    if model_name not in models:
-        raise KeyError(f"Model '{model_name}' not found in models.yaml")
-    mc = models[model_name]
-    return {
-        "name": mc.name,
-        "provider": mc.provider,
-        "api_key": mc.api_key,
-        "base_url": mc.base_url,
-        "temperature": mc.temperature,
-        "max_tokens": mc.max_tokens,
-    }
+def find_user_path(relative_path: str) -> Path:
+    """返回 CWD 下的路径。"""
+    return Path.cwd() / relative_path
 
 
-def get_default_model() -> str:
-    """返回 models.yaml 中的默认模型名。"""
-    raw = _load_yaml_with_merge(_MODELS_YAML, "models.yaml")
-    return str(raw.get("default_model", "deepseek-v4-pro"))
+def get_mcp_config() -> list[dict]:
+    """返回来自 mcp.json 的原始 MCP 服务器配置。"""
+    from haven.config.mcp import load_mcp_servers
+    return load_mcp_servers()
 
 
-def get_auxiliary_model() -> str:
-    """返回辅助模型名，未配置时回退为 default_model。"""
-    raw = _load_yaml_with_merge(_MODELS_YAML, "models.yaml")
-    aux = raw.get("auxiliary_model")
-    return str(aux) if aux else str(raw.get("default_model", "deepseek-v4-pro"))
-
-
-def load_models_config() -> Any:
-    """返回 models.yaml 中所有模型定义的原始配置（兼容旧代码）。"""
-    raw = _load_yaml_with_merge(_MODELS_YAML, "models.yaml")
-    return raw.get("models", {})

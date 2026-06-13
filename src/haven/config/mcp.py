@@ -110,7 +110,7 @@ def _resolve_mcp_path(path: str | Path | None) -> Path | None:
         candidate = Path(path)
         return candidate if candidate.is_file() else None
 
-    from haven.config import find_user_path
+    from haven.config.loader import find_user_path
 
     for relative in ("mcp.json", "mcp/mcp.json"):
         candidate = find_user_path(relative)

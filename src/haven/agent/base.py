@@ -26,7 +26,7 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph.state import CompiledStateGraph
 from langchain.agents import create_agent
 
-from haven.config import settings
+from haven.config import load_config
 
 logger = logging.getLogger("haven.agent")
 
@@ -53,7 +53,7 @@ class Agent:
         self._tools = list(tools)
         self._checkpointer = checkpointer
         self.agent_prompt = agent_prompt
-        self.max_iterations = max_iterations or settings.agent_max_iterations
+        self.max_iterations = max_iterations or load_config().agent_max_iterations
 
         self._agent: CompiledStateGraph | None = None
         self._agent_tools_hash: int = 0
@@ -140,7 +140,7 @@ class Agent:
         try:
             result = await asyncio.wait_for(
                 agent.ainvoke({"messages": msgs}, config=config),
-                timeout=settings.agent_max_execution_time,
+                timeout=load_config().agent_max_execution_time,
             )
         except asyncio.TimeoutError:
             await self._repair_checkpoint(config)
@@ -170,7 +170,7 @@ class Agent:
         msgs.append(HumanMessage(content=task))
 
         try:
-            async with asyncio.timeout(settings.agent_max_execution_time):
+            async with asyncio.timeout(load_config().agent_max_execution_time):
                 async for event in agent.astream_events(
                     {"messages": msgs}, config=config,
                 ):

@@ -16,8 +16,8 @@ from typing import Any
 
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
-from haven.config import settings
-from haven.core.llm import create_llm
+from haven.config import load_config
+from haven.model.llm import ModelFactory
 from haven.session.manager import SessionManager
 from haven.agent.base import Agent
 from haven.runtime.context import ContextBuilder
@@ -42,6 +42,7 @@ class Runtime:
     __slots__ = (
         "executor", "llm", "registry", "checkpointer",
         "session_manager", "agents", "_sqlite_conn", "_memory",
+        "_model_factory",
     )
 
     def __init__(
@@ -54,6 +55,7 @@ class Runtime:
         agents: dict[str, Agent],
         sqlite_conn: Any = None,
         memory_manager: Any = None,
+        model_factory: Any = None,
     ) -> None:
         self.executor = executor
         self.llm = llm
@@ -63,6 +65,7 @@ class Runtime:
         self.agents = agents
         self._sqlite_conn = sqlite_conn
         self._memory = memory_manager
+        self._model_factory = model_factory
 
     async def execute(self, task: str, session_id: str = "default") -> str:
         """规划 + 执行：通过 Executor。"""
@@ -97,8 +100,8 @@ class Runtime:
 
     def switch_model(self, model_name: str) -> str:
         for agent in self.agents.values():
-            if hasattr(agent, "llm"):
-                agent.llm = create_llm(model_name)
+            if hasattr(agent, "llm") and self._model_factory is not None:
+                agent.llm = self._model_factory.create(model_name)._raw
                 agent._agent = None
         self.llm = self.agents.get("general").llm if self.agents.get("general") else self.llm
         return model_name
@@ -130,15 +133,17 @@ async def create_runtime(
     # 1. CapabilityRegistry
     registry = CapabilityRegistry()
 
-    # 2. LLM
-    llm = create_llm()
+    # 2. ModelFactory + LLM
+    cfg = load_config()
+    model_factory = ModelFactory(cfg)
+    llm = model_factory.create()._raw
 
     # 3. CapabilityLoader
     cap_loader = CapabilityLoader(registry)
     await cap_loader.load_all(
-        skill_dir=settings.skill_directory,
+        skill_dir=cfg.skill_directory,
         load_mcp=load_mcp,
-        mcp_enabled=settings.mcp_enabled,
+        mcp_enabled=cfg.mcp_enabled,
     )
     all_tools = registry.list_langchain_tools()
 
@@ -153,18 +158,17 @@ async def create_runtime(
     session_manager.create(session_id, user_id=entity_name, channel=channel)
 
     # 5. MemoryManager + ContextBuilder
-    memory_on = settings.memory_enabled if use_memory is None else use_memory
+    memory_on = cfg.memory.enabled if use_memory is None else use_memory
     memory_manager = None
     if memory_on:
         from haven.memory.fact_store import FactStore
         from haven.memory.manager import MemoryManager
-        from haven.config import get_auxiliary_model
         from haven.memory.extractor import FactExtractor
 
-        memory_path = Path.cwd() / settings.memory_db_path
+        memory_path = Path.cwd() / cfg.memory.db_path
         fact_store = FactStore(memory_path)
 
-        aux_llm = create_llm(get_auxiliary_model())
+        aux_llm = model_factory.create(cfg.auxiliary_model)._raw
         extractor = FactExtractor(aux_llm)
 
         memory_manager = MemoryManager(
@@ -221,6 +225,7 @@ async def create_runtime(
         agents=agents,
         sqlite_conn=conn,
         memory_manager=memory_manager,
+        model_factory=model_factory,
     )
 
     logger.info(

@@ -204,8 +204,6 @@ class CapabilityLoader:
                 self.registry.register(skill)
 
     def _load_user_skills(self, skill_dir: str) -> None:
-        from haven.config import settings
-
         user_dir = Path.cwd() / skill_dir
         if not user_dir.is_dir():
             return
@@ -225,7 +223,7 @@ class CapabilityLoader:
     async def _load_mcp_tools(self) -> None:
         from haven.capability.tools.providers.mcp import MCPProvider
         from haven.config.mcp import MCPServerConfig
-        from haven.config import get_mcp_config
+        from haven.config.loader import get_mcp_config
 
         raw_configs = get_mcp_config()
         for entry in raw_configs:

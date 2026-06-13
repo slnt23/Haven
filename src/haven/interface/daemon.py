@@ -1,7 +1,6 @@
 """Haven 守护进程 —— 长期运行，通过飞书 WebSocket 共享单个 Runtime。
 
-Runtime 包含 Coordinator（规划）+ Dispatcher（执行）+ Agents + Tools，
-所有 Channel 共享同一个 Runtime 实例。
+Runtime 通过 Executor 执行任务，所有 Channel 共享同一个 Runtime 实例。
 """
 
 from __future__ import annotations
@@ -12,7 +11,7 @@ import signal
 import sys
 from typing import Any
 
-from haven.config import settings
+from haven.config import load_config
 from haven.core.pidfile import is_running
 from haven.core.pidfile import read as pid_read
 from haven.core.pidfile import remove as pid_remove
@@ -48,7 +47,7 @@ class HavenDaemon:
 
     async def start(self) -> None:
         """启动守护进程：初始化 Runtime → 构建 Channel → 注册信号。"""
-        existing = pid_read(settings.pid_file)
+        existing = pid_read(load_config().pid_file)
         if existing is not None and is_running(existing):
             logger.error("Daemon already running (PID %d). Use 'haven stop' first.", existing)
             raise SystemExit(1)
@@ -57,7 +56,7 @@ class HavenDaemon:
         self._build_channels()
         await self._start_channels()
         self._register_signals()
-        pid_write(settings.pid_file)
+        pid_write(load_config().pid_file)
         self._running = True
         self._print_status()
 
@@ -80,7 +79,7 @@ class HavenDaemon:
             except Exception as exc:
                 logger.debug("Runtime close: %s", exc)
 
-        pid_remove(settings.pid_file)
+        pid_remove(load_config().pid_file)
         logger.info("Haven daemon stopped")
 
     async def run_forever(self) -> None:
@@ -96,7 +95,7 @@ class HavenDaemon:
     # ------------------------------------------------------------------
 
     async def _init_runtime(self) -> None:
-        """创建 Runtime（Coordinator + Dispatcher + Agents + Tools）。"""
+        """创建 Runtime（Executor + Agents + Tools）。"""
         from haven.runtime.factory import create_runtime
 
         self.runtime = await create_runtime(
@@ -107,12 +106,12 @@ class HavenDaemon:
 
     def _build_channels(self) -> None:
         """构建已启用的 Channel 列表。"""
-        feishu_enabled = getattr(settings, "daemon_feishu_enabled", False)
-        if feishu_enabled:
+        feishu_cfg = load_config().daemon.feishu
+        if feishu_cfg.enabled:
             self.channels.append(
                 FeishuChannel(
-                    app_id=getattr(settings, "daemon_feishu_app_id", ""),
-                    app_secret=getattr(settings, "daemon_feishu_app_secret", ""),
+                    app_id=feishu_cfg.app_id,
+                    app_secret=feishu_cfg.app_secret,
                 )
             )
 

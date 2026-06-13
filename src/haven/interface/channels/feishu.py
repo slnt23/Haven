@@ -6,7 +6,7 @@ import logging
 import threading
 from typing import Any
 
-from haven.config import settings
+from haven.config import load_config
 from haven.interface.channels.base import BaseChannel
 
 logger = logging.getLogger("haven.feishu_channel")
@@ -68,12 +68,10 @@ class FeishuChannel(BaseChannel):
     """
 
     def __init__(self, app_id: str = "", app_secret: str = "") -> None:
-        super().__init__(
-            "feishu",
-            enabled=getattr(settings, "daemon_feishu_enabled", False),
-        )
-        self.app_id = app_id or getattr(settings, "daemon_feishu_app_id", "")
-        self.app_secret = app_secret or getattr(settings, "daemon_feishu_app_secret", "")
+        feishu_cfg = load_config().daemon.feishu
+        super().__init__("feishu", enabled=feishu_cfg.enabled)
+        self.app_id = app_id or feishu_cfg.app_id
+        self.app_secret = app_secret or feishu_cfg.app_secret
         self._session: Any = None
         self._running = False
         self._ws_thread: threading.Thread | None = None
@@ -90,7 +88,7 @@ class FeishuChannel(BaseChannel):
             self.enabled = False
             return
 
-        self._session = agent  # Coordinator 实例，直接调用 execute()
+        self._session = agent  # Runtime 实例，直接调用 execute()
 
         loop = asyncio.get_running_loop()
 

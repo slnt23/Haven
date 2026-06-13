@@ -23,7 +23,7 @@ class BaseChannel(ABC):
 
     @property
     def runtime(self) -> Any:
-        """共享的 Runtime 实例（Coordinator + Dispatcher + Agents + Tools）。"""
+        """共享的 Runtime 实例（Executor + Agents + Tools）。"""
         if self._runtime is None:
             raise RuntimeError(f"Channel '{self.name}': runtime not set")
         return self._runtime

@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from haven.config import settings
+from haven.config import load_config
 
 logger = logging.getLogger("haven.context")
 
@@ -83,7 +83,7 @@ class ContextBuilder:
     """统一构建 LLM 上下文。"""
 
     def __init__(self, token_budget: int | None = None):
-        self.token_budget = token_budget or settings.context_window_tokens or 8000
+        self.token_budget = token_budget or load_config().context.token_budget
         self._persona = _load_persona()
 
     def build(
@@ -167,7 +167,7 @@ class ContextBuilder:
         return "\n\n".join(prompts)
 
     def _list_files(self, max_tokens: int = 500) -> str:
-        ws = settings.project_root
+        ws = load_config().project_root
         if not ws or not Path(ws).is_dir():
             return ""
 

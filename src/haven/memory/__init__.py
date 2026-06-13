@@ -14,15 +14,11 @@ from haven.memory.manager import MemoryManager
 from haven.memory.vector_memory import VectorMemory
 from haven.memory.conflict_resolver import ConflictResolver
 
-# Legacy alias
-MemoryPipeline = MemoryManager
-
 __all__ = [
     "MemoryItem",
     "FactStore",
     "FactExtractor",
     "MemoryManager",
-    "MemoryPipeline",
     "VectorMemory",
     "ConflictResolver",
 ]
