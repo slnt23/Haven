@@ -103,7 +103,26 @@ class Runtime:
                 pass
 
     async def reset_session(self, session_id: str = "default") -> None:
-        self.session_manager.reset(session_id)
+        """彻底清空当前会话：删除 checkpointer 历史 → 重建 Session。
+
+        长期记忆（SQLite + VectorStore）不受影响。
+        """
+        # 1. 删除 LangGraph checkpointer 中的对话历史
+        try:
+            await self.checkpointer.adelete_thread(session_id)
+        except Exception:
+            pass
+
+        # 2. 保留原 session 的 user_id 和 channel，重建新 Session
+        old = self.session_manager.get(session_id)
+        user_id = old.user_id if old else "user"
+        channel = old.channel if old else "cli"
+
+        # 3. 关闭旧 Session + 创建新 Session
+        self.session_manager.close(session_id)
+        self.session_manager.create(session_id, user_id=user_id, channel=channel)
+
+        # 4. 重置 Agent 内部状态
         for agent in self.agents.values():
             agent.reset()
 
