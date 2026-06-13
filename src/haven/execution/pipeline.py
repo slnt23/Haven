@@ -200,17 +200,15 @@ class ExecutionPipeline:
                 except KeyError:
                     pass
 
-        history = ""
+        memory_items = None
         if self._memory is not None:
-            facts = self._memory.recall_text(entity=session.user_id)
-            if facts:
-                history = f"[长期记忆]\n{facts}"
+            memory_items = self._memory.retrieve(entity=session.user_id)
 
         ctx = self._context_builder.build(
             agent_prompt=getattr(agent, "agent_prompt", ""),
             skills=skills,
             task=task,
-            history_summary=history,
+            memory_items=memory_items,
             channel=session.channel,
         )
         return ctx.system_prompt

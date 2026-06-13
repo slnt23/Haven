@@ -16,6 +16,8 @@ from typing import Any
 
 from haven.config import load_config
 
+from haven.memory.base import MemoryItem
+
 logger = logging.getLogger("haven.context")
 
 _PERSONA_PATH = Path(__file__).resolve().parent.parent / "config" / "haven.md"
@@ -93,6 +95,7 @@ class ContextBuilder:
         skills: list[Any] | None = None,
         task: str = "",
         history_summary: str = "",
+        memory_items: list[MemoryItem] | None = None,
         channel: str = "",
     ) -> BuildResult:
         """按优先级组装 system_prompt。
@@ -132,14 +135,19 @@ class ContextBuilder:
                 parts.append(file_text)
                 usage["files"] = self._estimate_tokens(file_text)
 
-        # ⑤ History summary (剩余预算)
-        if history_summary:
+        # ⑤ Memory / History (剩余预算)
+        memory_text = history_summary
+        if memory_text and memory_items is not None:
+            memory_text = self.format_memory(memory_items)
+        elif memory_items is not None:
+            memory_text = self.format_memory(memory_items)
+        if memory_text:
             remaining = budget - self._parts_tokens(parts) - 100
             if remaining > 0:
-                if self._estimate_tokens(history_summary) > remaining:
-                    history_summary = self._truncate(history_summary, remaining)
-                parts.append(history_summary)
-                usage["history"] = self._estimate_tokens(history_summary)
+                if self._estimate_tokens(memory_text) > remaining:
+                    memory_text = self._truncate(memory_text, remaining)
+                parts.append(memory_text)
+                usage["history"] = self._estimate_tokens(memory_text)
 
         # ⑥ Channel hint (输出环境适配)
         hint = _CHANNEL_HINTS.get(channel, "")
@@ -153,6 +161,20 @@ class ContextBuilder:
         )
         logger.debug("Context built: %s", {k: v for k, v in usage.items()})
         return result
+
+    # ==================================================================
+    # 格式化
+    # ==================================================================
+
+    @staticmethod
+    def format_memory(items: list[MemoryItem] | None) -> str:
+        """将 MemoryItem 列表格式化为 system prompt 文本。"""
+        if not items:
+            return ""
+        lines = ["[长期记忆]"]
+        for item in items:
+            lines.append(f"- {item.content}")
+        return "\n".join(lines)
 
     # ==================================================================
     # Internal

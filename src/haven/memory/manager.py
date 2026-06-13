@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from haven.memory.base import MemoryItem
 from haven.memory.fact_store import FactStore
 from haven.memory.extractor import FactExtractor
 
@@ -63,21 +64,39 @@ class MemoryManager:
             source=source,
         )
 
+    def retrieve(
+        self,
+        query: str = "",
+        *,
+        entity: str | None = None,
+        limit: int = 10,
+    ) -> list[MemoryItem]:
+        """按关键词检索记忆，返回结构化 MemoryItem 列表。
+
+        ContextBuilder 负责格式化，Memory 层只负责数据。
+        """
+        entity = entity or self._entity
+        return self._store.search(query=query, entity_name=entity, limit=limit)
+
     def recall(
         self,
         query: str = "",
         *,
         entity: str | None = None,
         limit: int = 10,
-    ) -> list[Any]:
-        """按关键词检索记忆。"""
-        entity = entity or self._entity
-        return self._store.search(query=query, entity_name=entity, limit=limit)
+    ) -> list[MemoryItem]:
+        """按关键词检索记忆（等同于 retrieve）。"""
+        return self.retrieve(query=query, entity=entity, limit=limit)
 
     def recall_text(self, entity: str | None = None) -> str:
-        """获取实体的全部记忆，格式化为文本（供 ContextBuilder 使用）。"""
-        entity = entity or self._entity
-        return self._store.get_all_text(entity)
+        """获取实体的全部记忆，格式化为文本。
+
+        Deprecated: 推荐使用 retrieve() + ContextBuilder 格式化。
+        """
+        items = self.retrieve(entity=entity, limit=100)
+        if not items:
+            return ""
+        return "\n".join(f"- {i.content}" for i in items)
 
     def forget(self, entity: str | None = None) -> None:
         """清空指定实体的全部记忆。"""
