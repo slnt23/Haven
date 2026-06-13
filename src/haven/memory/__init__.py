@@ -12,6 +12,7 @@ from haven.memory.extractor import FactExtractor
 from haven.memory.fact_store import FactStore
 from haven.memory.manager import MemoryManager
 from haven.memory.vector_memory import VectorMemory
+from haven.memory.vector_store import MemoryVectorStore
 from haven.memory.conflict_resolver import ConflictResolver
 
 __all__ = [
@@ -20,5 +21,6 @@ __all__ = [
     "FactExtractor",
     "MemoryManager",
     "VectorMemory",
+    "MemoryVectorStore",
     "ConflictResolver",
 ]

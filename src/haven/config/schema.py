@@ -37,6 +37,7 @@ class MemoryConfig(BaseModel):
     enabled: bool = True
     db_path: str = "resource/memory.db"
     context_window_tokens: int = 8000
+    memory_token_budget: int = 800
 
 
 class ContextConfig(BaseModel):

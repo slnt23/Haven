@@ -82,10 +82,15 @@ class BuildResult:
 
 
 class ContextBuilder:
-    """统一构建 LLM 上下文。"""
+    """统一构建 LLM 上下文。
+
+    负责：排序、Token Budget 裁剪、格式化。
+    Memory 层只负责返回数据，不参与 Prompt 长度控制。
+    """
 
     def __init__(self, token_budget: int | None = None):
         self.token_budget = token_budget or load_config().context.token_budget
+        self.memory_budget = load_config().memory.memory_token_budget
         self._persona = _load_persona()
 
     def build(
@@ -135,12 +140,12 @@ class ContextBuilder:
                 parts.append(file_text)
                 usage["files"] = self._estimate_tokens(file_text)
 
-        # ⑤ Memory / History (剩余预算)
+        # ⑤ Memory / History (排序 → Token Budget 裁剪 → 格式化)
         memory_text = history_summary
-        if memory_text and memory_items is not None:
-            memory_text = self.format_memory(memory_items)
-        elif memory_items is not None:
-            memory_text = self.format_memory(memory_items)
+        if memory_items is not None:
+            sorted_items = self._sort_memory(memory_items)
+            trimmed = self._trim_memory(sorted_items, self.memory_budget)
+            memory_text = self.format_memory(trimmed)
         if memory_text:
             remaining = budget - self._parts_tokens(parts) - 100
             if remaining > 0:
@@ -175,6 +180,43 @@ class ContextBuilder:
         for item in items:
             lines.append(f"- {item.content}")
         return "\n".join(lines)
+
+    # ==================================================================
+    # 排序 + Token Budget 裁剪
+    # ==================================================================
+
+    @staticmethod
+    def _sort_memory(items: list[MemoryItem]) -> list[MemoryItem]:
+        """排序策略：importance DESC → created_at DESC。"""
+        return sorted(
+            items,
+            key=lambda i: (i.importance, i.created_at.timestamp()),
+            reverse=True,
+        )
+
+    @staticmethod
+    def _trim_memory(
+        items: list[MemoryItem],
+        token_budget: int,
+    ) -> list[MemoryItem]:
+        """按 token 预算裁剪 MemoryItem 列表。
+
+        不截断单条内容 —— 超过预算的整条跳过。
+        """
+        if not items or token_budget <= 0:
+            return []
+
+        result: list[MemoryItem] = []
+        used = 0
+        for item in items:
+            # 每条约: content tokens + "- " 前缀 tokens + newline
+            item_tokens = ContextBuilder._estimate_tokens(item.content) + 3
+            if used + item_tokens > token_budget:
+                break
+            result.append(item)
+            used += item_tokens
+
+        return result
 
     # ==================================================================
     # Internal

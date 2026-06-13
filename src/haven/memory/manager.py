@@ -1,8 +1,10 @@
 """MemoryManager —— 统一记忆管理入口。
 
-整合短期记忆（LangGraph checkpointer）和长期记忆（FactMemory + VectorMemory）。
-提供统一的 remember / recall / forget 接口。
-ContextBuilder 通过 MemoryManager 获取上下文，不直接访问存储层。
+整合：
+  - 短期记忆：LangGraph checkpointer（消息持久化）
+  - 长期记忆：FactStore（SQLite 元数据）+ VectorStore（语义检索）
+
+提供统一的 remember / retrieve / forget / after_turn 接口。
 """
 
 from __future__ import annotations
@@ -20,16 +22,13 @@ logger = logging.getLogger("haven.memory.manager")
 class MemoryManager:
     """统一记忆管理器。
 
-    短期记忆由 LangGraph SqliteSaver 自动处理（消息持久化）。
-    长期记忆由 FactStore（SQLite 语义事实）负责。
+    SQLite 负责元数据（id, importance, source, created_at）。
+    VectorStore 负责 embedding + 语义检索（可选，降级时仅 SQLite）。
 
     Usage::
 
-        mgr = MemoryManager(fact_store, extractor=extractor)
-        await mgr.remember("用户喜欢 Python", entity="user", importance=0.8)
-        results = mgr.recall(query="Python", entity="user")
-        mgr.forget(entity="user")
-        await mgr.after_turn(user_input, agent_response, entity="user")
+        mgr = MemoryManager(fact_store, extractor=extractor, vector_store=vs)
+        items = mgr.retrieve(query="Python", entity="user")
     """
 
     def __init__(
@@ -37,14 +36,82 @@ class MemoryManager:
         fact_store: FactStore,
         *,
         extractor: FactExtractor | None = None,
+        vector_store: Any = None,
         entity_name: str = "user",
     ) -> None:
         self._store = fact_store
         self._extractor = extractor
+        self._vector = vector_store
         self._entity = entity_name
 
     # ------------------------------------------------------------------
-    # 公开接口：remember / recall / forget
+    # retrieve —— 统一检索入口（SQLite + VectorStore）
+    # ------------------------------------------------------------------
+
+    def retrieve(
+        self,
+        query: str = "",
+        *,
+        entity: str | None = None,
+        limit: int = 10,
+    ) -> list[MemoryItem]:
+        """检索记忆（VectorStore 语义 + SQLite 元数据）。
+
+        VectorStore 负责语义相似度排序。
+        SQLite 负责补充元数据（importance, source, created_at）。
+        VectorStore 不可用时回退到纯 SQLite LIKE。
+        """
+        entity = entity or self._entity
+
+        # VectorStore 语义检索
+        if self._vector is not None and self._vector.enabled and query:
+            try:
+                vs_results = self._vector.search(query, entity=entity, k=limit)
+                if vs_results:
+                    # 用 VectorStore 返回的内容去 SQLite 查元数据
+                    items: list[MemoryItem] = []
+                    for r in vs_results:
+                        content = r.get("content", "")
+                        if not content:
+                            continue
+                        # 尝试从 SQLite 获取完整元数据
+                        sql_items = self._store.search(
+                            query=content[:30], entity_name=entity, limit=1,
+                        )
+                        if sql_items:
+                            items.append(sql_items[0])
+                        else:
+                            items.append(MemoryItem(
+                                content=content,
+                                entity_name=entity,
+                                importance=r.get("score", 0.5),
+                            ))
+                    if items:
+                        return items[:limit]
+            except Exception:
+                logger.debug("VectorStore 检索失败，回退 SQLite", exc_info=True)
+
+        return self._store.search(query=query, entity_name=entity, limit=limit)
+
+    def recall(
+        self,
+        query: str = "",
+        *,
+        entity: str | None = None,
+        limit: int = 10,
+    ) -> list[MemoryItem]:
+        """等同于 retrieve。"""
+        return self.retrieve(query=query, entity=entity, limit=limit)
+
+    def recall_text(self, entity: str | None = None) -> str:
+        """Deprecated: 推荐使用 retrieve() + ContextBuilder 格式化。"""
+        items = self.retrieve(entity=entity, limit=100)
+        if not items:
+            return ""
+        return "\n".join(f"- {i.content}" for i in items)
+
+    # ------------------------------------------------------------------
+    # remember / forget
     # ------------------------------------------------------------------
 
     def remember(
@@ -55,56 +122,23 @@ class MemoryManager:
         importance: float = 0.5,
         source: str = "conversation",
     ) -> int:
-        """存储一条记忆事实。返回事实 ID。"""
         entity = entity or self._entity
         return self._store.add(
-            entity_name=entity,
-            content=content,
-            importance=importance,
-            source=source,
+            entity_name=entity, content=content,
+            importance=importance, source=source,
         )
 
-    def retrieve(
-        self,
-        query: str = "",
-        *,
-        entity: str | None = None,
-        limit: int = 10,
-    ) -> list[MemoryItem]:
-        """按关键词检索记忆，返回结构化 MemoryItem 列表。
-
-        ContextBuilder 负责格式化，Memory 层只负责数据。
-        """
-        entity = entity or self._entity
-        return self._store.search(query=query, entity_name=entity, limit=limit)
-
-    def recall(
-        self,
-        query: str = "",
-        *,
-        entity: str | None = None,
-        limit: int = 10,
-    ) -> list[MemoryItem]:
-        """按关键词检索记忆（等同于 retrieve）。"""
-        return self.retrieve(query=query, entity=entity, limit=limit)
-
-    def recall_text(self, entity: str | None = None) -> str:
-        """获取实体的全部记忆，格式化为文本。
-
-        Deprecated: 推荐使用 retrieve() + ContextBuilder 格式化。
-        """
-        items = self.retrieve(entity=entity, limit=100)
-        if not items:
-            return ""
-        return "\n".join(f"- {i.content}" for i in items)
-
     def forget(self, entity: str | None = None) -> None:
-        """清空指定实体的全部记忆。"""
         entity = entity or self._entity
         self._store.clear(entity)
+        if self._vector is not None:
+            try:
+                self._vector.clear(entity=entity)
+            except Exception:
+                pass
 
     # ------------------------------------------------------------------
-    # 公开接口：after_turn（从对话中提取并存储事实）
+    # after_turn —— 提取 + 存储（SQLite + VectorStore）
     # ------------------------------------------------------------------
 
     async def after_turn(
@@ -113,10 +147,6 @@ class MemoryManager:
         agent_response: str,
         entity: str | None = None,
     ) -> int:
-        """从一轮对话中提取事实并存储。返回写入数量。
-
-        不阻塞调用方 —— 调用方应将其放入后台任务执行。
-        """
         if self._extractor is None:
             return 0
 
@@ -132,16 +162,29 @@ class MemoryManager:
             return 0
 
         written = 0
+        new_items: list[MemoryItem] = []
         for f in facts:
             try:
-                self._store.add(
-                    entity,
-                    f["content"],
+                fid = self._store.add(
+                    entity, f["content"],
                     importance=f.get("importance", 0.5),
                 )
                 written += 1
+                new_items.append(MemoryItem(
+                    content=f["content"],
+                    entity_name=entity,
+                    importance=f.get("importance", 0.5),
+                ))
             except Exception:
                 logger.warning("事实写入失败: %s", f.get("content", "")[:80])
+
+        # 同步写入 VectorStore
+        if new_items and self._vector is not None:
+            try:
+                self._vector.add(new_items)
+            except Exception:
+                logger.debug("VectorStore 写入失败", exc_info=True)
+
         return written
 
     # ------------------------------------------------------------------
@@ -150,5 +193,4 @@ class MemoryManager:
 
     @property
     def store(self) -> FactStore:
-        """直接访问底层存储（仅内部使用）。"""
         return self._store

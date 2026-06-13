@@ -171,9 +171,18 @@ async def create_runtime(
         aux_llm = model_factory.create(cfg.auxiliary_model)._raw
         extractor = FactExtractor(aux_llm)
 
+        # VectorStore 可选：依赖缺失时自动降级
+        vector_store = None
+        try:
+            from haven.memory.vector_store import MemoryVectorStore
+            vector_store = MemoryVectorStore()
+        except Exception:
+            logger.debug("MemoryVectorStore 不可用，仅 SQLite 检索")
+
         memory_manager = MemoryManager(
             fact_store,
             extractor=extractor,
+            vector_store=vector_store,
             entity_name=entity_name,
         )
 
