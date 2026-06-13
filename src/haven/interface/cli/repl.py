@@ -7,8 +7,6 @@
 from __future__ import annotations
 
 import asyncio
-import logging
-import sys
 
 from rich.console import Console
 from rich.live import Live
@@ -28,7 +26,6 @@ _HELP = """\
   /agents       查看可用 Agent
   /clear        清除当前会话记忆
   /memory-clear 清除长期记忆
-  /log [on|off|debug]  查看/切换日志级别
   /exit         退出对话
 """
 
@@ -61,7 +58,7 @@ async def run_repl() -> None:
                 continue
 
             if user_input.startswith("/"):
-                _handle_command(console, runtime, user_input.strip())
+                await _handle_command(console, runtime, user_input.strip())
                 continue
 
             # 所有执行通过 Runtime.execute_stream() —— 禁止直接调用 Agent
@@ -100,7 +97,7 @@ async def run_repl() -> None:
 # ------------------------------------------------------------------
 
 
-def _handle_command(console: Console, runtime, cmd: str) -> None:
+async def _handle_command(console: Console, runtime, cmd: str) -> None:
     if cmd == "/exit":
         raise KeyboardInterrupt()
     elif cmd == "/model":
@@ -111,18 +108,13 @@ def _handle_command(console: Console, runtime, cmd: str) -> None:
     elif cmd == "/agents":
         _show_agents(console, runtime)
     elif cmd == "/clear":
-        asyncio.create_task(_async_clear(console, runtime))
+        console.print("  [dim]正在清理会话...[/dim]")
+        await runtime.reset_session()
+        console.print("  [green]会话已清除[/green]")
     elif cmd == "/memory-clear":
         _clear_memory(console, runtime)
-    elif cmd.startswith("/log"):
-        _toggle_log(cmd)
     else:
         console.print(f"  [yellow]未知命令: {cmd}[/yellow]")
-
-
-async def _async_clear(console, runtime) -> None:
-    await runtime.reset_session()
-    console.print("  [green]会话记忆已清除[/green]")
 
 
 def _show_tools(console: Console, runtime) -> None:
@@ -154,25 +146,6 @@ def _show_agents(console: Console, runtime) -> None:
     for name, agent in agents.items():
         prompt = getattr(agent, "agent_prompt", "")[:60]
         console.print(f"    * [cyan]{name}[/cyan]  {prompt}")
-
-
-def _toggle_log(cmd: str) -> None:
-    haven_logger = logging.getLogger("haven")
-    parts = cmd.strip().split()
-    arg = parts[1] if len(parts) > 1 else ""
-
-    if arg in ("on", "info"):
-        haven_logger.setLevel(logging.INFO)
-        print("  日志级别: INFO", file=sys.stderr)
-    elif arg == "debug":
-        haven_logger.setLevel(logging.DEBUG)
-        print("  日志级别: DEBUG", file=sys.stderr)
-    elif arg == "off":
-        haven_logger.setLevel(logging.WARNING)
-        print("  日志级别: WARNING (仅警告)", file=sys.stderr)
-    else:
-        level = logging.getLevelName(haven_logger.level)
-        print(f"  日志级别: {level}  |  用法: /log [on|off|debug]", file=sys.stderr)
 
 
 def _clear_memory(console: Console, runtime) -> None:
