@@ -137,6 +137,39 @@ class MemoryVectorStore:
     # 检索
     # ------------------------------------------------------------------
 
+    def search_similar(
+        self,
+        text: str,
+        *,
+        entity: str = "",
+        k: int = 3,
+    ) -> list[dict]:
+        """检索与 text 最相似的记忆，返回 content + 相似度分数。
+
+        Returns:
+            list[dict]: [{"content": "...", "score": 0.95, "entity": "..."}, ...]
+        """
+        if not self._enabled:
+            return []
+
+        try:
+            results = self._store.similarity_search_with_score(
+                text, k=k,
+                filter={"entity": entity} if entity else None,
+            )
+        except Exception:
+            logger.debug("search_similar 失败", exc_info=True)
+            return []
+
+        return [
+            {
+                "content": doc.page_content,
+                "score": round(score, 4),
+                "entity": doc.metadata.get("entity", ""),
+            }
+            for doc, score in results
+        ]
+
     def search(
         self,
         query: str,

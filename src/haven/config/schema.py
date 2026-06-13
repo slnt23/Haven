@@ -38,6 +38,7 @@ class MemoryConfig(BaseModel):
     db_path: str = "resource/memory.db"
     context_window_tokens: int = 8000
     memory_token_budget: int = 800
+    dedup_threshold: float = 0.90
 
 
 class ContextConfig(BaseModel):
