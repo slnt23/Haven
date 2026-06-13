@@ -24,8 +24,8 @@ _HELP = """\
   /model        查看当前模型
   /tools        查看已加载工具
   /agents       查看可用 Agent
-  /clear        清除当前会话记忆
-  /memory-clear 清除长期记忆
+  /clear        清空当前会话（对话历史 + 上下文）
+  /memory-clear 清空长期记忆（SQLite + VectorStore）
   /exit         退出对话
 """
 
@@ -89,6 +89,8 @@ async def run_repl() -> None:
                 except Exception:
                     pass
     finally:
+        console.print("  [dim]正在保存记忆...[/dim]")
+        await runtime.flush_memory()
         await runtime.close()
 
 
@@ -108,9 +110,9 @@ async def _handle_command(console: Console, runtime, cmd: str) -> None:
     elif cmd == "/agents":
         _show_agents(console, runtime)
     elif cmd == "/clear":
-        console.print("  [dim]正在清理会话...[/dim]")
+        console.print("  [dim]正在清空会话（对话历史 + 上下文）...[/dim]")
         await runtime.reset_session()
-        console.print("  [green]会话已清除[/green]")
+        console.print("  [green]会话已清除（长期记忆未受影响）[/green]")
     elif cmd == "/memory-clear":
         _clear_memory(console, runtime)
     else:
@@ -149,13 +151,13 @@ def _show_agents(console: Console, runtime) -> None:
 
 
 def _clear_memory(console: Console, runtime) -> None:
-    """通过 MemoryManager 清除长期记忆。"""
+    """通过 MemoryManager 清除长期记忆（SQLite + VectorStore 同步）。"""
     memory = getattr(runtime, "_memory", None)
     if memory is None:
         console.print("  [yellow]长期记忆未启用[/yellow]")
         return
     try:
         memory.forget()
-        console.print("  [green]长期记忆已清除[/green]")
+        console.print("  [green]长期记忆已清除（SQLite + VectorStore 同步）[/green]")
     except Exception as exc:
         console.print(f"  [red]清除失败: {exc}[/red]")

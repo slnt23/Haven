@@ -12,6 +12,7 @@ dist/.env
 
 # 运行时数据
 resource/
+logs/
 
 # 构建产物
 dist/

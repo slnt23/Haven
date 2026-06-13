@@ -42,7 +42,7 @@ class Runtime:
     __slots__ = (
         "executor", "llm", "registry", "checkpointer",
         "session_manager", "agents", "_sqlite_conn", "_memory",
-        "_model_factory",
+        "_model_factory", "_last_memory_task",
     )
 
     def __init__(
@@ -66,6 +66,7 @@ class Runtime:
         self._sqlite_conn = sqlite_conn
         self._memory = memory_manager
         self._model_factory = model_factory
+        self._last_memory_task = None
 
     async def execute(self, task: str, session_id: str = "default") -> str:
         """规划 + 执行：通过 Executor。"""
@@ -87,7 +88,19 @@ class Runtime:
     def _trigger_memory(self, user_input: str, agent_response: str) -> None:
         if self._memory is None:
             return
-        asyncio.create_task(self._memory.after_turn(user_input, agent_response))
+        self._last_memory_task = asyncio.create_task(
+            self._memory.after_turn(user_input, agent_response)
+        )
+
+    async def flush_memory(self) -> None:
+        """等待最后一个 Memory 写入任务完成。退出前调用。"""
+        if self._last_memory_task is not None and not self._last_memory_task.done():
+            try:
+                await asyncio.wait_for(self._last_memory_task, timeout=5.0)
+            except asyncio.TimeoutError:
+                pass
+            except Exception:
+                pass
 
     async def reset_session(self, session_id: str = "default") -> None:
         self.session_manager.reset(session_id)
