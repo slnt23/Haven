@@ -11,6 +11,7 @@ Runtime 不直接调用 Agent —— 所有执行必须经过此 Pipeline。
 from __future__ import annotations
 
 import logging
+import uuid
 from typing import Any, AsyncIterator
 
 from haven.session.manager import SessionManager
@@ -92,17 +93,25 @@ class ExecutionPipeline:
             ordered = self._topological_sort(plan.steps)
             total = len(ordered)
             yield StreamChunk(kind="status", content=f"多步编排 ({total} 步) → {plan.agent_type}")
+            intermediate = ""
             for idx, step in enumerate(ordered, 1):
                 yield StreamChunk(kind="status", content=f"[步骤 {idx}/{total}] {step.description}")
                 step_task = self._build_step_task(task, step)
+                if intermediate:
+                    step_task += f"\n\n[上一步结果]\n{intermediate}"
                 agent = self._pick_for_step(step, plan.agent_type)
                 step_skills = self._skills_for_step(plan.skills, step.skill)
                 sp = await self._prepare(agent, step_skills, session, task=task)
+                step_thread = str(uuid.uuid4())
                 if step.order == ordered[-1].order:
-                    async for chunk in agent.astream(step_task, system_prompt=sp, thread_id=thread_id):
+                    chunks: list[str] = []
+                    async for chunk in agent.astream(step_task, system_prompt=sp, thread_id=step_thread):
+                        if chunk.kind == "text":
+                            chunks.append(chunk.content)
                         yield chunk
+                    intermediate = "".join(chunks)
                 else:
-                    await agent.run(step_task, system_prompt=sp, thread_id=thread_id)
+                    intermediate = await agent.run(step_task, system_prompt=sp, thread_id=step_thread)
             self._after_turn(session)
             return
 
@@ -172,14 +181,17 @@ class ExecutionPipeline:
 
     async def _via_steps(self, plan: ExecutionPlan, task: str, session: Session) -> str:
         ordered = self._topological_sort(plan.steps)
-        final = ""
+        intermediate = ""
         for step in ordered:
             step_task = self._build_step_task(task, step)
+            if intermediate:
+                step_task += f"\n\n[上一步结果]\n{intermediate}"
             agent = self._pick_for_step(step, plan.agent_type)
             step_skills = self._skills_for_step(plan.skills, step.skill)
             sp = await self._prepare(agent, step_skills, session, task=task)
-            final = await agent.run(step_task, system_prompt=sp, thread_id=session.id)
-        return final
+            step_thread = str(uuid.uuid4())
+            intermediate = await agent.run(step_task, system_prompt=sp, thread_id=step_thread)
+        return intermediate
 
     # ------------------------------------------------------------------
     # 内部：System Prompt
