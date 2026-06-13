@@ -11,6 +11,7 @@ from __future__ import annotations
 import aiosqlite
 import asyncio
 import logging
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -42,7 +43,7 @@ class Runtime:
     __slots__ = (
         "executor", "llm", "registry", "checkpointer",
         "session_manager", "agents", "_sqlite_conn", "_memory",
-        "_model_factory", "_last_memory_task",
+        "_model_factory", "_last_memory_task", "_current_session_id",
     )
 
     def __init__(
@@ -67,17 +68,20 @@ class Runtime:
         self._memory = memory_manager
         self._model_factory = model_factory
         self._last_memory_task = None
+        self._current_session_id = ""
 
-    async def execute(self, task: str, session_id: str = "default") -> str:
+    async def execute(self, task: str, session_id: str = "") -> str:
         """规划 + 执行：通过 Executor。"""
-        request = ExecutionRequest(task=task, session_id=session_id)
+        sid = session_id or self._current_session_id
+        request = ExecutionRequest(task=task, session_id=sid)
         response = await self.executor.execute(request)
         self._trigger_memory(task, response.result)
         return response.result
 
-    async def execute_stream(self, task: str, session_id: str = "default"):
+    async def execute_stream(self, task: str, session_id: str = ""):
         """规划 + 流式执行：通过 Executor。"""
-        request = ExecutionRequest(task=task, session_id=session_id)
+        sid = session_id or self._current_session_id
+        request = ExecutionRequest(task=task, session_id=sid)
         text_chunks: list[str] = []
         async for chunk in self.executor.execute_stream(request):
             if chunk.kind == "text":
@@ -102,29 +106,40 @@ class Runtime:
             except Exception:
                 pass
 
-    async def reset_session(self, session_id: str = "default") -> None:
-        """彻底清空当前会话：删除 checkpointer 历史 → 重建 Session。
+    async def reset_session(self, session_id: str = "") -> None:
+        """切换到全新 Session（新 UUID），彻底隔离旧对话历史。
 
+        不依赖 adelete_thread 成功——旧 thread 自然不再被引用。
         长期记忆（SQLite + VectorStore）不受影响。
         """
-        # 1. 删除 LangGraph checkpointer 中的对话历史
-        try:
-            await self.checkpointer.adelete_thread(session_id)
-        except Exception:
-            pass
+        old_sid = session_id or self._current_session_id
 
-        # 2. 保留原 session 的 user_id 和 channel，重建新 Session
-        old = self.session_manager.get(session_id)
+        # 1. 保留 user_id / channel，生成新 session_id
+        old = self.session_manager.get(old_sid) if old_sid else None
         user_id = old.user_id if old else "user"
         channel = old.channel if old else "cli"
+        new_sid = str(uuid.uuid4())
 
-        # 3. 关闭旧 Session + 创建新 Session
-        self.session_manager.close(session_id)
-        self.session_manager.create(session_id, user_id=user_id, channel=channel)
+        # 2. 关闭旧 Session（不再引用旧 thread_id）
+        if old_sid:
+            self.session_manager.close(old_sid)
 
-        # 4. 重置 Agent 内部状态
+        # 3. 尝试清理旧 thread（尽力而为，失败不影响新 Session 隔离）
+        try:
+            if old_sid:
+                await self.checkpointer.adelete_thread(old_sid)
+        except Exception:
+            logger.info("旧 checkpointer thread 清理失败（不影响隔离）: %s", old_sid)
+
+        # 4. 创建新 Session + 更新当前 session_id
+        self.session_manager.create(new_sid, user_id=user_id, channel=channel)
+        self._current_session_id = new_sid
+
+        # 5. 重置 Agent
         for agent in self.agents.values():
             agent.reset()
+
+        logger.info("Session 已切换: %s → %s", old_sid, new_sid)
 
     def reset(self) -> None:
         for agent in self.agents.values():
@@ -268,6 +283,7 @@ async def create_runtime(
         memory_manager=memory_manager,
         model_factory=model_factory,
     )
+    runtime._current_session_id = session_id
 
     logger.info(
         "Runtime ready: %d agents, %d skills, %d workflows, %d tools",
