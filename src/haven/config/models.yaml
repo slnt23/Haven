@@ -36,14 +36,14 @@ models:
   # 通义千问 (Qwen)
   qwen-max:
     provider: aliyun
-    api_key_env: DASHSCOPE_API_KEY
+    api_key_env: QWEN_API_KEY
     base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
     temperature: 0.7
     max_tokens: 2000
 
   qwen-plus:
     provider: aliyun
-    api_key_env: DASHSCOPE_API_KEY
+    api_key_env: QWEN_API_KEY
     base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
     temperature: 0.7
     max_tokens: 2000

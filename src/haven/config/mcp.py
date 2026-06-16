@@ -1,6 +1,6 @@
 """MCP 服务器配置解析与验证。
 
-从 CWD 下的 ``mcp.json``（或 ``mcp/mcp.json``）加载 MCP 服务器条目，
+从 CWD 下的 ``mcp.json``加载 MCP 服务器条目，
 将标准 ``mcpServers`` 格式转换为内部 ``MCPServerConfig``，并校验传输层参数。
 容错处理 JSON 中的 ``//`` 行注释和尾逗号。
 """

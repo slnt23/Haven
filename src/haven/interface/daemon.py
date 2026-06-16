@@ -12,10 +12,10 @@ import sys
 from typing import Any
 
 from haven.config import load_config
-from haven.core.pidfile import is_running
-from haven.core.pidfile import read as pid_read
-from haven.core.pidfile import remove as pid_remove
-from haven.core.pidfile import write as pid_write
+from haven.kernel.pidfile import is_running
+from haven.kernel.pidfile import read as pid_read
+from haven.kernel.pidfile import remove as pid_remove
+from haven.kernel.pidfile import write as pid_write
 from haven.interface.channels.base import BaseChannel
 from haven.interface.channels.feishu import FeishuChannel
 
