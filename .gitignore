@@ -11,9 +11,10 @@ __pycache__/
 
 .github/
 .idea/
+.agent/
 dist/
 logs/
-resource/
+resources/
 tests/
 AGENTS.md
 CLAUDE.md
