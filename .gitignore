@@ -1,51 +1,19 @@
 # Python
 __pycache__/
-*.pyc
-*.egg-info/
+
 
 # 虚拟环境
 .venv/
 
-# 环境变量
-.env
-dist/.env
-
-# 运行时数据
-resource/
-logs/
-
-# 构建产物
-dist/
-
-# IDE
-.idea/
-.vscode/
-
-# 测试 & 覆盖率
-.pytest_cache/
-htmlcov/
-.coverage
-coverage.xml
-tests/
-
-# 类型检查
-.mypy_cache/
-
-# Lint
-.ruff_cache/
-
-# 日志
-*.log
-
-# 临时文件
-*.tmp
-*.swp
-
-# 操作系统
-.DS_Store
-Thumbs.db
 
 # Claude Code
 .claude/
 
-
+.github/
+.idea/
+dist/
+logs/
+resource/
+tests/
+AGENTS.md
+CLAUDE.md

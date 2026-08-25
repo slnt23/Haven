@@ -168,7 +168,7 @@ class Runtime:
 
 
 async def create_runtime(
-    session_id: str = "default",
+    session_id: str = "",
     entity_name: str = "user",
     channel: str = "default",
     *,
@@ -202,6 +202,7 @@ async def create_runtime(
     await checkpointer.setup()
 
     session_manager = SessionManager(checkpointer=checkpointer)
+    session_id = session_id or str(uuid.uuid4())
     session_manager.create(session_id, user_id=entity_name, channel=channel)
 
     # 5. MemoryManager + ContextBuilder
