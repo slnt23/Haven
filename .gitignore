@@ -11,9 +11,11 @@ __pycache__/
 .github/
 .idea/
 .agent/
+.trae/
 dist/
 logs/
 resources/
 tests/
 AGENTS.md
 CLAUDE.md
+SKILL编写规范-通用版.md
