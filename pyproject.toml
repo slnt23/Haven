@@ -4,13 +4,10 @@ build-backend = "hatchling.build"
 
 [project]
 name = "haven"
-version = "0.1.0"
+version = "0.0.1"
 description = "个人慢病管理智能体"
 requires-python = ">=3.14"
 dependencies = []
-
-[project.scripts]
-haven = "haven.interface.cli.main:main_cli"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/haven"]
