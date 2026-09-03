@@ -51,8 +51,6 @@ SYSTOLIC_MIN = 60
 SYSTOLIC_MAX = 300
 DIASTOLIC_MIN = 30
 DIASTOLIC_MAX = 200
-HEART_RATE_MIN = 30
-HEART_RATE_MAX = 250
 
 
 def classify_systolic(value: int) -> ValidationLevel:
@@ -86,7 +84,6 @@ def classify_diastolic(value: int) -> ValidationLevel:
 def validate_blood_pressure(
     systolic: int,
     diastolic: int,
-    heart_rate: int | None = None,
 ) -> ValidationResult:
     errors: list[str] = []
 
@@ -105,14 +102,6 @@ def validate_blood_pressure(
     if systolic <= diastolic:
         errors.append(
             f"收缩压 ({systolic}) 必须大于舒张压 ({diastolic})"
-        )
-
-    if heart_rate is not None and (
-        heart_rate < HEART_RATE_MIN or heart_rate > HEART_RATE_MAX
-    ):
-        errors.append(
-            f"心率必须在 {HEART_RATE_MIN}-{HEART_RATE_MAX} bpm 之间，"
-            f"收到 {heart_rate}"
         )
 
     if errors:

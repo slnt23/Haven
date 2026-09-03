@@ -5,7 +5,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from haven.domain.models import (
-    AllergyRecord,
     BloodPressure,
     ConsentRecord,
     DiseaseRecord,
@@ -21,7 +20,6 @@ async def delete_user_data(
     tables = [
         BloodPressure,
         DiseaseRecord,
-        AllergyRecord,
         HealthProfile,
         ConsentRecord,
     ]

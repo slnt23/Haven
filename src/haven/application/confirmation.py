@@ -15,9 +15,8 @@ class ConfirmationResult:
 def check_abnormal(
     systolic: int,
     diastolic: int,
-    heart_rate: int | None = None,
 ) -> ConfirmationResult:
-    validation = validate_blood_pressure(systolic, diastolic, heart_rate)
+    validation = validate_blood_pressure(systolic, diastolic)
 
     if not validation.is_valid:
         return ConfirmationResult(

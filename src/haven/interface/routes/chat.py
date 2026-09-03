@@ -22,7 +22,16 @@ from haven.safety.state_machine import SafetyContext, SafetyState
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
-safety_context = SafetyContext()
+# 按用户隔离的安全状态机（主路线 B4：禁止模块级全局单例跨用户共享状态）。
+_safety_states: dict[UUID, SafetyContext] = {}
+
+
+def _get_safety(user_id: UUID) -> SafetyContext:
+    context = _safety_states.get(user_id)
+    if context is None:
+        context = SafetyContext()
+        _safety_states[user_id] = context
+    return context
 
 
 async def _ensure_user(session: AsyncSession, user_id: UUID) -> None:
@@ -143,16 +152,17 @@ async def chat(
         return ChatResponse(reply="请告诉我您的需求，我会尽力帮助您。")
 
     await _ensure_user(session, user_id)
+    ctx = _get_safety(user_id)
 
     emergency = check_emergency(text)
     if emergency.is_emergency:
-        safety_context.transition_to(SafetyState.EMERGENCY)
+        ctx.transition_to(SafetyState.EMERGENCY)
         reply = filter_output(emergency.response)
-        safety_context.transition_to(SafetyState.NORMAL)
+        ctx.transition_to(SafetyState.NORMAL)
         return ChatResponse(reply=reply, is_emergency=True)
 
-    if safety_context.state == SafetyState.EMERGENCY:
-        safety_context.transition_to(SafetyState.NORMAL)
+    if ctx.state == SafetyState.EMERGENCY:
+        ctx.transition_to(SafetyState.NORMAL)
 
     try:
         intent = await classify_intent(text)

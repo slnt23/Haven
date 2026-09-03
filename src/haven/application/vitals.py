@@ -13,7 +13,6 @@ class BloodPressureData:
     systolic: int
     diastolic: int
     measured_at: datetime | None = None
-    heart_rate: int | None = None
     source: str = "Manual"
     notes: str | None = None
 
@@ -34,7 +33,6 @@ async def record_blood_pressure(
         user_id=user_id,
         systolic=data.systolic,
         diastolic=data.diastolic,
-        heart_rate=data.heart_rate,
         measured_at=data.measured_at or datetime.now(UTC),
         source=data.source,
         notes=data.notes,

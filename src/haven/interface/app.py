@@ -8,14 +8,8 @@ from fastapi.staticfiles import StaticFiles
 from haven.config.settings import Settings
 from haven.infrastructure.database import close_db, init_db
 from haven.infrastructure.logging import setup_logging
-from haven.interface.middleware.audit import AuditMiddleware
-from haven.interface.middleware.emergency import EmergencyMiddleware
 from haven.interface.middleware.error_handler import ErrorHandlerMiddleware
 from haven.interface.routes.chat import router as chat_router
-from haven.interface.routes.consent import router as consent_router
-from haven.interface.routes.profile import router as profile_router
-from haven.interface.routes.trends import router as trends_router
-from haven.interface.routes.vitals import router as vitals_router
 from haven.llm.client import is_available
 
 settings = Settings()
@@ -45,13 +39,6 @@ def create_app() -> FastAPI:
     )
 
     app.add_middleware(ErrorHandlerMiddleware)
-    app.add_middleware(AuditMiddleware)
-    app.add_middleware(EmergencyMiddleware)
-
-    app.include_router(consent_router)
-    app.include_router(profile_router)
-    app.include_router(vitals_router)
-    app.include_router(trends_router)
     app.include_router(chat_router)
 
     if STATIC_DIR.exists():

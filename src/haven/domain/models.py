@@ -102,26 +102,6 @@ class HealthProfile(Base):
         nullable=True,
     )
 
-    smoking_status: Mapped[str | None] = mapped_column(
-        String(20),
-        nullable=True,
-    )
-
-    alcohol_frequency: Mapped[str | None] = mapped_column(
-        String(20),
-        nullable=True,
-    )
-
-    exercise_frequency: Mapped[str | None] = mapped_column(
-        String(10),
-        nullable=True,
-    )
-
-    diet_preference: Mapped[str | None] = mapped_column(
-        String(100),
-        nullable=True,
-    )
-
     created_at: Mapped[datetime] = mapped_column(
         DateTime,
         server_default=func.now(),
@@ -179,45 +159,6 @@ class DiseaseRecord(Base):
     )
 
 
-class AllergyRecord(Base):
-    __tablename__ = "allergy_records"
-
-    allergy_id: Mapped[UUID] = mapped_column(
-        primary_key=True,
-        default=uuid4,
-    )
-
-    user_id: Mapped[UUID] = mapped_column(
-        ForeignKey("users.user_id"),
-        nullable=False,
-    )
-
-    allergen: Mapped[str] = mapped_column(
-        String(100),
-        nullable=False,
-    )
-
-    allergy_type: Mapped[str] = mapped_column(
-        String(20),
-        nullable=False,
-    )
-
-    severity: Mapped[str | None] = mapped_column(
-        String(20),
-        nullable=True,
-    )
-
-    reaction: Mapped[str | None] = mapped_column(
-        Text,
-        nullable=True,
-    )
-
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime,
-        server_default=func.now(),
-    )
-
-
 class BloodPressure(Base):
     __tablename__ = "blood_pressure_records"
 
@@ -240,11 +181,6 @@ class BloodPressure(Base):
     diastolic: Mapped[int] = mapped_column(
         Integer,
         nullable=False,
-    )
-
-    heart_rate: Mapped[int | None] = mapped_column(
-        Integer,
-        nullable=True,
     )
 
     measured_at: Mapped[datetime] = mapped_column(

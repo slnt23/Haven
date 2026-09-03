@@ -5,7 +5,7 @@ from haven.llm.client import _make_model, is_available
 INTENT_SYSTEM_PROMPT = """你是一个医疗健康助手的意图识别模块。根据用户输入，识别意图并提取参数。
 
 支持的意图：
-- record_blood_pressure: 用户想记录血压。提取 systolic（收缩压）、diastolic（舒张压）、heart_rate（心率，可选）
+- record_blood_pressure: 用户想记录血压。提取 systolic（收缩压）、diastolic（舒张压）
 - view_trend: 用户想查看血压趋势
 - give_consent: 用户同意隐私政策
 - create_profile: 用户想建档或更新健康信息
@@ -22,7 +22,7 @@ INTENT_SYSTEM_PROMPT = """你是一个医疗健康助手的意图识别模块。
 
 class IntentClassification(BaseModel):
     intent: str = Field(description="意图名称，如 record_blood_pressure、view_trend、give_consent、create_profile、greeting、ask_help、general_question")
-    params: dict = Field(default_factory=dict, description="提取的参数，如 systolic、diastolic、heart_rate")
+    params: dict = Field(default_factory=dict, description="提取的参数，如 systolic、diastolic")
     confidence: float = Field(description="置信度，0.0 到 1.0")
 
 
