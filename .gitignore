@@ -17,3 +17,8 @@ resource/
 tests/
 AGENTS.md
 CLAUDE.md
+
+
+.trae/
+db/
+.env
