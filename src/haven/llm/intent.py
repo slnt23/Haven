@@ -40,7 +40,7 @@ async def classify_intent(user_message: str) -> IntentResult:
         return IntentResult(intent="unavailable")
 
     model = _make_model(temperature=0.1, max_tokens=512)
-    structured_model = model.with_structured_output(IntentClassification, method="json_mode")
+    structured_model = model.with_structured_output(IntentClassification, method="function_calling")
 
     messages = [
         {"role": "system", "content": INTENT_SYSTEM_PROMPT},
