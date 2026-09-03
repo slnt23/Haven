@@ -1,23 +1,7 @@
 from pydantic import BaseModel, Field
 
 from haven.llm.client import _make_model, is_available
-
-INTENT_SYSTEM_PROMPT = """你是一个医疗健康助手的意图识别模块。根据用户输入，识别意图并提取参数。
-
-支持的意图：
-- record_blood_pressure: 用户想记录血压。提取 systolic（收缩压）、diastolic（舒张压）
-- view_trend: 用户想查看血压趋势
-- give_consent: 用户同意隐私政策
-- create_profile: 用户想建档或更新健康信息
-- greeting: 用户打招呼
-- ask_help: 用户询问功能
-- general_question: 一般健康问题
-
-规则：
-1. 如果用户提供了血压数值，intent 必须是 record_blood_pressure，params 中提取 systolic 和 diastolic
-2. 血压数值的常见表达：120/80、高压120低压80、收缩压120舒张压80
-3. 如果无法确定意图，使用 general_question
-4. confidence 表示你对意图判断的置信度"""
+from haven.llm.prompts import load_prompt
 
 
 class IntentClassification(BaseModel):
@@ -43,7 +27,7 @@ async def classify_intent(user_message: str) -> IntentResult:
     structured_model = model.with_structured_output(IntentClassification, method="function_calling")
 
     messages = [
-        {"role": "system", "content": INTENT_SYSTEM_PROMPT},
+        {"role": "system", "content": load_prompt("intent_classifier")},
         {"role": "user", "content": user_message},
     ]
 
