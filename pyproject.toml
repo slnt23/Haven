@@ -5,9 +5,22 @@ build-backend = "hatchling.build"
 [project]
 name = "haven"
 version = "0.0.1"
-description = "个人慢病管理智能体"
+description = "对于医患的个人慢病管理智能体"
 requires-python = ">=3.14"
-dependencies = []
+dependencies = [
+    "aiosqlite>=0.22.1",
+    "fastapi>=0.115.0",
+    "langchain-core>=0.3.0",
+    "langchain-openai>=0.3.0",
+    "pydantic==2.13.5",
+    "pydantic-settings==2.15.0",
+    "sqlalchemy==2.0.52",
+    "structlog>=26.1.0",
+    "uvicorn==0.52.4",
+]
+
+[project.scripts]
+haven = "haven.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/haven"]
@@ -18,3 +31,6 @@ dev = [
     "pytest-asyncio>=1.0.0",
     "ruff>=0.12.0",
 ]
+
+[tool.ruff.lint]
+ignore = ["B008", "BLE001"]

@@ -17,3 +17,11 @@ logs/
 resources/
 tests/
 CLAUDE.md
+
+
+# secrets
+.env
+
+db/
+MVP-IMPLEMENTATION-ROADMAP.md
+
