@@ -14,4 +14,4 @@ class Settings(BaseSettings):
 
 
     llm_api_key: str | None= Field(default=None, alias="OWL_DEEPSEEK_API_KEY")
-    llm_model: str = Field(default="deepseek-v4-flash", alias="LLM_MODEL")
+    llm_model: str = Field(default="deepseek-v4-flash-vision-exp", alias="LLM_MODEL")

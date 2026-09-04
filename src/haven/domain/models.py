@@ -6,7 +6,6 @@ from sqlalchemy import (
     Date,
     DateTime,
     Float,
-    ForeignKey,
     Integer,
     String,
     Text,
@@ -77,9 +76,8 @@ class HealthProfile(Base):
     )
 
     user_id: Mapped[UUID] = mapped_column(
-        ForeignKey("users.user_id"),
-        unique=True,
         nullable=False,
+        index=True,
     )
 
     gender: Mapped[str] = mapped_column(
@@ -123,8 +121,8 @@ class DiseaseRecord(Base):
     )
 
     user_id: Mapped[UUID] = mapped_column(
-        ForeignKey("users.user_id"),
         nullable=False,
+        index=True,
     )
 
     disease_name: Mapped[str] = mapped_column(
@@ -168,7 +166,6 @@ class BloodPressure(Base):
     )
 
     user_id: Mapped[UUID] = mapped_column(
-        ForeignKey("users.user_id"),
         nullable=False,
         index=True,
     )
@@ -219,7 +216,6 @@ class ConsentRecord(Base):
     )
 
     user_id: Mapped[UUID] = mapped_column(
-        ForeignKey("users.user_id"),
         nullable=False,
         index=True,
     )
@@ -254,7 +250,6 @@ class AuditLog(Base):
     )
 
     user_id: Mapped[UUID | None] = mapped_column(
-        ForeignKey("users.user_id"),
         nullable=True,
         index=True,
     )

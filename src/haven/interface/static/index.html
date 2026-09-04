@@ -7,211 +7,60 @@
       content="width=device-width, initial-scale=1.0"
     />
     <title>Haven - 个人慢病管理智能体</title>
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="/static/favicon.svg"
+    />
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
       tailwind.config = {
         theme: {
           extend: {
             colors: {
-              glass: {
-                light: 'rgba(255,255,255,0.60)',
-                medium: 'rgba(255,255,255,0.75)',
-                heavy: 'rgba(255,255,255,0.90)',
+              primary: {
+                50: '#eff6ff',
+                100: '#dbeafe',
+                200: '#bfdbfe',
+                300: '#93c5fd',
+                400: '#60a5fa',
+                500: '#3b82f6',
+                600: '#2563eb',
+                700: '#1d4ed8',
               },
             },
           },
         },
       };
     </script>
-    <style>
-      @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
-
-      * {
-        font-family: 'Inter', 'PingFang SC', 'Microsoft YaHei', sans-serif;
-      }
-
-      body {
-        background: linear-gradient(135deg, #f0f4f8 0%, #e8edf2 30%, #f5f0eb 60%, #eef2f5 100%);
-        background-attachment: fixed;
-      }
-
-      .glass-panel {
-        background: rgba(255, 255, 255, 0.55);
-        backdrop-filter: blur(40px) saturate(180%);
-        -webkit-backdrop-filter: blur(40px) saturate(180%);
-        border: 1px solid rgba(255, 255, 255, 0.6);
-      }
-
-      .glass-card {
-        background: rgba(255, 255, 255, 0.65);
-        backdrop-filter: blur(20px) saturate(160%);
-        -webkit-backdrop-filter: blur(20px) saturate(160%);
-        border: 1px solid rgba(255, 255, 255, 0.5);
-      }
-
-      .glass-input {
-        background: rgba(255, 255, 255, 0.5);
-        backdrop-filter: blur(30px) saturate(180%);
-        -webkit-backdrop-filter: blur(30px) saturate(180%);
-        border: 1px solid rgba(0, 0, 0, 0.08);
-        box-shadow:
-          0 1px 3px rgba(0, 0, 0, 0.04),
-          0 4px 12px rgba(0, 0, 0, 0.03);
-      }
-
-      .glass-input:focus-within {
-        background: rgba(255, 255, 255, 0.75);
-        border-color: rgba(59, 130, 246, 0.3);
-        box-shadow:
-          0 1px 3px rgba(0, 0, 0, 0.04),
-          0 4px 20px rgba(59, 130, 246, 0.08);
-      }
-
-      .msg-bubble-user {
-        background: rgba(59, 130, 246, 0.12);
-        border: 1px solid rgba(59, 130, 246, 0.15);
-      }
-
-      .msg-bubble-assistant {
-        background: rgba(255, 255, 255, 0.7);
-        backdrop-filter: blur(12px) saturate(140%);
-        -webkit-backdrop-filter: blur(12px) saturate(140%);
-        border: 1px solid rgba(0, 0, 0, 0.05);
-      }
-
-      .quick-chip {
-        background: rgba(255, 255, 255, 0.55);
-        backdrop-filter: blur(12px) saturate(140%);
-        -webkit-backdrop-filter: blur(12px) saturate(140%);
-        border: 1px solid rgba(0, 0, 0, 0.07);
-        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
-        transition: all 0.2s ease;
-      }
-
-      .quick-chip:hover {
-        background: rgba(255, 255, 255, 0.8);
-        border-color: rgba(59, 130, 246, 0.25);
-        box-shadow: 0 2px 8px rgba(59, 130, 246, 0.08);
-        transform: translateY(-1px);
-      }
-
-      .send-btn {
-        background: #3b82f6;
-        box-shadow: 0 2px 8px rgba(59, 130, 246, 0.25);
-        transition: all 0.2s ease;
-      }
-
-      .send-btn:hover {
-        background: #2563eb;
-        box-shadow: 0 4px 16px rgba(59, 130, 246, 0.35);
-        transform: scale(1.05);
-      }
-
-      .send-btn:active {
-        transform: scale(0.95);
-      }
-
-      .typing-dot {
-        animation: blink 1.4s infinite both;
-      }
-      .typing-dot:nth-child(2) {
-        animation-delay: 0.2s;
-      }
-      .typing-dot:nth-child(3) {
-        animation-delay: 0.4s;
-      }
-      @keyframes blink {
-        0%,
-        80%,
-        100% {
-          opacity: 0.3;
-        }
-        40% {
-          opacity: 1;
-        }
-      }
-
-      .message-enter {
-        animation: fadeSlide 0.35s ease-out;
-      }
-      @keyframes fadeSlide {
-        from {
-          opacity: 0;
-          transform: translateY(12px);
-        }
-        to {
-          opacity: 1;
-          transform: translateY(0);
-        }
-      }
-
-      ::-webkit-scrollbar {
-        width: 5px;
-      }
-      ::-webkit-scrollbar-track {
-        background: transparent;
-      }
-      ::-webkit-scrollbar-thumb {
-        background: rgba(0, 0, 0, 0.12);
-        border-radius: 10px;
-      }
-      ::-webkit-scrollbar-thumb:hover {
-        background: rgba(0, 0, 0, 0.2);
-      }
-    </style>
+    <link
+      rel="stylesheet"
+      href="/static/css/style.css"
+    />
   </head>
-  <body class="h-screen flex flex-col overflow-hidden">
-    <header class="glass-panel flex-shrink-0 px-6 py-3.5 flex items-center justify-between z-10">
-      <div class="flex items-center gap-3">
-        <div class="w-8 h-8 rounded-xl bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center shadow-sm">
+  <body class="h-screen flex overflow-hidden">
+    <!-- Sidebar -->
+    <aside class="sidebar w-64 flex-shrink-0 flex flex-col">
+      <div class="px-3 py-3 flex items-center justify-between">
+        <div class="flex items-center gap-2">
           <svg
-            class="w-4 h-4 text-white"
-            fill="none"
-            stroke="currentColor"
+            class="w-6 h-6 text-primary-500"
             viewBox="0 0 24 24"
+            fill="currentColor"
           >
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M4.5 12.75l6 6 9-13.5"
-            />
+            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z" />
           </svg>
-        </div>
-        <div>
-          <h1 class="font-medium text-sm text-gray-800 leading-tight">健健</h1>
-          <p class="text-[11px] text-gray-400 leading-tight">您的慢病管理助手</p>
+          <span class="font-semibold text-lg text-primary-500">Haven</span>
         </div>
       </div>
-      <button
-        onclick="newChat()"
-        class="text-xs text-gray-400 hover:text-gray-600 transition flex items-center gap-1.5 px-3 py-1.5 rounded-full hover:bg-black/5"
-      >
-        <svg
-          class="w-3.5 h-3.5"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
+
+      <div class="px-3 pb-3">
+        <button
+          onclick="newChat()"
+          class="new-chat-btn w-full rounded-xl px-4 py-2.5 text-sm text-gray-700 flex items-center justify-center gap-2"
         >
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            stroke-width="2"
-            d="M12 4v16m8-8H4"
-          />
-        </svg>
-        新建对话
-      </button>
-    </header>
-
-    <div
-      id="chat-messages"
-      class="flex-1 overflow-y-auto px-4 py-6 space-y-4"
-    >
-      <div class="flex gap-2.5 message-enter">
-        <div class="w-7 h-7 rounded-xl bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center flex-shrink-0 shadow-sm">
           <svg
-            class="w-3.5 h-3.5 text-white"
+            class="w-4 h-4"
             fill="none"
             stroke="currentColor"
             viewBox="0 0 24 24"
@@ -220,69 +69,208 @@
               stroke-linecap="round"
               stroke-linejoin="round"
               stroke-width="2"
-              d="M4.5 12.75l6 6 9-13.5"
+              d="M12 4v16m8-8H4"
             />
           </svg>
+          开启新对话
+        </button>
+      </div>
+
+      <div class="flex-1 overflow-y-auto px-3">
+        <div class="text-xs text-gray-400 px-2 py-2">今天</div>
+        <div
+          id="chat-history"
+          class="space-y-0.5"
+        ></div>
+      </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="flex-1 flex flex-col overflow-hidden">
+      <!-- Welcome Screen -->
+      <div
+        id="welcome-screen"
+        class="flex-1 flex flex-col items-center justify-center px-4"
+      >
+        <div class="flex items-center gap-3 mb-6">
+          <svg
+            class="w-8 h-8 text-primary-500"
+            viewBox="0 0 24 24"
+            fill="currentColor"
+          >
+            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z" />
+          </svg>
+          <h1 class="text-2xl font-semibold text-gray-800">今天有什么计划？</h1>
         </div>
-        <div class="msg-bubble-assistant rounded-2xl rounded-tl-md px-4 py-3 max-w-xl text-sm text-gray-600 leading-relaxed">
-          您好，我是健健，您的个人慢病管理助手。<br /><br />
-          <span class="text-gray-500">我可以帮您：</span><br />
-          <span class="text-blue-600 font-medium">记录血压</span> — 直接告诉我血压值，如 <span class="font-mono text-gray-700">120/80</span><br />
-          <span class="text-blue-600 font-medium">查看趋势</span> — 输入"血压趋势"查看七日变化<br />
-          <span class="text-blue-600 font-medium">健康建档</span> — 输入"建档"开始创建健康画像<br /><br />
-          <span class="text-gray-400 text-xs">请先输入"<b>同意隐私政策</b>"开始使用</span>
+
+        <div class="flex items-center gap-2 mb-8">
+          <button class="mode-btn active rounded-full px-4 py-1.5 text-sm border border-gray-200 text-gray-600">快速模式</button>
+        </div>
+
+        <div class="w-full max-w-2xl">
+          <div class="input-area rounded-2xl px-4 py-3">
+            <textarea
+              id="user-input"
+              rows="1"
+              placeholder="给 Haven 发送消息"
+              class="w-full resize-none bg-transparent text-sm text-gray-700 placeholder-gray-400 focus:outline-none py-1"
+              onkeydown="handleKeyDown(event)"
+              oninput="autoResize(this)"
+            ></textarea>
+            <div class="flex items-center justify-end mt-2">
+              <button
+                id="send-btn"
+                onclick="sendMessage()"
+                class="send-btn w-8 h-8 rounded-full flex items-center justify-center text-white disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <svg
+                  class="w-4 h-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M5 12h14M12 5l7 7-7 7"
+                  />
+                </svg>
+              </button>
+            </div>
+          </div>
         </div>
       </div>
-    </div>
 
+      <!-- Chat Screen (hidden initially) -->
+      <div
+        id="chat-screen"
+        class="flex-1 flex flex-col overflow-hidden hidden"
+      >
+        <div
+          id="chat-messages"
+          class="flex-1 overflow-y-auto px-4 py-6 space-y-4"
+        ></div>
+
+        <!-- 固定功能按钮区 -->
+        <div class="flex-shrink-0 px-4 pb-2">
+          <div class="max-w-2xl mx-auto">
+            <div class="flex items-center gap-2 py-2 px-3 bg-gray-50 rounded-xl border border-gray-100">
+              <button
+                onclick="showBpModal()"
+                class="action-btn flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-gray-600 hover:bg-white"
+              >
+                <svg
+                  class="w-4 h-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"
+                  />
+                </svg>
+                记录血压
+              </button>
+              <button
+                onclick="sendQuick('血压趋势')"
+                class="action-btn flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-gray-600 hover:bg-white"
+              >
+                <svg
+                  class="w-4 h-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z"
+                  />
+                </svg>
+                查看趋势
+              </button>
+              <button
+                onclick="showProfileModal()"
+                class="action-btn flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-gray-600 hover:bg-white"
+              >
+                <svg
+                  class="w-4 h-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                  />
+                </svg>
+                健康档案
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 输入区 -->
+        <div class="flex-shrink-0 px-4 pb-4">
+          <div class="max-w-2xl mx-auto">
+            <div class="input-area rounded-2xl px-4 py-3">
+              <textarea
+                id="chat-input"
+                rows="1"
+                placeholder="输入消息..."
+                class="w-full resize-none bg-transparent text-sm text-gray-700 placeholder-gray-400 focus:outline-none py-1"
+                onkeydown="handleChatKeyDown(event)"
+                oninput="autoResize(this)"
+              ></textarea>
+              <div class="flex items-center justify-end mt-2">
+                <button
+                  id="chat-send-btn"
+                  onclick="sendChatMessage()"
+                  class="send-btn w-8 h-8 rounded-full flex items-center justify-center text-white disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <svg
+                    class="w-4 h-4"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M5 12h14M12 5l7 7-7 7"
+                    />
+                  </svg>
+                </button>
+              </div>
+            </div>
+            <p class="text-center text-[11px] text-gray-300 mt-2">Haven 不提供医疗诊断，所有建议仅供参考。紧急情况请拨打 120</p>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <!-- 隐私政策弹窗 -->
     <div
-      class="flex-shrink-0 px-4 pb-2 flex gap-2 flex-wrap justify-center"
-      id="quick-actions"
+      id="consent-modal"
+      class="fixed inset-0 bg-black/50 hidden items-center justify-center z-50 modal-overlay"
     >
-      <button
-        onclick="sendQuick('同意隐私政策')"
-        class="quick-chip rounded-full px-4 py-1.5 text-[12px] text-gray-500"
-      >
-        同意隐私政策
-      </button>
-      <button
-        onclick="sendQuick('120/80')"
-        class="quick-chip rounded-full px-4 py-1.5 text-[12px] text-gray-500"
-      >
-        记录血压 120/80
-      </button>
-      <button
-        onclick="sendQuick('血压趋势')"
-        class="quick-chip rounded-full px-4 py-1.5 text-[12px] text-gray-500"
-      >
-        查看血压趋势
-      </button>
-      <button
-        onclick="sendQuick('建档')"
-        class="quick-chip rounded-full px-4 py-1.5 text-[12px] text-gray-500"
-      >
-        开始建档
-      </button>
-    </div>
-
-    <div class="flex-shrink-0 px-4 pb-4">
-      <div class="max-w-2xl mx-auto">
-        <div class="glass-input rounded-2xl flex items-end gap-2 px-4 py-2.5 transition-all duration-200">
-          <textarea
-            id="user-input"
-            rows="1"
-            placeholder="输入消息..."
-            class="flex-1 resize-none bg-transparent text-sm text-gray-700 placeholder-gray-400 focus:outline-none py-1"
-            onkeydown="handleKeyDown(event)"
-            oninput="autoResize(this)"
-          ></textarea>
+      <div class="bg-white rounded-2xl p-6 max-w-md w-full mx-4 shadow-xl">
+        <div class="flex items-center justify-between mb-4">
+          <h3 class="text-lg font-semibold text-gray-800">隐私政策</h3>
           <button
-            id="send-btn"
-            onclick="sendMessage()"
-            class="send-btn w-9 h-9 rounded-full flex items-center justify-center text-white flex-shrink-0 disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none"
+            onclick="closeConsentModal()"
+            class="text-gray-400 hover:text-gray-600"
           >
             <svg
-              class="w-4 h-4"
+              class="w-5 h-5"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -291,175 +279,233 @@
                 stroke-linecap="round"
                 stroke-linejoin="round"
                 stroke-width="2"
-                d="M5 12h14M12 5l7 7-7 7"
+                d="M6 18L18 6M6 6l12 12"
               />
             </svg>
           </button>
         </div>
-        <p class="text-center text-[11px] text-gray-300 mt-2.5">Haven 不提供医疗诊断，所有建议仅供参考。紧急情况请拨打 120</p>
+        <div
+          id="consent-policy-text"
+          class="text-sm text-gray-600 mb-6 max-h-64 overflow-y-auto leading-relaxed"
+        >
+          加载中...
+        </div>
+        <div class="flex gap-3">
+          <button
+            onclick="closeConsentModal()"
+            class="flex-1 px-4 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-600 hover:bg-gray-50 transition"
+          >
+            取消
+          </button>
+          <button
+            id="consent-agree-btn"
+            onclick="agreeConsent()"
+            class="flex-1 px-4 py-2.5 bg-primary-500 rounded-xl text-sm text-white hover:bg-primary-600 transition"
+          >
+            同意并继续
+          </button>
+        </div>
       </div>
     </div>
 
-    <script>
-      const USER_ID = '00000000-0000-0000-0000-000000000001';
-      const API_BASE = '';
+    <!-- 血压记录弹窗 -->
+    <div
+      id="bp-modal"
+      class="fixed inset-0 bg-black/50 hidden items-center justify-center z-50 modal-overlay"
+    >
+      <div class="bg-white rounded-2xl p-6 max-w-sm w-full mx-4 shadow-xl">
+        <div class="flex items-center justify-between mb-4">
+          <h3 class="text-lg font-semibold text-gray-800">记录血压</h3>
+          <button
+            onclick="closeBpModal()"
+            class="text-gray-400 hover:text-gray-600"
+          >
+            <svg
+              class="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M6 18L18 6M6 6l12 12"
+              />
+            </svg>
+          </button>
+        </div>
+        <div class="flex items-center gap-3 mb-4">
+          <div class="flex-1">
+            <label class="text-xs text-gray-500 mb-1 block">收缩压（高压）</label>
+            <input
+              id="bp-systolic"
+              type="number"
+              min="60"
+              max="300"
+              placeholder="120"
+              class="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-center text-lg font-semibold focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
+            />
+          </div>
+          <span class="text-gray-300 text-xl mt-5">/</span>
+          <div class="flex-1">
+            <label class="text-xs text-gray-500 mb-1 block">舒张压（低压）</label>
+            <input
+              id="bp-diastolic"
+              type="number"
+              min="30"
+              max="200"
+              placeholder="80"
+              class="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-center text-lg font-semibold focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
+            />
+          </div>
+          <span class="text-gray-400 text-sm mt-5">mmHg</span>
+        </div>
+        <div
+          id="bp-level-hint"
+          class="text-xs text-center mb-4"
+        ></div>
+        <div class="flex gap-3">
+          <button
+            onclick="closeBpModal()"
+            class="flex-1 px-4 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-600 hover:bg-gray-50 transition"
+          >
+            取消
+          </button>
+          <button
+            onclick="submitBp()"
+            class="flex-1 px-4 py-2.5 bg-primary-500 rounded-xl text-sm text-white hover:bg-primary-600 transition"
+          >
+            确认记录
+          </button>
+        </div>
+        <p class="text-xs text-center text-gray-400 mt-3">💡 也可以直接在对话框说"我血压120/80"</p>
+      </div>
+    </div>
 
-      function autoResize(el) {
-        el.style.height = 'auto';
-        el.style.height = Math.min(el.scrollHeight, 120) + 'px';
-      }
+    <!-- 健康档案弹窗 -->
+    <div
+      id="profile-modal"
+      class="fixed inset-0 bg-black/50 hidden items-center justify-center z-50 modal-overlay"
+    >
+      <div class="bg-white rounded-2xl p-6 max-w-lg w-full mx-4 shadow-xl max-h-[90vh] overflow-y-auto">
+        <div class="flex items-center justify-between mb-4">
+          <h3 class="text-lg font-semibold text-gray-800">健康档案</h3>
+          <button
+            onclick="closeProfileModal()"
+            class="text-gray-400 hover:text-gray-600"
+          >
+            <svg
+              class="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M6 18L18 6M6 6l12 12"
+              />
+            </svg>
+          </button>
+        </div>
 
-      function handleKeyDown(e) {
-        if (e.key === 'Enter' && !e.shiftKey) {
-          e.preventDefault();
-          sendMessage();
-        }
-      }
+        <div class="space-y-3 mb-4">
+          <div>
+            <label class="text-xs text-gray-500 mb-1 block">性别</label>
+            <select
+              id="profile-gender"
+              class="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
+            >
+              <option value="">请选择</option>
+              <option value="男">男</option>
+              <option value="女">女</option>
+            </select>
+          </div>
 
-      function addMessage(role, content) {
-        const container = document.getElementById('chat-messages');
-        const div = document.createElement('div');
-        div.className = 'flex gap-2.5 message-enter';
+          <div>
+            <label class="text-xs text-gray-500 mb-1 block">出生日期</label>
+            <input
+              id="profile-birth-date"
+              type="date"
+              class="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
+            />
+          </div>
 
-        if (role === 'user') {
-          div.innerHTML =
-            '<div class="flex-1"></div>' +
-            '<div class="msg-bubble-user rounded-2xl rounded-tr-md px-4 py-3 max-w-xl text-sm text-gray-700 leading-relaxed">' +
-            escapeHtml(content) +
-            '</div>';
-        } else {
-          div.innerHTML =
-            '<div class="w-7 h-7 rounded-xl bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center flex-shrink-0 shadow-sm">' +
-            '<svg class="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">' +
-            '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.5 12.75l6 6 9-13.5" />' +
-            '</svg>' +
-            '</div>' +
-            '<div class="msg-bubble-assistant rounded-2xl rounded-tl-md px-4 py-3 max-w-xl text-sm text-gray-600 leading-relaxed">' +
-            formatContent(content) +
-            '</div>';
-        }
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="text-xs text-gray-500 mb-1 block">身高（cm）</label>
+              <input
+                id="profile-height"
+                type="number"
+                min="50"
+                max="250"
+                placeholder="165"
+                class="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
+              />
+            </div>
+            <div>
+              <label class="text-xs text-gray-500 mb-1 block">体重（kg）</label>
+              <input
+                id="profile-weight"
+                type="number"
+                min="20"
+                max="300"
+                placeholder="65"
+                class="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
+              />
+            </div>
+          </div>
 
-        container.appendChild(div);
-        container.scrollTop = container.scrollHeight;
-      }
+          <div>
+            <label class="text-xs text-gray-500 mb-1 block">确诊慢病名称</label>
+            <input
+              id="profile-disease"
+              type="text"
+              placeholder="如：高血压"
+              class="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
+            />
+          </div>
 
-      function addTyping() {
-        const container = document.getElementById('chat-messages');
-        const div = document.createElement('div');
-        div.id = 'typing-indicator';
-        div.className = 'flex gap-2.5';
-        div.innerHTML =
-          '<div class="w-7 h-7 rounded-xl bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center flex-shrink-0 shadow-sm">' +
-          '<svg class="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">' +
-          '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.5 12.75l6 6 9-13.5" />' +
-          '</svg>' +
-          '</div>' +
-          '<div class="msg-bubble-assistant rounded-2xl rounded-tl-md px-4 py-3 flex items-center gap-1.5">' +
-          '<span class="typing-dot w-1.5 h-1.5 bg-gray-400 rounded-full inline-block"></span>' +
-          '<span class="typing-dot w-1.5 h-1.5 bg-gray-400 rounded-full inline-block"></span>' +
-          '<span class="typing-dot w-1.5 h-1.5 bg-gray-400 rounded-full inline-block"></span>' +
-          '</div>';
-        container.appendChild(div);
-        container.scrollTop = container.scrollHeight;
-      }
+          <div>
+            <label class="text-xs text-gray-500 mb-1 block">确诊时间</label>
+            <input
+              id="profile-diagnosed-date"
+              type="month"
+              class="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
+            />
+          </div>
 
-      function removeTyping() {
-        const el = document.getElementById('typing-indicator');
-        if (el) el.remove();
-      }
+          <div>
+            <label class="text-xs text-gray-500 mb-1 block">其他补充信息（选填）</label>
+            <textarea
+              id="profile-notes"
+              rows="2"
+              placeholder="如：过敏史、家族病史、用药情况等"
+              class="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500 resize-none"
+            ></textarea>
+          </div>
+        </div>
 
-      function escapeHtml(text) {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
-      }
+        <div class="flex gap-3">
+          <button
+            onclick="closeProfileModal()"
+            class="flex-1 px-4 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-600 hover:bg-gray-50 transition"
+          >
+            取消
+          </button>
+          <button
+            onclick="submitProfile()"
+            class="flex-1 px-4 py-2.5 bg-primary-500 rounded-xl text-sm text-white hover:bg-primary-600 transition"
+          >
+            提交分析
+          </button>
+        </div>
+        <p class="text-xs text-center text-gray-400 mt-3">💡 提交后AI将智能分析您的健康档案</p>
+      </div>
+    </div>
 
-      function formatContent(text) {
-        return escapeHtml(text)
-          .replace(/\n/g, '<br>')
-          .replace(/(\d{2,3}\/\d{2,3})\s*mmHg/g, '<span class="text-blue-600 font-semibold">$1 mmHg</span>');
-      }
-
-      function setLoading(loading) {
-        const btn = document.getElementById('send-btn');
-        const input = document.getElementById('user-input');
-        btn.disabled = loading;
-        input.disabled = loading;
-        if (loading) {
-          addTyping();
-        }
-      }
-
-      async function sendMessage() {
-        const input = document.getElementById('user-input');
-        const text = input.value.trim();
-        if (!text) return;
-
-        addMessage('user', text);
-        input.value = '';
-        input.style.height = 'auto';
-        setLoading(true);
-
-        try {
-          const resp = await fetch(API_BASE + '/api/chat', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'X-User-ID': USER_ID,
-            },
-            body: JSON.stringify({ message: text }),
-          });
-
-          if (!resp.ok && resp.status !== 200) {
-            const err = await resp.json().catch(() => ({}));
-            throw new Error(err.detail || '请求失败');
-          }
-
-          const data = await resp.json();
-          removeTyping();
-
-          if (data.is_emergency) {
-            addMessage('assistant', '<span class="text-red-500 font-medium">⚠ 紧急提醒</span><br><br>' + data.reply);
-          } else {
-            addMessage('assistant', data.reply);
-          }
-        } catch (e) {
-          removeTyping();
-          addMessage('assistant', '抱歉，请求失败，请稍后再试。如有紧急情况，请立即拨打 120。');
-          console.error(e);
-        } finally {
-          setLoading(false);
-        }
-      }
-
-      function sendQuick(text) {
-        document.getElementById('user-input').value = text;
-        sendMessage();
-      }
-
-      function newChat() {
-        const container = document.getElementById('chat-messages');
-        container.innerHTML = '';
-        const div = document.createElement('div');
-        div.className = 'flex gap-2.5 message-enter';
-        div.innerHTML =
-          '<div class="w-7 h-7 rounded-xl bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center flex-shrink-0 shadow-sm">' +
-          '<svg class="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">' +
-          '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.5 12.75l6 6 9-13.5" />' +
-          '</svg>' +
-          '</div>' +
-          '<div class="msg-bubble-assistant rounded-2xl rounded-tl-md px-4 py-3 max-w-xl text-sm text-gray-600 leading-relaxed">' +
-          '您好，我是健健，您的个人慢病管理助手。<br><br>' +
-          '<span class="text-gray-500">我可以帮您：</span><br>' +
-          '<span class="text-blue-600 font-medium">记录血压</span> — 直接告诉我血压值，如 <span class="font-mono text-gray-700">120/80</span><br>' +
-          '<span class="text-blue-600 font-medium">查看趋势</span> — 输入"血压趋势"查看七日变化<br>' +
-          '<span class="text-blue-600 font-medium">健康建档</span> — 输入"建档"开始创建健康画像<br><br>' +
-          '<span class="text-gray-400 text-xs">请先输入"<b>同意隐私政策</b>"开始使用</span>' +
-          '</div>';
-        container.appendChild(div);
-      }
-
-      document.getElementById('user-input').focus();
-    </script>
+    <script src="/static/js/app.js"></script>
   </body>
 </html>

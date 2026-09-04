@@ -305,9 +305,7 @@ async def _ensure_user(session: AsyncSession, user_id: UUID) -> None:
 
 async def _save_onboarding(session: AsyncSession, user_id: UUID, d: OnboardingDraft) -> str:
     profile = await get_profile(session, user_id)
-    if profile is not None:
-        return MSG.onboarding_already
-
+    
     profile_data = ProfileData(
         gender=d.gender or "未知",
         birth_date=d.birth_date or date(1970, 1, 1),
@@ -318,7 +316,13 @@ async def _save_onboarding(session: AsyncSession, user_id: UUID, d: OnboardingDr
         disease_name=d.disease_name or "高血压",
         diagnosed_date=d.diagnosed_date or date.today(),
     )
-    await complete_onboarding(session, user_id, profile_data, diseases=[disease])
+    
+    if profile is None:
+        await complete_onboarding(session, user_id, profile_data, diseases=[disease])
+    else:
+        from haven.application.onboarding import update_profile, add_disease
+        await update_profile(session, user_id, profile_data)
+        await add_disease(session, user_id, disease)
 
     return await generate_response(
         "onboarding", action="done",
@@ -333,10 +337,6 @@ async def _save_onboarding(session: AsyncSession, user_id: UUID, d: OnboardingDr
 # ---------------------------------------------------------------------------
 
 async def _start_onboarding(session: AsyncSession, user_id: UUID) -> str:
-    profile = await get_profile(session, user_id)
-    if profile is not None:
-        return MSG.onboarding_already
-
     consent_text = await _consent_required(session, user_id)
     if consent_text:
         return consent_text

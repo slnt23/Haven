@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import Any
 
 from sqlalchemy.ext.asyncio import (
@@ -16,7 +17,18 @@ class Base(DeclarativeBase):
 _engine: Any = None
 _session_factory: async_sessionmaker[AsyncSession] | None = None
 
+def _ensure_db_dir(database_url: str) -> None:
+    if database_url.startswith("sqlite"):
+        db_path = database_url.split("///")[-1]
+        if db_path.startswith("./"):
+            db_path = db_path[2:]
+        db_file = Path(db_path)
+        db_dir = db_file.parent
+        if not db_dir.exists():
+            db_dir.mkdir(parents=True, exist_ok=True)
+
 def _get_engine(settings: Settings):
+    _ensure_db_dir(settings.database_url)
     engine = create_async_engine(
         settings.database_url,
         echo=False,

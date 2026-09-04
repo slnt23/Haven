@@ -14,7 +14,7 @@ class _Messages:
     error_fallback = "抱歉，我暂时无法处理您的请求，请稍后再试。如有紧急情况，请立即拨打 120。"
 
     # ── 建档 ──
-    onboarding_already = "您已经完成建档，无需重复建档。"
+    onboarding_already = "您的健康档案已存在，可以重新建档更新信息。"
     onboarding_interrupted = "建档流程已中断，请回复「建档」重新开始。"
     onboarding_cancelled = "好的，已取消建档。需要时回复「建档」重新开始。"
     onboarding_confirm_prompt = "如需保存请回复「确认」；如需修改请说明，如「身高170」「出生1960-01-01」。"
