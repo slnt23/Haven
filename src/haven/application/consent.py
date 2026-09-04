@@ -44,6 +44,6 @@ async def has_consented(
 ) -> bool:
     stmt = select(ConsentRecord).where(
         ConsentRecord.user_id == user_id,
-    )
+    ).limit(1)
     result = await session.execute(stmt)
-    return result.scalar_one_or_none() is not None
+    return result.scalars().first() is not None
