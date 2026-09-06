@@ -1,0 +1,14 @@
+[project]
+name = "haven"
+version = "0.0.0"
+description = "A Managed Deep Agent project."
+requires-python = ">=3.11"
+dependencies = [
+    "managed-deepagents==0.6.1",
+    "langchain>=1.4.0,<2.0.0",
+    "langchain-deepseek>=1.0.0,<2.0.0",
+    "sqlalchemy[asyncio]>=2.0.40,<3.0.0",
+    "aiosqlite>=0.21.0",
+    "asyncpg>=0.30.0",
+    "pydantic-settings>=2.6.0",
+]
