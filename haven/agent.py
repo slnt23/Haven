@@ -10,6 +10,7 @@
 
 from managed_deepagents import define_deep_agent
 
+from config import get_settings
 from middleware.commands import command_middleware
 from middleware.emergency_input import emergency_input_middleware
 from middleware.output_safety import output_safety_middleware
@@ -25,7 +26,7 @@ from tools.vitals import (
 
 agent = define_deep_agent(
     name="haven",
-    model="deepseek:deepseek-v4-flash",
+    model=get_settings().agent_model,
     tools=[
         get_consent_policy,
         consent_status,

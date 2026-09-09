@@ -13,6 +13,7 @@ haven/                 # 健健 —— 0.0.1 高血压管理智能体
   storage/             # 懒初始化 async SQLAlchemy（SQLite 开发 / PG 部署）
   middleware/          # 紧急扫描（LLM 前）→ 命令路由 → 输出安全过滤 + 降级兜底
   tools/               # 10 个确定性工具（同意→建档→血压→趋势→删除）
+  config.py            # 集中环境配置 —— .env 可调项单一来源（HAVEN_MODEL / DATABASE_URL）
   identity.py          # 管理认证（LangSmith API key，单身份原型）
   pyproject.toml       # 依赖；.env 密钥（勿提交）；.gitignore 含 storage/、data/、.env
 ```
@@ -154,9 +155,18 @@ requires a workspace selection.
 
 ### 健健部署注意
 
-- 模型走 DeepSeek：`.env` 需 `DEEPSEEK_API_KEY`（`agent.py` 中
-  `model="deepseek:deepseek-v4-flash"`）。
-- **数据库**：`storage/database.py` 读 `DATABASE_URL`；开发默认
+- 模型走 DeepSeek：`.env` 需 `DEEPSEEK_API_KEY`；模型名由 `config.py`
+  读取 `.env` 的 `HAVEN_MODEL`（默认 `deepseek:deepseek-v4-flash`，
+  切换模型只改 `.env`，不动代码）。
+- 模型/密钥链路（dev 与部署一致）：代码从不读取 `DEEPSEEK_API_KEY`，由
+  langchain-deepseek 库在每次模型调用时从**进程环境**读取 —— `mda dev`
+  来自本机 `.env`；`mda deploy` 时 mda 将 `.env` 非保留变量转发为部署环境变量
+  （构建产物 `langgraph.json` 的 `"env": ".env"`），部署端自动连通 DeepSeek，
+  无需额外联调。`DEEPSEEK_API_KEY` 与 `HAVEN_MODEL` 都是**服务器侧**凭证/配置
+  （模型调用账单走部署者账户），与终端用户无关 —— 用户经身份认证访问部署的
+  agent，不接触也不需要提供这些值。
+- **数据库**：`config.py` 读取 `.env` 的 `DATABASE_URL`（`storage/database.py`
+  引用同一配置）；开发默认
   `sqlite+aiosqlite:///./data/haven.db`（建表由首笔工具调用懒初始化）。
   部署前**必须**在 `.env` 设置托管 PostgreSQL，如
   `DATABASE_URL=postgresql+asyncpg://user:pass@host:5432/haven` ——

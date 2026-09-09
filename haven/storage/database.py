@@ -1,6 +1,6 @@
 """异步数据库层 —— 懒初始化引擎 + 统一会话作用域。
 
-- 配置：pydantic-settings 读 `.env` 的 `DATABASE_URL`
+- 配置：`DATABASE_URL` 等环境配置见 `config.py`（单一来源）
   （开发默认 sqlite，部署须为 PostgreSQL，同一 SQLAlchemy URL 互换）。
 - 所有数据库异常统一包装为 `DatabaseUnavailable`，工具层只捕获这一种。
 - 会话在作用域干净退出时自动 commit，异常时自动 rollback。
@@ -14,7 +14,6 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import AsyncIterator
 
-from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,
@@ -22,46 +21,25 @@ from sqlalchemy.ext.asyncio import (
 )
 from sqlalchemy.orm import DeclarativeBase
 
-DEFAULT_DATABASE_URL = "sqlite+aiosqlite:///./data/haven.db"
+from config import get_settings
 
 
 class DatabaseUnavailable(Exception):
     """数据库不可用（连接失败 / 初始化失败等）。工具捕获后返回固定降级文案。"""
 
 
-class Settings(BaseSettings):
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
-        extra="ignore",
-        # .env 中留空的占位（DATABASE_URL=）不覆盖默认值。
-        env_ignore_empty=True,
-    )
-
-    database_url: str = DEFAULT_DATABASE_URL
-    log_level: str = "INFO"
-
-
 class Base(DeclarativeBase):
     pass
 
 
-_settings: Settings | None = None
 _engine = None
 _session_factory: async_sessionmaker[AsyncSession] | None = None
 _init_lock = asyncio.Lock()
 _init_done = False
 
 
-def get_settings() -> Settings:
-    global _settings
-    if _settings is None:
-        _settings = Settings()
-    return _settings
-
-
 def _sqlite_path(url: str) -> Path | None:
-    """sqlite+aiosqlite:///./db/haven.db -> Path('./db/haven.db')；内存库返回 None。"""
+    """sqlite+aiosqlite:///./data/haven.db -> Path('./data/haven.db')；内存库返回 None。"""
     if not url.startswith("sqlite"):
         return None
     match = re.match(r"^sqlite(?:\+[a-z]+)?:///?(.*)$", url)
