@@ -15,7 +15,7 @@ class DisclaimerType(Enum):
 
 DISCLAIMERS: dict[DisclaimerType, str] = {
     DisclaimerType.FIRST_USE: (
-        "健健（Haven）是个人慢病管理辅助工具，不是医疗设备，不提供医疗诊断、"
+        "健健（Haven）是您的健康管家，不是医疗设备，不提供医疗诊断、"
         "处方或治疗建议。所有健康建议仅供参考，请以医生的专业意见为准。"
         "如遇紧急情况，请立即拨打 120 或前往最近医院急诊科。"
     ),

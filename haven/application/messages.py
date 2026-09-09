@@ -41,7 +41,7 @@ class _Messages:
 
     @staticmethod
     def onboarding_done(gender: str, birth_date: str, disease_name: str) -> str:
-        return f"建档完成 ✓ 性别：{gender}，出生：{birth_date}，确诊慢病：{disease_name}。现在可以开始记录血压了，直接告诉我数值即可（如 120/80）。"
+        return f"建档完成 ✓ 性别：{gender}，出生：{birth_date}，健康问题：{disease_name}。现在可以开始记录血压了，直接告诉我数值即可（如 120/80）。"
 
     # ── 隐私同意 ──
     consent_required = f"您还没有同意隐私政策。为保护您的健康数据，使用记录/建档前请先同意：请输入 {C_CONSENT}。"
@@ -70,7 +70,7 @@ class _Messages:
 
     # ── 打招呼 / 帮助 ──
     greeting = (
-        "您好！我是健健，您的个人慢病管理助手。我可以帮您：\n"
+        "您好！我是健健，您的健康管家。我可以帮您：\n"
         f"· 健康建档 — {C_PROFILE}\n"
         "· 记录血压 — 告诉我数值，如 120/80\n"
         f"· 查看趋势 — {C_TREND}\n"

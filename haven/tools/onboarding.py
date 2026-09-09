@@ -1,8 +1,8 @@
 """健康建档工具（0.0.1：高血压）。
 
 确定性校验规则与提示取自 src（性别枚举 / 出生 1900–今天 / 身高 80–250
-厘米 / 体重 2–500 公斤 / 疾病仅支持 高血压）。建档即整档重写：
-删除旧慢病记录后写一条当前疾病（避免重复行累积）。
+厘米 / 体重 2–500 公斤 / 健康问题仅支持 高血压）。建档即整档重写：
+删除旧健康问题记录后写一条当前记录（避免重复行累积）。
 """
 
 from __future__ import annotations
@@ -31,7 +31,7 @@ def _fmt_num(value: float) -> str:
 
 
 async def get_health_profile(runtime: ManagedDeepAgentRuntime = None) -> str:
-    """读取当前用户的健康档案与慢病信息（须已同意隐私政策）。"""
+    """读取当前用户的健康档案与登记的健康问题（须已同意隐私政策）。"""
     uid = uid_of(runtime)
     if uid is None:
         return NO_IDENTITY_REPLY
@@ -62,7 +62,7 @@ async def get_health_profile(runtime: ManagedDeepAgentRuntime = None) -> str:
         lines.append(f"· 体重：{_fmt_num(profile.weight_kg)} 公斤")
     for disease in diseases:
         lines.append(
-            f"· 确诊慢病：{disease.disease_name}（确诊于 {disease.diagnosed_date.isoformat()}）"
+            f"· 健康问题：{disease.disease_name}（确诊于 {disease.diagnosed_date.isoformat()}）"
         )
     lines.append(f"如需更新，输入 {C_PROFILE} 重新填写。")
     return "\n".join(lines)
@@ -127,7 +127,7 @@ async def save_health_profile(
                 profile.height_cm = height_cm
                 profile.weight_kg = weight_kg
                 profile.updated_at = datetime.now(UTC)
-            # 0.0.1 单一慢病：整档重写，删除旧记录避免重复行。
+            # 0.0.1 单一健康问题：整档重写，删除旧记录避免重复行。
             await session.execute(
                 delete(DiseaseRecord).where(DiseaseRecord.user_id == uid)
             )
