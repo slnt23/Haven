@@ -12,9 +12,10 @@ from datetime import UTC, date, datetime
 from managed_deepagents import ManagedDeepAgentRuntime
 from sqlalchemy import delete, select
 
+from application.commands import C_PROFILE
 from application.messages import MSG
-from db.database import DatabaseUnavailable, session_scope
-from db.models import BloodPressure, DiseaseRecord, HealthProfile
+from storage.database import DatabaseUnavailable, session_scope
+from storage.models import BloodPressure, DiseaseRecord, HealthProfile
 from tools._helpers import _parse_date, degraded, has_consented, uid_of
 
 GENDERS = ("男", "女")
@@ -41,7 +42,7 @@ async def get_health_profile(runtime: ManagedDeepAgentRuntime = None) -> str:
             stmt = select(HealthProfile).where(HealthProfile.user_id == uid).limit(1)
             profile = (await session.execute(stmt)).scalars().first()
             if profile is None:
-                return "您还没有健康档案。回复「建档」，我来帮您创建。"
+                return f"您还没有健康档案。输入 {C_PROFILE}，我来帮您创建。"
             diseases = (
                 await session.execute(
                     select(DiseaseRecord).where(DiseaseRecord.user_id == uid)
@@ -63,7 +64,7 @@ async def get_health_profile(runtime: ManagedDeepAgentRuntime = None) -> str:
         lines.append(
             f"· 确诊慢病：{disease.disease_name}（确诊于 {disease.diagnosed_date.isoformat()}）"
         )
-    lines.append("如需更新，回复「建档」重新填写。")
+    lines.append(f"如需更新，输入 {C_PROFILE} 重新填写。")
     return "\n".join(lines)
 
 

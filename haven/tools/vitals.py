@@ -12,11 +12,12 @@ from datetime import UTC, datetime, timedelta
 from managed_deepagents import ManagedDeepAgentRuntime
 from sqlalchemy import select
 
+from application.commands import C_CANCEL, C_CONFIRM
 from application.confirmation import LEVEL_CN, check_abnormal
 from application.messages import MSG
 from application.validation import ValidationLevel, validate_blood_pressure
-from db.database import DatabaseUnavailable, session_scope
-from db.models import PENDING_CONFIRM_TTL, BloodPressure, PendingBpConfirmation
+from storage.database import DatabaseUnavailable, session_scope
+from storage.models import PENDING_CONFIRM_TTL, BloodPressure, PendingBpConfirmation
 from safety.disclaimers import DisclaimerType, get_disclaimer
 from tools._helpers import (
     NO_IDENTITY_REPLY,
@@ -32,7 +33,10 @@ DUPLICATE_WINDOW = timedelta(seconds=60)
 
 _LEVEL_ORDER = list(ValidationLevel)
 
-_CONFIRM_GUIDANCE = "请回复「确认」继续保存这条记录；若测量有误或想重新测量，请直接告诉我新的血压数值。"
+_CONFIRM_GUIDANCE = (
+    f"输入 {C_CONFIRM} 继续保存这条记录；输入 {C_CANCEL} 不保存；"
+    "若测量有误或想重新测量，直接告诉我新的血压数值即可。"
+)
 _PARSE_TIME_ERROR = "测量时间格式无法识别（如 2026-09-01T08:00:00），这条未保存。"
 _FUTURE_TIME_ERROR = "测量时间不能晚于当前时间，这条未保存。请确认时间后重新输入。"
 _CONFIRM_MISS_REPLY = "未找到可确认的血压记录（记录可能已超过 24 小时或数值不一致），未保存。请重新测量后告诉我最新数值。"

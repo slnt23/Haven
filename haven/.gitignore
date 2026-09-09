@@ -6,7 +6,7 @@
 .mda/
 
 # Local database (dev sqlite).
-# db/
+data/
 
 # Legacy Harbor env scripts and run output stay local; other compiled evals/ are checked in.
 evals/harbor-env.sh

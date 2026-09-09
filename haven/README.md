@@ -10,11 +10,11 @@ haven/                 # 健健 —— 0.0.1 高血压管理智能体
   instructions.md      # 中文系统提示（流程脚本、红线、语气）
   safety/              # 紧急拦截词表、免责声明、输出过滤、降级文案（src 原值复刻）
   application/         # 血压校验权威表、异常确认、趋势统计、固定消息
-  db/                  # 懒初始化 async SQLAlchemy（SQLite 开发 / PG 部署）
-  middleware/          # 紧急输入扫描（LLM 前）+ 输出安全过滤 + 降级兜底
+  storage/             # 懒初始化 async SQLAlchemy（SQLite 开发 / PG 部署）
+  middleware/          # 紧急扫描（LLM 前）→ 命令路由 → 输出安全过滤 + 降级兜底
   tools/               # 10 个确定性工具（同意→建档→血压→趋势→删除）
   identity.py          # 管理认证（LangSmith API key，单身份原型）
-  pyproject.toml       # 依赖；.env 密钥（勿提交）；.gitignore 含 db/、.env
+  pyproject.toml       # 依赖；.env 密钥（勿提交）；.gitignore 含 storage/、data/、.env
 ```
 
 健健刻意**没有** `memory.py`（MDA 记忆为部署级共享，健康数据不进）与
@@ -156,8 +156,8 @@ requires a workspace selection.
 
 - 模型走 DeepSeek：`.env` 需 `DEEPSEEK_API_KEY`（`agent.py` 中
   `model="deepseek:deepseek-v4-flash"`）。
-- **数据库**：`db/database.py` 读 `DATABASE_URL`；开发默认
-  `sqlite+aiosqlite:///./db/haven.db`（建表由首笔工具调用懒初始化）。
+- **数据库**：`storage/database.py` 读 `DATABASE_URL`；开发默认
+  `sqlite+aiosqlite:///./data/haven.db`（建表由首笔工具调用懒初始化）。
   部署前**必须**在 `.env` 设置托管 PostgreSQL，如
   `DATABASE_URL=postgresql+asyncpg://user:pass@host:5432/haven` ——
   SQLite 仅限本地 dev（`mda dev`），不要带去部署。

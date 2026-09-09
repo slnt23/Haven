@@ -9,8 +9,8 @@ from managed_deepagents import ManagedDeepAgentRuntime
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from db.database import caller_user_id
-from db.models import ConsentRecord
+from storage.database import caller_user_id
+from storage.models import ConsentRecord
 from safety.degradation import DB_DEGRADED_RESPONSE
 
 NO_IDENTITY_REPLY = "暂时无法识别调用者身份，请稍后再试。"

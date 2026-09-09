@@ -9,7 +9,7 @@ import hashlib
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from db.models import AuditLog
+from storage.models import AuditLog
 
 RULE_VERSION = "0.0.1"
 

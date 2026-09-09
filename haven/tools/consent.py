@@ -1,6 +1,7 @@
 """隐私同意工具 —— 0.0.1 一切健康数据操作之前的闸门。
 
 同意为一次性（同调用者重复同意不落重复行、不重复审计）。
+界面入口统一为 /consent 命令（中文「同意隐私政策」等说法仍可用）。
 """
 
 from __future__ import annotations
@@ -8,10 +9,11 @@ from __future__ import annotations
 from managed_deepagents import ManagedDeepAgentRuntime
 from sqlalchemy import select
 
+from application.commands import C_CONSENT
 from application.messages import MSG
-from db.audit import record_audit, subject_key_for
-from db.database import DatabaseUnavailable, session_scope
-from db.models import ConsentRecord
+from storage.audit import record_audit, subject_key_for
+from storage.database import DatabaseUnavailable, session_scope
+from storage.models import ConsentRecord
 from safety.disclaimers import DisclaimerType, get_disclaimer
 from tools._helpers import NO_IDENTITY_REPLY, degraded, uid_of
 
@@ -19,7 +21,7 @@ POLICY_VERSION = "0.0.1"
 #: 与 src 的 consent scope 保持一致。
 SCOPE = "health_data_collection"
 
-_AGREE_GUIDANCE = "\n\n如您同意以上内容，请回复「同意隐私政策」以继续。"
+_AGREE_GUIDANCE = f"\n\n如您同意以上内容，请输入 {C_CONSENT} 以继续。"
 
 
 def get_consent_policy() -> str:

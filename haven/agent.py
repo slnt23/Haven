@@ -10,6 +10,7 @@
 
 from managed_deepagents import define_deep_agent
 
+from middleware.commands import command_middleware
 from middleware.emergency_input import emergency_input_middleware
 from middleware.output_safety import output_safety_middleware
 from tools.account import delete_my_data
@@ -37,7 +38,11 @@ agent = define_deep_agent(
         get_seven_day_trend,
         delete_my_data,
     ],
-    middleware=[emergency_input_middleware, output_safety_middleware],
+    middleware=[
+        emergency_input_middleware,  # 最外层：急救词优先于一切命令
+        command_middleware,  # /hello /help /consent /cancel 确定性路由
+        output_safety_middleware,
+    ],
     interrupt_on={
         "confirm_abnormal_blood_pressure": True,
         "delete_my_data": True,

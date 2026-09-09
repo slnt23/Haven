@@ -24,7 +24,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
-from db.database import Base
+from storage.database import Base
 
 PENDING_CONFIRM_TTL = timedelta(hours=24)
 

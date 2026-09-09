@@ -9,8 +9,8 @@ from sqlalchemy import select
 
 from application.messages import MSG
 from application.trends import calculate_seven_day_trend, format_trend_message
-from db.database import DatabaseUnavailable, session_scope
-from db.models import BloodPressure
+from storage.database import DatabaseUnavailable, session_scope
+from storage.models import BloodPressure
 from tools._helpers import NO_IDENTITY_REPLY, degraded, has_consented, uid_of
 
 

@@ -15,33 +15,17 @@ SUSPICIOUS（否定 / 转述 / 假设语境）同样走确定性澄清文案，�
 from __future__ import annotations
 
 from langchain.agents.middleware import AgentMiddleware, ModelRequest, ModelResponse
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
+from langchain_core.messages import AIMessage
 
-from db.audit import record_audit, subject_key_for
-from db.database import caller_user_id, session_scope
+from storage.audit import record_audit, subject_key_for
+from storage.database import caller_user_id, session_scope
+from middleware._text import human_text
 from safety.emergency import (
     EMERGENCY_CLARIFY_TEXT,
     EMERGENCY_RESPONSE_CN,
     EmergencyLevel,
     detect_emergency,
 )
-
-
-def _human_text(request: ModelRequest) -> str:
-    """最近一条用户消息的纯文本（可能为空）。"""
-    for message in reversed(request.messages):
-        if isinstance(message, HumanMessage):
-            content = message.content
-            if isinstance(content, str):
-                return content
-            if isinstance(content, list):
-                parts = [
-                    block.get("text", "")
-                    for block in content
-                    if isinstance(block, dict) and block.get("type") == "text"
-                ]
-                return "".join(parts)
-    return ""
 
 
 class EmergencyInputMiddleware(AgentMiddleware):
@@ -52,7 +36,7 @@ class EmergencyInputMiddleware(AgentMiddleware):
     @staticmethod
     def _fixed_reply(request: ModelRequest) -> str | None:
         """命中返回固定文案；未命中返回 None（放行）。"""
-        text = _human_text(request)
+        text = human_text(request)
         if not text:
             return None
         result = detect_emergency(text)
@@ -86,7 +70,7 @@ class EmergencyInputMiddleware(AgentMiddleware):
     async def awrap_model_call(self, request: ModelRequest, handler):
         fixed = self._fixed_reply(request)
         if fixed is not None:
-            result = detect_emergency(_human_text(request))
+            result = detect_emergency(human_text(request))
             await self._record_audit(request, result.reason or "matched")
             return ModelResponse(result=[AIMessage(content=fixed)])
         return await handler(request)

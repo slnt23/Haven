@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import (
 )
 from sqlalchemy.orm import DeclarativeBase
 
-DEFAULT_DATABASE_URL = "sqlite+aiosqlite:///./db/haven.db"
+DEFAULT_DATABASE_URL = "sqlite+aiosqlite:///./data/haven.db"
 
 
 class DatabaseUnavailable(Exception):
@@ -92,7 +92,7 @@ async def ensure_initialized() -> None:
 
             engine = create_async_engine(url, echo=False)
             # 注册 ORM 表（导入即注册到 Base.metadata）。
-            from db import models  # noqa: F401
+            from storage import models  # noqa: F401
 
             async with engine.begin() as conn:
                 await conn.run_sync(Base.metadata.create_all)
