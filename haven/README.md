@@ -13,10 +13,16 @@ haven/                 # 健健 —— 0.0.1 高血压管理智能体
   storage/             # 懒初始化 async SQLAlchemy（SQLite 开发 / PG 部署）
   middleware/          # 紧急扫描（LLM 前）→ 命令路由 → 输出安全过滤 + 降级兜底 → 记忆注入
   tools/               # 11 个确定性工具（同意→建档→血压→趋势→删除）
-  config.py            # 集中环境配置 —— .env 可调项单一来源（HAVEN_MODEL / DATABASE_URL）
-  identity.py          # 管理认证（LangSmith API key，单身份原型）
+  config.py            # 集中环境配置 —— .env 可调项单一来源（HAVEN_MODEL / HAVEN_OWNER_ID / DATABASE_URL）
+  identity.py          # 管理认证：只回答"能不能进"（LangSmith API key）
   pyproject.toml       # 依赖；.env 密钥（勿提交）；.gitignore 含 storage/、data/、.env
 ```
+
+**单租户：一个部署 = 一个人**（见 [ADR-006](.docs/adr/ADR-006-单租户身份模型.md)）。
+本人 id 由 `HAVEN_OWNER_ID` 配置（默认 `owner`），**不从平台注入的身份推导** ——
+本机 `mda dev` 会注入合成主体 `mda:local-dev`、Studio 注入 `langgraph-studio-user`、
+部署后是 `langsmith:user:…`，都不是"人"，跟着它们走会让同一份数据在不同运行方式下
+分属不同 id，甚至本机所有调用者共用一个身份。要再服务一个人，就再部署一个实例。
 
 健健刻意**没有** `memory.py`（MDA 记忆为部署级共享，一个部署里所有调用者读写同一棵树，
 健康数据绝不写入）与 `sandbox/`（纯对话，已 opt out）。
@@ -76,9 +82,25 @@ For Python projects, `mda dev` requires `uv` on `PATH`, but it resolves the loca
 
 ## Identity
 
-`identity.py` enables managed authentication: threads are owned
-per caller. Set `auth` to one or more `auth.*` entries if browsers call
-the deployment directly. Durable memory is declared separately.
+Single-tenant: **one deployment serves exactly one person** (ADR-006). Two
+separate questions, two separate answers:
+
+- *May this caller reach the deployment?* — `identity.py`
+  (`auth.langsmith_api_key()`). With this mode anyone holding the workspace key
+  gets in, and every caller is stamped as a `service` principal; there is no
+  per-person identity to check. Hand the key to one person only.
+- *Who is the person this deployment belongs to?* — the `HAVEN_OWNER_ID` config
+  value (default `owner`), not the runtime-injected identity. Local `mda dev`
+  injects `mda:local-dev`, Studio injects `langgraph-studio-user`, a deployment
+  injects `langsmith:user:<key owner>` — none of them are people, and following
+  them would scatter one person's data across several ids.
+
+Only a genuine `kind: "person"` runtime identity is checked, and only to
+**reject** — anything else falls back to the configured owner. That check never
+fires under LangSmith-key auth (nobody is a `person` there); it exists for a
+future Supabase setup where each family member has their own identity. To serve
+a second person, deploy a second instance with a different `HAVEN_OWNER_ID` and
+its own database.
 
 ## Memory
 
@@ -176,6 +198,9 @@ requires a workspace selection.
   无需额外联调。`DEEPSEEK_API_KEY` 与 `HAVEN_MODEL` 都是**服务器侧**凭证/配置
   （模型调用账单走部署者账户），与终端用户无关 —— 用户经身份认证访问部署的
   agent，不接触也不需要提供这些值。
+- **本人身份**：`config.py` 读取 `.env` 的 `HAVEN_OWNER_ID`（留空 → 默认
+  `owner`）。**本机 `mda dev` 与云端部署必须是同一个值**，否则两边看到的是
+  两份"同一个人的数据"。改这个值等于换一个人用，旧数据不会跟过来。
 - **数据库**：`config.py` 读取 `.env` 的 `DATABASE_URL`（`storage/database.py`
   引用同一配置）；开发默认
   `sqlite+aiosqlite:///./data/haven.db`（建表由首笔工具调用懒初始化）。

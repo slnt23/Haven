@@ -1,6 +1,9 @@
 """健健（Haven）—— 0.0.1 个人高血压管理 Managed Deep Agent。
 
-- 身份：`identity.py`（当前：LangSmith API key，单身份原型）。
+- 身份：**单租户（一个部署 = 一个人，见 ADR-006）**。`identity.py` 只回答
+  "能不能进"（LangSmith API key 认证）；"进来的是谁"由配置 `HAVEN_OWNER_ID`
+  决定 —— 运行时注入的身份不参与授予，只用于否决真正的 `person` 身份
+  （见 `storage/database.py:caller_user_id`）。
 - **无 `memory.py`**：MDA 记忆（`define_memory`）是**部署级共享**的，一个
   部署里所有调用者读写同一棵树，健康数据绝不写入。
 - 记忆注入 = `middleware/memory_context.py`：每次模型调用前，从库内业务表

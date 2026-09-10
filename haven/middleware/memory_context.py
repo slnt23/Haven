@@ -15,8 +15,10 @@ B2 / S1.6 / S9.2：「'思考'前读取该用户画像与近期体征注入决�
    异常会被误判成"模型故障"，用户会听到一句关于模型的假话。
 3. **无跨用户状态**。每次调用现读现组装，禁止任何模块级缓存
    （REQ-005 §4.3：禁止跨用户共享状态）。
-4. **未识别调用者不注入**。`uid is None` 时连"未同意"块也不注入 —— 那句
-   提示对未识别调用者是错的；各工具已有 `NO_IDENTITY_REPLY` 兜底。
+4. **非本人不注入**。单租户部署下 `uid is None` 只可能是"调用者不是本人"
+   （见 `storage/database.py:caller_user_id`）；此时连"未同意"块也不能注入 ——
+   **注入块里就是本人的健康数据**，一个字节都不该给非本人看。各工具已有
+   `NO_IDENTITY_REPLY` 兜底。
 
 嵌套位置（外→内）：`haven_output_safety` → **`haven_memory_context`** →
 `mda-channel-response-format` → prompt-caching → HumanInTheLoop。即：在安全

@@ -1,7 +1,9 @@
 """ORM 表 —— 依 `src/haven/domain/models.py` 的 0.0.1 数据形状重写。
 
 与 src 的差异：
-- 无 users 表（身份由 MDA 运行时持有，`user_id` 存调用者稳定 id）。
+- 无 users 表：**单租户部署（一个部署 = 一个人，见 ADR-006）**，`user_id` 存
+  `HAVEN_OWNER_ID` 配置的本人 id。全部查询仍带 `user_id == uid` 过滤 ——
+  它从"多用户隔离"退化为"单一命名空间"，机制不变，将来加人无需改表。
 - 新增 `bp_pending_confirmations`（异常血压确定性二次确认的瞬时状态表）。
 - 新增 `onboarding_drafts`（建档进度草稿，B3「可续接」的跨会话状态）。
 - 审计表只存去标识 `subject_key` 与事件摘要，绝不含健康数值或对话原文。

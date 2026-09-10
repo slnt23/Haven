@@ -21,6 +21,7 @@
 | ADR-003 | 反推出支撑能力的 **10 大基础系统**，Agent 核心引擎为中枢       | 已接受 | 2026-08-25；2026-09-01   | [REQ-002](../requirements/REQ-002-功能需求-系统基础能力.md) |
 | ADR-004 | **技术栈选型**：Python + FastAPI + SQLite + LLM Gateway        | 已接受 | 2026-08-25；2026-09-01   | [REQ-002 S10](../requirements/REQ-002-功能需求-系统基础能力.md) |
 | ADR-005 | **0.0.1 范围收敛**：只交付高血压垂直闭环，其余能力下调为路线图 | 已接受 | 2026-09-01               | [TRACEABILITY](../requirements/TRACEABILITY.md) |
+| ADR-006 | **单租户身份模型**：一个部署 = 一个人，本人 id 由 `HAVEN_OWNER_ID` 授予 | 已接受 | 2026-09-10               | [README 部署注意](../../README.md) |
 
 ## 状态约定
 
