@@ -5,6 +5,7 @@
 """
 
 from dataclasses import dataclass
+from datetime import UTC, datetime
 
 from application.validation import validate_blood_pressure
 
@@ -16,6 +17,17 @@ LEVEL_CN = {
     "grade_3": "3级高血压",
     "severe": "严重异常",
 }
+
+
+def pending_expired(expires_at: datetime, *, now: datetime | None = None) -> bool:
+    """待确认行是否过期。
+
+    SQLite 读回的时间是 naive，需按 UTC 归一化后再比较（PostgreSQL 原样
+    aware）。这是该归一化的**唯一真相源** —— 工具侧与记忆注入侧共用，
+    各写一份必然有一处漏掉，把过期行当有效行。
+    """
+    moment = expires_at if expires_at.tzinfo is not None else expires_at.replace(tzinfo=UTC)
+    return moment < (now or datetime.now(UTC))
 
 
 @dataclass(frozen=True)

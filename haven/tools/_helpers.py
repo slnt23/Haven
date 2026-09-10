@@ -1,22 +1,32 @@
-"""工具共享辅助：调用者识别、同意闸门、确定性时间解析。"""
+"""工具共享辅助：调用者识别、同意闸门、共用取数口径、确定性时间解析。
+
+供 `tools/` 与 `middleware/` 双方使用：同一份数据（同意状态、近 7 天血压）
+必须只有一处查询，各写一份迟早会分叉成两套数字。
+
+日期类解析（ISO / 中文年月日 / 纯年份）在 `application/onboarding.parse_date`
+—— 那是档案字段校验的唯一真相源，本模块不再重复实现一份。
+"""
 
 from __future__ import annotations
 
-import re
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 from managed_deepagents import ManagedDeepAgentRuntime
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from storage.database import caller_user_id
-from storage.models import ConsentRecord
+from storage.models import BloodPressure, ConsentRecord
 from safety.degradation import DB_DEGRADED_RESPONSE
 
 NO_IDENTITY_REPLY = "暂时无法识别调用者身份，请稍后再试。"
 
 #: 允许的时钟偏差：设备时钟略快于服务器时不算“未来”。
 _FUTURE_TOLERANCE = timedelta(minutes=5)
+
+#: 「近 7 天」的窗口与读取上限。
+SEVEN_DAY_WINDOW = timedelta(days=7)
+MAX_SEVEN_DAY_RECORDS = 500
 
 
 def uid_of(runtime: ManagedDeepAgentRuntime) -> str | None:
@@ -29,31 +39,23 @@ async def has_consented(session: AsyncSession, uid: str) -> bool:
     return result.scalars().first() is not None
 
 
-def _parse_date(text: str, *, allow_year_only: bool = False) -> date | None:
-    """解析日期文本：ISO、中文年月日、或纯年份（allow_year_only）。"""
-    if not text:
-        return None
-    text = text.strip()
-    m = re.match(r"^(\d{4})-(\d{1,2})-(\d{1,2})$", text)
-    if m:
-        try:
-            return date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
-        except ValueError:
-            return None
-    m = re.match(r"^(\d{4})年\s*(\d{1,2})月(?:\s*(\d{1,2})日)?$", text)
-    if m:
-        try:
-            return date(int(m.group(1)), int(m.group(2)), int(m.group(3) or 1))
-        except ValueError:
-            return None
-    if allow_year_only:
-        m = re.match(r"^(\d{4})$", text)
-        if m:
-            try:
-                return date(int(m.group(1)), 1, 1)
-            except ValueError:
-                return None
-    return None
+async def seven_day_records(session: AsyncSession, uid: str) -> list[BloodPressure]:
+    """该用户近 7 天的血压记录（时间升序）。
+
+    这是「近 7 天」的**唯一取数口径** —— `get_seven_day_trend`（用户向）与
+    记忆注入（模型向）共用，两处渲染出的记录数/均值/最高/达标率才会逐项
+    一致。上限是成本兜底，不是业务规则：单列索引下按时间倒序扫。
+    """
+    stmt = (
+        select(BloodPressure)
+        .where(
+            BloodPressure.user_id == uid,
+            BloodPressure.measured_at >= datetime.now(UTC) - SEVEN_DAY_WINDOW,
+        )
+        .order_by(BloodPressure.measured_at.asc())
+        .limit(MAX_SEVEN_DAY_RECORDS)
+    )
+    return list((await session.execute(stmt)).scalars().all())
 
 
 def parse_measured_at(text: str | None) -> datetime | None:

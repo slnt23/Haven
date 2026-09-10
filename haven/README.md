@@ -9,17 +9,21 @@ haven/                 # 健健 —— 0.0.1 高血压管理智能体
   agent.py             # define_deep_agent(...) — 工具 / 中间件 / interrupt_on 装配
   instructions.md      # 中文系统提示（流程脚本、红线、语气）
   safety/              # 紧急拦截词表、免责声明、输出过滤、降级文案（src 原值复刻）
-  application/         # 血压校验权威表、异常确认、趋势统计、固定消息
+  application/         # 血压校验权威表、异常确认、趋势统计、建档字段词表、记忆块组装、固定消息
   storage/             # 懒初始化 async SQLAlchemy（SQLite 开发 / PG 部署）
-  middleware/          # 紧急扫描（LLM 前）→ 命令路由 → 输出安全过滤 + 降级兜底
-  tools/               # 10 个确定性工具（同意→建档→血压→趋势→删除）
+  middleware/          # 紧急扫描（LLM 前）→ 命令路由 → 输出安全过滤 + 降级兜底 → 记忆注入
+  tools/               # 11 个确定性工具（同意→建档→血压→趋势→删除）
   config.py            # 集中环境配置 —— .env 可调项单一来源（HAVEN_MODEL / DATABASE_URL）
   identity.py          # 管理认证（LangSmith API key，单身份原型）
   pyproject.toml       # 依赖；.env 密钥（勿提交）；.gitignore 含 storage/、data/、.env
 ```
 
-健健刻意**没有** `memory.py`（MDA 记忆为部署级共享，健康数据不进）与
-`sandbox/`（纯对话，已 opt out）。
+健健刻意**没有** `memory.py`（MDA 记忆为部署级共享，一个部署里所有调用者读写同一棵树，
+健康数据绝不写入）与 `sandbox/`（纯对话，已 opt out）。
+
+「记忆」在本项目 = `middleware/memory_context.py`：每次模型调用前，从库内业务表
+**确定性只读组装**该用户的数据摘要，作为独立内容块追加进 system prompt（B2 / S1.6）。
+它不落库、不进线程历史、失败静默降级，与 MDA 的 `memory.py` 机制无关 —— 别把两者混为一谈。
 
 ## Install
 
@@ -78,10 +82,17 @@ the deployment directly. Durable memory is declared separately.
 
 ## Memory
 
-This project declares no memory, so nothing is kept between runs. Add
-`memory.py` exporting `defineMemory({ scope: "agent" })` (or
-`define_memory(scope="agent")`) to mount one deployment-shared tree at
-`/memories/agent/`.
+This project declares no MDA memory, so the deployment-shared tree at
+`/memories/agent/` is not mounted — health data must never be readable by every
+caller of the deployment. Add `memory.py` exporting
+`defineMemory({ scope: "agent" })` (or `define_memory(scope="agent")`) only if
+you need shared, non-personal notes.
+
+Per-user continuity is provided instead by `middleware/memory_context.py`,
+which assembles a read-only summary of the caller's own rows (profile,
+diseases, last 7 days of blood pressure, pending confirmation, onboarding
+draft) and appends it to the system prompt on every model call. It writes
+nothing and shares nothing across callers.
 
 ## Sandbox
 

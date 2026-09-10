@@ -4,7 +4,8 @@
 - /consent：同意隐私政策 —— 合规关键动作；异步路径直接执行
   `record_consent`（幂等，重复 /consent 返回「已同意」）后短路；
   同步路径退回模型路由（指令要求模型调 record_consent）。
-- /cancel：清空本用户的待确认血压行并固定回复（异步）；同步退回模型。
+- /cancel：清空本用户的待确认血压行**与建档草稿**并按实际清掉的内容固定
+  回复（异步）；同步退回模型。
 - /confirm、/profile、/trend、/skip 依赖对话上下文，且 /confirm 需走
   interrupt_on 人工批准（工具执行链），这里**不拦截**，保持模型路由。
 
@@ -30,7 +31,7 @@ from application.commands import (
 )
 from application.messages import MSG
 from storage.database import DatabaseUnavailable, session_scope
-from storage.models import PendingBpConfirmation
+from storage.models import OnboardingDraft, PendingBpConfirmation
 from middleware._text import human_text
 from tools._helpers import NO_IDENTITY_REPLY, uid_of
 from tools.consent import record_consent
@@ -55,11 +56,18 @@ class CommandMiddleware(AgentMiddleware):
     def _respond(text: str) -> ModelResponse:
         return ModelResponse(result=[AIMessage(content=text)])
 
-    async def _cancel_pending(self, request: ModelRequest) -> ModelResponse | None:
-        """/cancel：删除待确认行；有行 → 转达血压取消文案，无行 → 通用取消。"""
+    async def _cancel(self, request: ModelRequest) -> ModelResponse | None:
+        """/cancel：清掉待确认血压行**和**建档草稿，按实际清掉的内容回复。
+
+        两件事都要做，且必须在同一个 `session_scope` 里查/删 ——
+        用户说"取消"时不会区分自己是在记血压还是在建档。**不能一查到
+        None 就早返回**：只取消建档时待确认行本就不存在，早返回会让草稿
+        永远删不掉，记忆块里会一直报着"未完的建档进度"。
+        """
         uid = uid_of(getattr(request, "runtime", None))
         if uid is None:
             return self._respond(NO_IDENTITY_REPLY)
+        pending = draft = None
         try:
             async with session_scope() as session:
                 stmt = (
@@ -68,12 +76,24 @@ class CommandMiddleware(AgentMiddleware):
                     .limit(1)
                 )
                 pending = (await session.execute(stmt)).scalars().first()
-                if pending is None:
-                    return self._respond(_CANCEL_NONE_REPLY)
-                await session.delete(pending)
+                if pending is not None:
+                    await session.delete(pending)
+                stmt = (
+                    select(OnboardingDraft)
+                    .where(OnboardingDraft.user_id == uid)
+                    .limit(1)
+                )
+                draft = (await session.execute(stmt)).scalars().first()
+                if draft is not None:
+                    await session.delete(draft)
         except DatabaseUnavailable:
             return self._respond(MSG.error_fallback)
-        return self._respond(MSG.bp_cancelled)
+
+        if pending is not None:
+            return self._respond(MSG.bp_cancelled)
+        if draft is not None:
+            return self._respond(MSG.onboarding_cancelled)
+        return self._respond(_CANCEL_NONE_REPLY)
 
     def wrap_model_call(self, request: ModelRequest, handler):
         command = match_command(human_text(request))
@@ -91,7 +111,7 @@ class CommandMiddleware(AgentMiddleware):
             reply = await record_consent(getattr(request, "runtime", None))
             return self._respond(reply)
         if command == C_CANCEL:
-            reply = await self._cancel_pending(request)
+            reply = await self._cancel(request)
             if reply is not None:
                 return reply
         return await handler(request)

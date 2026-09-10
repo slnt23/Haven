@@ -13,7 +13,7 @@ from managed_deepagents import ManagedDeepAgentRuntime
 from sqlalchemy import select
 
 from application.commands import C_CANCEL, C_CONFIRM
-from application.confirmation import LEVEL_CN, check_abnormal
+from application.confirmation import LEVEL_CN, check_abnormal, pending_expired
 from application.messages import MSG
 from application.validation import ValidationLevel, validate_blood_pressure
 from storage.database import DatabaseUnavailable, session_scope
@@ -41,14 +41,6 @@ _PARSE_TIME_ERROR = "测量时间格式无法识别（如 2026-09-01T08:00:00）
 _FUTURE_TIME_ERROR = "测量时间不能晚于当前时间，这条未保存。请确认时间后重新输入。"
 _CONFIRM_MISS_REPLY = "未找到可确认的血压记录（记录可能已超过 24 小时或数值不一致），未保存。请重新测量后告诉我最新数值。"
 _NO_PENDING_REPLY = "当前没有待确认的血压记录。\n" + MSG.bp_need_value
-
-
-def _pending_expired(pending: PendingBpConfirmation) -> bool:
-    """过期判定 —— SQLite 读回为 naive 时间，按 UTC 归一化后比较（PG 原样 aware）。"""
-    expires_at = pending.expires_at
-    if expires_at.tzinfo is None:
-        expires_at = expires_at.replace(tzinfo=UTC)
-    return expires_at < datetime.now(UTC)
 
 
 def _worst_level(
@@ -186,7 +178,7 @@ async def get_pending_blood_pressure(
             pending = await _find_pending(session, uid)
             if pending is None:
                 return _NO_PENDING_REPLY
-            if _pending_expired(pending):
+            if pending_expired(pending.expires_at):
                 await session.delete(pending)
                 return _NO_PENDING_REPLY
             return f"{pending.prompt_text}\n{_CONFIRM_GUIDANCE}"
@@ -213,7 +205,7 @@ async def confirm_abnormal_blood_pressure(
             pending = await _find_pending(session, uid)
             if pending is None:
                 return _CONFIRM_MISS_REPLY
-            if _pending_expired(pending):
+            if pending_expired(pending.expires_at):
                 await session.delete(pending)
                 return _CONFIRM_MISS_REPLY
             if not (

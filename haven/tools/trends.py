@@ -2,16 +2,18 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
-
 from managed_deepagents import ManagedDeepAgentRuntime
-from sqlalchemy import select
 
 from application.messages import MSG
 from application.trends import calculate_seven_day_trend, format_trend_message
 from storage.database import DatabaseUnavailable, session_scope
-from storage.models import BloodPressure
-from tools._helpers import NO_IDENTITY_REPLY, degraded, has_consented, uid_of
+from tools._helpers import (
+    NO_IDENTITY_REPLY,
+    degraded,
+    has_consented,
+    seven_day_records,
+    uid_of,
+)
 
 
 async def get_seven_day_trend(runtime: ManagedDeepAgentRuntime = None) -> str:
@@ -24,19 +26,8 @@ async def get_seven_day_trend(runtime: ManagedDeepAgentRuntime = None) -> str:
         async with session_scope() as session:
             if not await has_consented(session, uid):
                 return MSG.consent_required
-            records = (
-                await session.execute(
-                    select(BloodPressure)
-                    .where(
-                        BloodPressure.user_id == uid,
-                        BloodPressure.measured_at
-                        >= datetime.now(UTC) - timedelta(days=7),
-                    )
-                    .order_by(BloodPressure.measured_at.asc())
-                    .limit(500)
-                )
-            ).scalars().all()
+            records = await seven_day_records(session, uid)
     except DatabaseUnavailable:
         return degraded()
-    summary = calculate_seven_day_trend(list(records))
+    summary = calculate_seven_day_trend(records)
     return format_trend_message(summary)

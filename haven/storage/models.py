@@ -3,6 +3,7 @@
 与 src 的差异：
 - 无 users 表（身份由 MDA 运行时持有，`user_id` 存调用者稳定 id）。
 - 新增 `bp_pending_confirmations`（异常血压确定性二次确认的瞬时状态表）。
+- 新增 `onboarding_drafts`（建档进度草稿，B3「可续接」的跨会话状态）。
 - 审计表只存去标识 `subject_key` 与事件摘要，绝不含健康数值或对话原文。
 - 时间统一存带时区的 UTC（Python 侧默认值），SQLite/PostgreSQL 通用。
 """
@@ -27,6 +28,10 @@ from sqlalchemy.orm import Mapped, mapped_column
 from storage.database import Base
 
 PENDING_CONFIRM_TTL = timedelta(hours=24)
+
+#: 建档草稿参与记忆注入的窗口 —— 草稿本身不设 TTL（用户回来时进度应当还在），
+#: 但太久没动的草稿不再注入，避免模型对几个月前的半截进度"接着问"。
+DRAFT_INJECTION_WINDOW = timedelta(days=7)
 
 
 class HealthProfile(Base):
@@ -120,6 +125,31 @@ class PendingBpConfirmation(Base):
         DateTime(timezone=True), nullable=False
     )
     created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC)
+    )
+
+
+class OnboardingDraft(Base):
+    """建档草稿：逐字段收集中的进度（一次一行，user_id 主键）。
+
+    由 `save_onboarding_draft` 在用户每提供一项后 upsert，`next_field` 是
+    状态机游标（B1 / S8.4）；为 None 表示六项已收集齐、等待用户 /confirm。
+
+    清理三处：`save_health_profile` 成功（同一事务内删）、`/cancel`、
+    `delete_my_data`。读侧另有 `DRAFT_INJECTION_WINDOW` 限制注入窗口。
+    """
+
+    __tablename__ = "onboarding_drafts"
+
+    user_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    gender: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    birth_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    height_cm: Mapped[float | None] = mapped_column(Float, nullable=True)
+    weight_kg: Mapped[float | None] = mapped_column(Float, nullable=True)
+    disease_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    diagnosed_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    next_field: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC)
     )
 
