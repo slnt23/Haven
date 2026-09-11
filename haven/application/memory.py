@@ -48,6 +48,7 @@ _NO_CONSENT_BLOCK = (
 
 #: 组装顺序（决定注入块的可读顺序）。
 _ORDER: tuple[str, ...] = (
+    "nickname",
     "profile",
     "disease",
     "trend_core",
@@ -92,7 +93,7 @@ def _display(step: str, value: Any) -> str:
     """单字段的展示形式（数值去尾零，日期用 ISO）。"""
     if step in ("height_cm", "weight_kg"):
         return fmt_num(value)
-    if step in ("gender", "disease_name"):
+    if step in ("nickname", "gender", "disease_name"):
         return str(value)
     return _fmt_date(value)
 
@@ -112,7 +113,7 @@ def _draft_line(draft: Any, now: datetime) -> str:
     ]
 
     if draft.next_field is None:
-        tail = "六项已收集齐，等你复述摘要后由用户确认"
+        tail = f"{len(STEP_ORDER)} 项已收集齐，等你复述摘要后由用户确认"
     else:
         tail = f"下一项是「{STEP_LABELS.get(draft.next_field, draft.next_field)}」"
 
@@ -163,6 +164,10 @@ def build_bundle(
     if profile is None:
         bundle.add("profile", f"· 尚未建档。用户需要登记信息时可引导 {C_PROFILE}。")
     else:
+        # 称呼单独成行 —— 塞进档案行会变成一串同质 token 里的第一个，
+        # 模型未必认得出哪一个是名字。可跳过，跳过了整行不出现。
+        if profile.nickname:
+            bundle.add("nickname", f"· 称呼：{profile.nickname}")
         parts = [
             str(profile.gender),
             _fmt_date(profile.birth_date),

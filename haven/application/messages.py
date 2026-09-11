@@ -40,8 +40,16 @@ class _Messages:
         return f"我没能识别「{field}」这一项。{prompt}"
 
     @staticmethod
-    def onboarding_done(gender: str, birth_date: str, disease_name: str) -> str:
-        return f"建档完成 ✓ 性别：{gender}，出生：{birth_date}，健康问题：{disease_name}。现在可以开始记录血压了，直接告诉我数值即可（如 120/80）。"
+    def onboarding_done(
+        nickname: str | None, gender: str, birth_date: str, disease_name: str
+    ) -> str:
+        """建档完成回执。称呼可跳过 —— 跳过了就不提，不显示占位。"""
+        who = f"称呼：{nickname}，" if nickname else ""
+        return (
+            f"建档完成 ✓ {who}性别：{gender}，出生：{birth_date}，"
+            f"健康问题：{disease_name}。"
+            "现在可以开始记录血压了，直接告诉我数值即可（如 120/80）。"
+        )
 
     # ── 隐私同意 ──
     consent_required = f"您还没有同意隐私政策。为保护您的健康数据，使用记录/建档前请先同意：请输入 {C_CONSENT}。"

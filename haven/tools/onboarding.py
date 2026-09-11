@@ -54,8 +54,10 @@ async def get_health_profile(runtime: ManagedDeepAgentRuntime = None) -> str:
     except DatabaseUnavailable:
         return degraded()
 
-    lines = [
-        "您的健康档案：",
+    lines = ["您的健康档案："]
+    if profile.nickname:
+        lines.append(f"· 称呼：{profile.nickname}")
+    lines += [
         f"· 性别：{profile.gender}",
         f"· 出生日期：{profile.birth_date.isoformat()}",
     ]
@@ -73,6 +75,7 @@ async def get_health_profile(runtime: ManagedDeepAgentRuntime = None) -> str:
 
 async def save_health_profile(
     runtime: ManagedDeepAgentRuntime = None,
+    nickname: str | None = None,
     gender: str | None = None,
     birth_date: str | None = None,
     height_cm: float | None = None,
@@ -85,13 +88,21 @@ async def save_health_profile(
 
     成功时在**同一事务内**删除该用户的建档草稿 —— 档案已是权威数据，
     草稿再留着只会让记忆注入报出"未完的建档进度"。
+
+    **整档重写语义**：省略某个可跳过项（`nickname`/`height_cm`/`weight_kg`/
+    `diagnosed_date`）等于把它清空，与「跳过即不填」一致；不搞"None 表示不改"
+    的隐藏规则 —— 那会让一个字段和其它六个行为不一致。代价由确认前的
+    **复述摘要**兜住（用户能看到「· 称呼：… / 未填」）。
     """
     uid = uid_of(runtime)
     if uid is None:
         return NO_IDENTITY_REPLY
 
     # ── 确定性校验（与建档草稿共用同一套规则，不依赖 LLM） ──
-    # 校验通过即保证：gender/birth/disease 非 None；height/weight 可为 None（跳过）。
+    # 校验通过即保证：gender/birth/disease 非 None；其余可跳过项可为 None。
+    name, error = validate_step("nickname", nickname)
+    if error is not None:
+        return error
     gender_value, error = validate_step("gender", gender)
     if error is not None:
         return error
@@ -123,6 +134,7 @@ async def save_health_profile(
                 session.add(
                     HealthProfile(
                         user_id=uid,
+                        nickname=name,
                         gender=gender_value,
                         birth_date=birth,
                         height_cm=height,
@@ -130,6 +142,7 @@ async def save_health_profile(
                     )
                 )
             else:
+                profile.nickname = name
                 profile.gender = gender_value
                 profile.birth_date = birth
                 profile.height_cm = height
@@ -155,7 +168,7 @@ async def save_health_profile(
             )
     except DatabaseUnavailable:
         return degraded()
-    return MSG.onboarding_done(gender_value, birth.isoformat(), disease)
+    return MSG.onboarding_done(name, gender_value, birth.isoformat(), disease)
 
 
 async def save_onboarding_draft(
@@ -207,7 +220,7 @@ async def save_onboarding_draft(
     tail = (
         f"下一项：{STEP_LABELS[upcoming]}"
         if upcoming is not None
-        else "六项已收集齐，等待用户确认"
+        else f"{len(STEP_ORDER)} 项已收集齐，等待用户确认"
     )
     return (
         f"（内部记录，不要向用户转达本条）{STEP_LABELS[step]} 进度已保存；{tail}。"

@@ -14,7 +14,10 @@ import re
 from datetime import UTC, date, datetime
 
 #: 建档顺序 —— 即状态机游标（`OnboardingDraft.next_field`）的取值域。
+#: 称呼排第一：最早问到，之后每轮对话都叫得出名字。
+#: **任何显示「已收集齐」的文案都必须由 `len(STEP_ORDER)` 推导**，别再写死数目。
 STEP_ORDER: tuple[str, ...] = (
+    "nickname",
     "gender",
     "birth_date",
     "height_cm",
@@ -24,9 +27,12 @@ STEP_ORDER: tuple[str, ...] = (
 )
 
 #: 可跳过项 —— 与 instructions.md §五 的「可跳过」标记一致。
-SKIPPABLE: frozenset[str] = frozenset({"height_cm", "weight_kg", "diagnosed_date"})
+SKIPPABLE: frozenset[str] = frozenset(
+    {"nickname", "height_cm", "weight_kg", "diagnosed_date"}
+)
 
 STEP_LABELS: dict[str, str] = {
+    "nickname": "称呼",
     "gender": "性别",
     "birth_date": "出生日期",
     "height_cm": "身高",
@@ -44,6 +50,10 @@ SUPPORTED_DISEASE = "高血压"
 #: 单字段入库前的长度上限 —— 字段值最终会被注入 system prompt，
 #: 限长 + 去控制字符是为了让用户可控的文本撑不破记忆块。
 MAX_FIELD_CHARS = 64
+
+#: 称呼的长度上限。比 `MAX_FIELD_CHARS` 严 —— 再长的"名字"不是名字。
+#: 超长**拒绝**而非静默截断：把人的名字悄悄切掉，比让他重说一次更糟。
+NICKNAME_MAX_CHARS = 20
 
 _CONTROL = re.compile(r"[\x00-\x1f\x7f]+")
 _NUMBER = re.compile(r"-?\d+(?:\.\d+)?")
@@ -73,7 +83,13 @@ def clean_value(raw: object) -> str:
 
 
 def parse_date(text: str, *, allow_year_only: bool = False) -> date | None:
-    """解析日期文本：ISO、中文年月日、或纯年份（allow_year_only）。"""
+    """解析日期文本：ISO（YYYY-MM-DD）、中文年月日、或降低精度（见下）。
+
+    **降低精度**（只给年月的按当月 1 号、只给年的按 1 月 1 号）在中文形式里
+    本来就被接受（`2020年5月`），所以 ISO 的 `2020-05` 也必须接受 ——
+    指令 §五 与确诊时间的错误文案都在教用户写 `2020-05`，拒收它等于自己
+    打自己脸。`allow_year_only` 只额外放开「纯年份」那一种（`2020`）。
+    """
     if not text:
         return None
     text = text.strip()
@@ -81,6 +97,12 @@ def parse_date(text: str, *, allow_year_only: bool = False) -> date | None:
     if m:
         try:
             return date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+        except ValueError:
+            return None
+    m = re.match(r"^(\d{4})-(\d{1,2})$", text)
+    if m:
+        try:
+            return date(int(m.group(1)), int(m.group(2)), 1)
         except ValueError:
             return None
     m = re.match(r"^(\d{4})年\s*(\d{1,2})月(?:\s*(\d{1,2})日)?$", text)
@@ -122,7 +144,7 @@ def validate_step(step: str, raw: object | None = None) -> tuple[object | None, 
     可跳过项返回 ``(None, None)``，必填项返回错误文案。
 
     归一化值：gender → str，birth_date / diagnosed_date → date，
-    height_cm / weight_kg → float，disease_name → str。
+    height_cm / weight_kg → float，disease_name / nickname → str。
     """
     if step not in STEP_ORDER:
         return None, f"未知的建档项「{clean_value(step)}」。合法取值：{'、'.join(STEP_ORDER)}。"
@@ -132,6 +154,16 @@ def validate_step(step: str, raw: object | None = None) -> tuple[object | None, 
         if step in SKIPPABLE:
             return None, None
         return _missing(step)
+
+    if step == "nickname":
+        # 自由文本：`clean_value` 已去掉控制字符并折叠空白（该值最终会被注入
+        # system prompt，用户可控文本不许撑破记忆块结构）。只额外管长度。
+        if len(text) > NICKNAME_MAX_CHARS:
+            return (
+                None,
+                f"称呼最多 {NICKNAME_MAX_CHARS} 个字，收到「{text}」。请简化后重试。",
+            )
+        return text, None
 
     if step == "gender":
         if text not in GENDERS:

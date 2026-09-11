@@ -4,6 +4,8 @@
 - 无 users 表：**单租户部署（一个部署 = 一个人，见 ADR-006）**，`user_id` 存
   `HAVEN_OWNER_ID` 配置的本人 id。全部查询仍带 `user_id == uid` 过滤 ——
   它从"多用户隔离"退化为"单一命名空间"，机制不变，将来加人无需改表。
+- `nickname`（称呼）落在 `HealthProfile`/`OnboardingDraft` 上，而非 REQ-005 D1 的
+  User 表（该表刻意未实现）。它是档案数据，不是身份。
 - 新增 `bp_pending_confirmations`（异常血压确定性二次确认的瞬时状态表）。
 - 新增 `onboarding_drafts`（建档进度草稿，B3「可续接」的跨会话状态）。
 - 审计表只存去标识 `subject_key` 与事件摘要，绝不含健康数值或对话原文。
@@ -43,6 +45,10 @@ class HealthProfile(Base):
         Uuid, primary_key=True, default=uuid4
     )
     user_id: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
+    #: 称呼（显示名称）—— 列名沿用 REQ-005 D1 的 nickname。单租户下 D1 User 表
+    #: 刻意未实现，这个字段就落在唯一的"个人"表上；它是**档案数据不是身份**
+    #: （身份是 HAVEN_OWNER_ID，见 ADR-006）。可跳过。
+    nickname: Mapped[str | None] = mapped_column(String(20), nullable=True)
     gender: Mapped[str] = mapped_column(String(10), nullable=False)
     birth_date: Mapped[date] = mapped_column(Date, nullable=False)
     height_cm: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -144,6 +150,7 @@ class OnboardingDraft(Base):
     __tablename__ = "onboarding_drafts"
 
     user_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    nickname: Mapped[str | None] = mapped_column(String(20), nullable=True)
     gender: Mapped[str | None] = mapped_column(String(10), nullable=True)
     birth_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     height_cm: Mapped[float | None] = mapped_column(Float, nullable=True)
