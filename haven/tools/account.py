@@ -7,7 +7,7 @@
 
 from __future__ import annotations
 
-from managed_deepagents import ManagedDeepAgentRuntime
+from langchain.tools import ToolRuntime
 from sqlalchemy import delete
 
 from storage.audit import record_audit, subject_key_for
@@ -29,7 +29,7 @@ _DELETE_DONE_REPLY = (
 )
 
 
-async def delete_my_data(runtime: ManagedDeepAgentRuntime = None) -> str:
+async def delete_my_data(runtime: ToolRuntime = None) -> str:
     """删除当前用户的全部健康数据。危险操作 —— 仅在用户明确要求
     （如「删除我的数据」或明确确认删除）后调用，且中断门会再次请求用户批准。"""
     uid = uid_of(runtime)

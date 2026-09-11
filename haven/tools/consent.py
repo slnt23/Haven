@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from managed_deepagents import ManagedDeepAgentRuntime
+from langchain.tools import ToolRuntime
 from sqlalchemy import select
 
 from application.commands import C_CONSENT
@@ -29,7 +29,7 @@ def get_consent_policy() -> str:
     return get_disclaimer(DisclaimerType.FIRST_USE) + _AGREE_GUIDANCE
 
 
-async def consent_status(runtime: ManagedDeepAgentRuntime = None) -> str:
+async def consent_status(runtime: ToolRuntime = None) -> str:
     """查询当前用户的隐私同意状态；未同意时返回政策全文与同意指引。"""
     uid = uid_of(runtime)
     if uid is None:
@@ -46,7 +46,7 @@ async def consent_status(runtime: ManagedDeepAgentRuntime = None) -> str:
     return get_disclaimer(DisclaimerType.FIRST_USE) + _AGREE_GUIDANCE
 
 
-async def record_consent(runtime: ManagedDeepAgentRuntime = None) -> str:
+async def record_consent(runtime: ToolRuntime = None) -> str:
     """记录当前用户的隐私同意（政策版本 0.0.1）。仅在用户明确表示同意后调用。"""
     uid = uid_of(runtime)
     if uid is None:

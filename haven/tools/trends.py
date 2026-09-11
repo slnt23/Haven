@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from managed_deepagents import ManagedDeepAgentRuntime
+from langchain.tools import ToolRuntime
 
 from application.messages import MSG
 from application.trends import calculate_seven_day_trend, format_trend_message
@@ -16,7 +16,7 @@ from tools._helpers import (
 )
 
 
-async def get_seven_day_trend(runtime: ManagedDeepAgentRuntime = None) -> str:
+async def get_seven_day_trend(runtime: ToolRuntime = None) -> str:
     """查看最近 7 天的血压趋势统计（记录数、均值、最高/最低、达标率、方向）。
     仅呈现确定性统计，不做诊断。"""
     uid = uid_of(runtime)

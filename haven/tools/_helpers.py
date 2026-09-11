@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
-from managed_deepagents import ManagedDeepAgentRuntime
+from langchain.tools import ToolRuntime
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -31,7 +31,16 @@ SEVEN_DAY_WINDOW = timedelta(days=7)
 MAX_SEVEN_DAY_RECORDS = 500
 
 
-def uid_of(runtime: ManagedDeepAgentRuntime) -> str | None:
+# ── 工具 runtime 参数的注解约定 ──────────────────────────────────────────
+# 用 langgraph 原生 ToolRuntime 注解，而不是 MDA 文档推荐的
+# ManagedDeepAgentRuntime：ToolNode 注入的是原生 ToolRuntime 实例，而参数
+# 校验（pydantic）发生在 MDA 的 seam 把 runtime 换成带 identity 的代理
+# **之前** —— 注解成 ManagedDeepAgentRuntime 会因「不是该类型实例」校验
+# 失败，工具只报「Error invoking tool …」（错误详情按“注入参数”被过滤，
+# 显示为空）且不落任何数据（langchain-core 1.4/1.5/1.6 均可复现）。
+# 原生 ToolRuntime 注解：同样不出现在模型可见的工具 schema 里、校验可通过；
+# 运行时 `runtime.identity` 仍由 MDA seam 注入的代理提供。
+def uid_of(runtime: ToolRuntime) -> str | None:
     return caller_user_id(runtime)
 
 

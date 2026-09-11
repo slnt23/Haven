@@ -70,9 +70,14 @@ async def ensure_initialized() -> None:
 
             sqlite_file = _sqlite_path(url)
             if sqlite_file is not None:
-                sqlite_file.parent.mkdir(parents=True, exist_ok=True)
+                # 阻塞式文件操作放到线程里（langgraph dev 的 blockbuster 会拦截
+                # 事件循环中的同步调用，直接抛 BlockingError）。
+                await asyncio.to_thread(
+                    sqlite_file.parent.mkdir, parents=True, exist_ok=True
+                )
 
-            engine = create_async_engine(url, echo=False)
+            # SQLite 方言解析相对路径会调 os.getcwd()，同样属于阻塞调用。
+            engine = await asyncio.to_thread(create_async_engine, url, echo=False)
             # 注册 ORM 表（导入即注册到 Base.metadata）。
             from storage import models  # noqa: F401
 
@@ -86,6 +91,7 @@ async def ensure_initialized() -> None:
             )
             _init_done = True
         except Exception as exc:  # noqa: BLE001 —— 统一包装给工具层
+            _logger.warning("数据库初始化失败，已降级：%s", exc, exc_info=True)
             raise DatabaseUnavailable(str(exc)) from exc
 
 
@@ -102,6 +108,7 @@ async def session_scope() -> AsyncIterator[AsyncSession]:
         raise
     except Exception as exc:  # noqa: BLE001
         await session.rollback()
+        _logger.warning("数据库会话失败，已降级：%s", exc, exc_info=True)
         raise DatabaseUnavailable(str(exc)) from exc
     finally:
         await session.close()

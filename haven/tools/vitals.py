@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
-from managed_deepagents import ManagedDeepAgentRuntime
+from langchain.tools import ToolRuntime
 from sqlalchemy import select
 
 from application.commands import C_CANCEL, C_CONFIRM
@@ -82,7 +82,7 @@ async def _recent_duplicate(
 
 
 async def record_blood_pressure(
-    runtime: ManagedDeepAgentRuntime = None,
+    runtime: ToolRuntime = None,
     systolic: int | None = None,
     diastolic: int | None = None,
     measured_at: str | None = None,
@@ -167,7 +167,7 @@ async def record_blood_pressure(
 
 
 async def get_pending_blood_pressure(
-    runtime: ManagedDeepAgentRuntime = None,
+    runtime: ToolRuntime = None,
 ) -> str:
     """查询是否有等待用户确认的异常血压记录（中断后可据此恢复流程）。"""
     uid = uid_of(runtime)
@@ -187,7 +187,7 @@ async def get_pending_blood_pressure(
 
 
 async def confirm_abnormal_blood_pressure(
-    runtime: ManagedDeepAgentRuntime = None,
+    runtime: ToolRuntime = None,
     systolic: int | None = None,
     diastolic: int | None = None,
 ) -> str:

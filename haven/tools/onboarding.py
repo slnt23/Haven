@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime
 
-from managed_deepagents import ManagedDeepAgentRuntime
+from langchain.tools import ToolRuntime
 from sqlalchemy import delete, select
 
 from application.commands import C_PROFILE
@@ -33,7 +33,7 @@ from storage.models import DiseaseRecord, HealthProfile, OnboardingDraft
 from tools._helpers import NO_IDENTITY_REPLY, degraded, has_consented, uid_of
 
 
-async def get_health_profile(runtime: ManagedDeepAgentRuntime = None) -> str:
+async def get_health_profile(runtime: ToolRuntime = None) -> str:
     """读取当前用户的健康档案与登记的健康问题（须已同意隐私政策）。"""
     uid = uid_of(runtime)
     if uid is None:
@@ -74,7 +74,7 @@ async def get_health_profile(runtime: ManagedDeepAgentRuntime = None) -> str:
 
 
 async def save_health_profile(
-    runtime: ManagedDeepAgentRuntime = None,
+    runtime: ToolRuntime = None,
     nickname: str | None = None,
     gender: str | None = None,
     birth_date: str | None = None,
@@ -172,7 +172,7 @@ async def save_health_profile(
 
 
 async def save_onboarding_draft(
-    runtime: ManagedDeepAgentRuntime = None,
+    runtime: ToolRuntime = None,
     step: str | None = None,
     value: str | None = None,
 ) -> str:
