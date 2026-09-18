@@ -12,7 +12,11 @@
   一回事，勿混。跨会话连续性 = 持久线程 + 库内业务表（user_id 隔离）。
 - 中间件顺序：紧急输入扫描在最外层（先于一切 LLM 处理），命令路由、
   输出安全依次在后，记忆注入在安全中间件内侧（它只往 system prompt
-  追加内容块，不重写，见 `middleware/memory_context.py` 模块头）。
+  追加内容块，不重写，见 `middleware/memory_context.py` 模块头），
+  最后是 MCP 策略（`middleware/mcp_policy.py`，只挂工具调用钩子：
+  外部 MCP 工具白名单放行、默认拒绝、审计、失败降级）。
+- 外部 MCP：声明在 `connectors/mcp.py`（平台原生连接器，仅远程 HTTP/SSE），
+  服务器清单来自 `HAVEN_MCP_SERVERS`；留空 = 完全关闭，模型看不到任何外部工具。
 - 中断门：异常血压确认与数据删除需人工批准后才执行工具
   （`interrupt_on`），配合工具的确定性闸门（待确认行匹配）。
 """
@@ -22,6 +26,7 @@ from managed_deepagents import define_deep_agent
 from config import get_settings
 from middleware.commands import command_middleware
 from middleware.emergency_input import emergency_input_middleware
+from middleware.mcp_policy import mcp_policy_middleware
 from middleware.memory_context import memory_context_middleware
 from middleware.output_safety import output_safety_middleware
 from tools.account import delete_my_data
@@ -59,6 +64,7 @@ agent = define_deep_agent(
         command_middleware,  # /hello /help /consent /cancel 确定性路由
         output_safety_middleware,
         memory_context_middleware,  # 只追加 system prompt 内容块，放其内侧
+        mcp_policy_middleware,  # 工具层钩子：MCP 白名单/审计/降级（只挂工具调用）
     ],
     interrupt_on={
         "confirm_abnormal_blood_pressure": True,

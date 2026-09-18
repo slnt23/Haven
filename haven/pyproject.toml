@@ -5,10 +5,21 @@ description = "A Managed Deep Agent project."
 requires-python = ">=3.11"
 dependencies = [
     "managed-deepagents==0.6.1",
-    "langchain>=1.4.0,<2.0.0",
+    # 以下四个版本组合是**端到端验证通过**的（含工具注入参数的校验行为）：
+    # 升到 langchain 1.4.1 / core 1.6.3 / deepagents 0.7.15 后，注入到工具
+    # 的 runtime 参数会重新被 pydantic 校验拦下（报空错误的 "Error invoking
+    # tool"）。改动前请先跑通完整闭环。
+    "langchain==1.4.0",
+    "langchain-core==1.6.2",
+    "langgraph==1.2.11",
+    "deepagents==0.7.13",
     "langchain-deepseek>=1.0.0,<2.0.0",
     "sqlalchemy[asyncio]>=2.0.40,<3.0.0",
     "aiosqlite>=0.21.0",
     "asyncpg>=0.30.0",
     "pydantic-settings>=2.6.0",
+    # 外部 MCP 连接器（connectors/mcp.py）。平台构建清单本来就固定注入这两个
+    # 包；在这里显式声明是因为 mda 的连接器*发现*阶段要求项目依赖已安装。
+    "langchain-mcp-adapters>=0.3.2",
+    "mcp>=1.24.0,<2.0.0",
 ]

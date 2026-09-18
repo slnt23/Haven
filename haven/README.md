@@ -124,10 +124,65 @@ opt out (for example for chat-only agents). Add `sandbox/setup.sh` if you want
 to provision a recipe snapshot; `mda deploy` / `mda dev` bake it once and new
 threads clone that image without re-running the script.
 
-## Optional Runtime Pieces
+## 外部 MCP 服务器（connectors/mcp.py）
 
-Add `connectors/mcp.py` to attach MCP servers. The file must export a named
-`connector` declaration.
+健健支持接入**外部 MCP 服务器**（平台原生连接器，见 `connectors/mcp.py`）。
+要点：
+
+- **只支持远程 HTTP/SSE**：MDA 明确拒绝 stdio 传输（"expose the server over
+  HTTP or write a normal authored tool instead"）—— `uvx/npx` 起的本地
+  stdio 型 MCP 必须先以 HTTP 方式暴露，否则接不上。
+- **配置在 `.env`**（`HAVEN_MCP_SERVERS`，JSON；连接器模块由 CLI 在编译期
+  真实 import，所以能读环境变量）。留空 = 完全关闭，模型看不到任何外部工具：
+
+  ```bash
+  HAVEN_MCP_SERVERS={"neo4j":{"transport":"http","url":"http://127.0.0.1:8000/mcp/","include_tools":["read_neo4j_cypher"]}}
+  ```
+
+- **只读是双保险**：① 每个服务器必须给 `include_tools` 只读白名单，留空的
+  服务器整体不启用；② `middleware/mcp_policy.py` 对 MCP 命名空间默认拒绝、
+  每次调用写去标识审计（`event_type="mcp"`，不含参数）、远端失败/超时映射为
+  固定降级文案。最终写权限仍取决于 MCP 服务器自身（如 Neo4j 侧只读开关）。
+- 工具在模型侧的名字是 `{服务器名}__{远端工具名}`（如
+  `neo4j__read_neo4j_cypher`）；`instructions.md` §四 有对应使用规则
+  （只读、绝不外发健康数据、结果逐字转达）。
+- **部署**：MCP 地址必须从托管运行时可达（公网/内网可路由），凭据用
+  `headers`（随 `.env` 转发为部署密钥）。本地 compose 里的服务名/docker
+  内网地址在部署端不可用。若有意放行写类工具，请同时把该工具名加进
+  `agent.py` 的 `interrupt_on`（人工批准门）。
+- 本地 `neo4j-mcp/docker-compose.yaml` 若要启用需先修正：镜像应为官方
+  `neo4j/mcp-neo4j-cypher`（或 `-memory`），并按官方文档设置传输/端口参数；
+  当前写的 `mcp/neo4j:latest` 与那套环境变量名都不对。
+
+### 有服务器后的验证手册（本轮未接真实服务器）
+
+1. 起 MCP 服务器（HTTP 传输），确认 `curl http://<host>:<port>/mcp/` 可达；
+2. `.env` 填 `HAVEN_MCP_SERVERS`（白名单先只放一个只读工具）；
+3. `mda dev --no-browser` 起服务，问一句需要外部资料的问题，确认模型能列出
+   并调用 `{server}__{tool}`；
+4. 查库确认审计行出现 `mcp:<tool>:ok`；
+5. 把 MCP 服务器停掉再问一次：应降级为「这次没有查到」，且不编造结果
+   （审计行 `:error`）；把白名单外的工具名塞进请求应被拒绝（`:denied`）。
+
+### 实现要点（都是踩过的坑）
+
+- **连接器模块只能依赖标准库**：mda CLI 用它**自己的解释器**导入 `connectors/*`
+  做发现，那个环境没有项目依赖 —— 模块里 `from config import ...` 会让导入失败，
+  而 CLI 对导入失败的连接器是**静默跳过**的（表现为"配了却完全不生效"）。
+  所以配置读取放在 `mcp_config.py`（纯标准库），`config.py` 只做校验消费。
+- **`connector` 必须是模块级静态可见的赋值**（发现阶段识别的是顶层
+  `connector = ...`）；写在 `if` 块里不会被发现。未配置服务器时其值为 `None`，
+  `collect_connectors` 会跳过 —— 这是"功能关闭"的合法形态。
+- **项目要显式声明 `langchain-mcp-adapters` + `mcp`**：连接器发现要求项目依赖
+  已安装（平台构建清单本来也会注入这两个包）。
+- **依赖版本已钉住**（`langchain==1.4.0` / `langchain-core==1.6.2` /
+  `langgraph==1.2.11` / `deepagents==0.7.13`）：升到 1.4.1/1.6.3/0.7.15 后，
+  注入到工具的 `runtime` 参数会重新被 pydantic 校验拦下（工具只报空的
+  "Error invoking tool"）。改版本前请先跑通完整闭环。
+- **工具调用中间件与注入参数的冲突**：MDA 的中间件 seam 会把
+  `request.runtime` 换成鸭子类型的 `_ManagedRuntime` 代理，langgraph 再把这个
+  代理注入工具参数 → 过不了 `ToolRuntime` 校验。`middleware/mcp_policy.py`
+  因此在调用 handler 前把它**还原成底层 `ToolRuntime`**（代理只用于审计）。
 
 ## Deploy
 

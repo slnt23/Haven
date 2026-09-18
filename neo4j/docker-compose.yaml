@@ -1,0 +1,41 @@
+
+
+services:
+  neo4j:
+    image: neo4j:5.26-community  # 使用最新的5.x社区版，也可改为 enterprise
+    container_name: neo4j
+    restart: unless-stopped
+    ports:
+      - "7474:7474"   # HTTP Browser 端口
+      - "7687:7687"   # Bolt 协议端口
+    environment:
+      # 认证配置
+      - NEO4J_AUTH=neo4j/password123   # 格式：用户名/密码，请务必修改密码！
+      # 内存配置（根据主机情况调整）
+      - NEO4J_server_memory_heap_initial__size=512m
+      - NEO4J_server_memory_heap_max__size=2G
+      - NEO4J_server_memory_pagecache_size=1G
+      # 允许从任意主机连接（开发环境方便，生产环境请收紧）
+      - NEO4J_server_default__listen__address=0.0.0.0
+      # 启用 APOC 插件（可选）
+      - NEO4J_PLUGINS=["apoc"]
+      # 允许 APOC 执行一些过程（可选）
+      - NEO4J_dbms_security_procedures_unrestricted=apoc.*
+      - NEO4J_dbms_security_procedures_allowlist=apoc.*
+    volumes:
+      - neo4j_data:/data          # 数据持久化
+      - neo4j_logs:/logs          # 日志持久化
+      - neo4j_import:/var/lib/neo4j/import  # 导入文件目录
+      - neo4j_plugins:/plugins    # 插件目录（如需手动放插件）
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider localhost:7474 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+volumes:
+  neo4j_data:
+  neo4j_logs:
+  neo4j_import:
+  neo4j_plugins:
