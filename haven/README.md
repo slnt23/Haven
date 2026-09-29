@@ -179,6 +179,11 @@ threads clone that image without re-running the script.
   `langgraph==1.2.11` / `deepagents==0.7.13`）：升到 1.4.1/1.6.3/0.7.15 后，
   注入到工具的 `runtime` 参数会重新被 pydantic 校验拦下（工具只报空的
   "Error invoking tool"）。改版本前请先跑通完整闭环。
+- **Python 3.14 的依赖下限**（本地 `.venv` 是 3.14）：`asyncpg>=0.31.0` 是硬要求
+  —— 0.30.0 没有 cp314 轮子，会被迫源码编译；`sqlalchemy` 上限卡在 `<2.1`
+  （2.1.x 是 2026-09-24 才发布的，2.0.52 已带 cp314 轮子）。`requires-python`
+  保持 `>=3.11` 别动：`mda build` 用的是 Python 3.12（`.mda/build/.venv/pyvenv.cfg`），
+  提到 3.14 会让构建环境装不上。
 - **工具调用中间件与注入参数的冲突**：MDA 的中间件 seam 会把
   `request.runtime` 换成鸭子类型的 `_ManagedRuntime` 代理，langgraph 再把这个
   代理注入工具参数 → 过不了 `ToolRuntime` 校验。`middleware/mcp_policy.py`
