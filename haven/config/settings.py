@@ -1,23 +1,33 @@
-"""集中式环境配置 —— `.env` 可调项的唯一入口。
+"""集中式环境配置 —— `.env` 可调项的唯一入口（config 包）。
 
 只放运行/部署类配置（数据库地址、模型名、日志级别）。
 健康与安全相关的医学/合规常量（血压阈值、紧急词表、异常确认窗口、
 固定文案等）刻意不在此 —— 它们是产品语义而非部署参数，改动须走
 代码评审，不允许被环境变量在部署时悄悄改写。
+
+**为什么配置是一个包而不是一个文件**：`config/mcp.py` 处在构建期被
+mda CLI 的裸解释器导入的连接器链路上，必须纯标准库；本模块（pydantic）
+因此与它分开，且 `config/__init__.py` 保持为空 —— 详见 `config/mcp.py`
+模块头，改动包结构前先读那一段。
 """
 
 import logging
+from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from mcp_config import load_mcp_servers
+from config.mcp import load_mcp_servers
 
 _logger = logging.getLogger(__name__)
 
+#: 模块相对定位项目根（config/ 的上一级）：`.env` 不再依赖进程 cwd ——
+#: 仓库根 dev、`.mda/build`、部署产物三种运行方式下都指向同一位置的 .env。
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
 #: 开发默认 SQLite；部署须为 PostgreSQL（同一 SQLAlchemy URL 互换）。
-DEFAULT_DATABASE_URL = "sqlite+aiosqlite:///./data/haven.db"
+DEFAULT_DATABASE_URL = "sqlite+aiosqlite:///./.data/haven.db"
 #: 默认模型（MDA 格式 <provider>:<model>；.env 的 HAVEN_MODEL 可覆盖）。
 DEFAULT_AGENT_MODEL = "deepseek:deepseek-v4-flash"
 #: MCP 工具调用的默认超时（秒）——单次外部调用不许拖住整轮对话。
@@ -34,7 +44,8 @@ class McpServerSettings(BaseModel):
 
     transport: Literal["http", "sse"] = "http"
     url: str
-    #: 认证等静态请求头（如 {"Authorization": "Bearer …"}）——值放 .env，勿入库。
+    #: 认证等静态请求头（如 {"Authorization": "Bearer …"}）——密钥放 .env，
+    #: 在 config/mcp.json 里用 ${VAR} 引用（见 config/mcp.py）；清单可提交。
     headers: dict[str, str] = Field(default_factory=dict)
     #: 允许暴露给模型的远端工具名（白名单，只读工具）。
     include_tools: list[str] = Field(default_factory=list)
@@ -43,7 +54,7 @@ class McpServerSettings(BaseModel):
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=_PROJECT_ROOT / ".env",
         env_file_encoding="utf-8",
         extra="ignore",
         # .env 中留空的占位（DATABASE_URL=）不覆盖默认值。
@@ -64,7 +75,7 @@ class Settings(BaseSettings):
     def mcp_servers(self) -> dict[str, McpServerSettings]:
         """已启用的外部 MCP 服务器（校验后）。
 
-        读取交给 `mcp_config.load_mcp_servers()`（标准库实现 —— 连接器模块
+        读取交给 `config.mcp.load_mcp_servers()`（标准库实现 —— 连接器模块
         必须在 CLI 的裸解释器里可导入，见其模块头）。配置有问题时**关闭
         MCP**（fail-closed）并留告警：策略层宁可不放行，也不放行没校验过的
         东西。解析结果已缓存，工具调用路径上无重复开销。
@@ -75,7 +86,9 @@ class Settings(BaseSettings):
                 for name, raw in load_mcp_servers().items()
             }
         except Exception as exc:  # noqa: BLE001 —— fail-closed
-            _logger.warning("HAVEN_MCP_SERVERS 配置无效，MCP 已关闭：%s", exc)
+            _logger.warning(
+                "config/mcp.json 配置无效，MCP 已关闭（fail-closed）：%s", exc
+            )
             return {}
 
 

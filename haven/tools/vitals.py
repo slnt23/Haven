@@ -1,6 +1,7 @@
 """血压记录工具 —— 确定性校验 + 异常二次确认的两阶段写入。
 
 流程：`record_blood_pressure` 校验并（若需确认）只落待确认行，不写血压表；
+用户改报新数值即视为放弃旧读数（记录新值时一并清掉旧待确认行）；
 `confirm_abnormal_blood_pressure` 校验匹配后消费待确认行并正式入库。
 LLM 无法绕开确认：二级及以上异常值没有「确认」就没有行。
 """
@@ -136,6 +137,11 @@ async def record_blood_pressure(
                     pending.prompt_text = confirm.message
                     pending.expires_at = now + PENDING_CONFIRM_TTL
             else:
+                # 改报无需确认的新数值 = 放弃上一条待确认读数：清掉旧行，
+                # 防止 24 小时内一句「确认」把用户已放弃的旧异常值入库。
+                stale = await _find_pending(session, uid)
+                if stale is not None:
+                    await session.delete(stale)
                 session.add(
                     BloodPressure(
                         user_id=uid,

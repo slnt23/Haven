@@ -11,11 +11,11 @@ haven/                 # 健健 —— 0.0.1 高血压管理智能体
   safety/              # 紧急拦截词表、免责声明、输出过滤、降级文案（src 原值复刻）
   application/         # 血压校验权威表、异常确认、趋势统计、建档字段词表、记忆块组装、固定消息
   storage/             # 懒初始化 async SQLAlchemy（SQLite 开发 / PG 部署）
-  middleware/          # 紧急扫描（LLM 前）→ 命令路由 → 输出安全过滤 + 降级兜底 → 记忆注入
+  middleware/          # 紧急扫描（LLM 前）→ 命令路由 → 输出安全过滤 + 降级兜底 → 记忆注入 → MCP 策略（工具层：白名单/审计/降级）
   tools/               # 11 个确定性工具（同意→建档→血压→趋势→删除）
-  config.py            # 集中环境配置 —— .env 可调项单一来源（HAVEN_MODEL / HAVEN_OWNER_ID / DATABASE_URL）
+  config/              # 集中配置包：settings.py（.env 可调项单一来源）+ mcp.py + mcp.json（外部 MCP 清单）
   identity.py          # 管理认证：只回答"能不能进"（LangSmith API key）
-  pyproject.toml       # 依赖；.env 密钥（勿提交）；.gitignore 含 storage/、data/、.env
+  pyproject.toml       # 依赖；.env 密钥（勿提交）；.gitignore 含 .env、.data/、.mda/（storage/ 是源码目录，需提交）
 ```
 
 **单租户：一个部署 = 一个人**（见 [ADR-006](.docs/adr/ADR-006-单租户身份模型.md)）。
@@ -118,11 +118,11 @@ nothing and shares nothing across callers.
 
 ## Sandbox
 
-`sandbox/__init__.py` declares a managed LangSmith sandbox. MDA only enables the
-sandbox when this declaration is present — remove the `sandbox/` directory to
-opt out (for example for chat-only agents). Add `sandbox/setup.sh` if you want
-to provision a recipe snapshot; `mda deploy` / `mda dev` bake it once and new
-threads clone that image without re-running the script.
+本项目**不声明 sandbox**（仓库内不存在 `sandbox/` 目录）——健健是纯对话 + 确定性
+工具，不需要文件系统或 shell，脚手架阶段即按无沙箱处理。MDA 只在声明存在时启用
+托管沙箱，因此当前没有什么托管沙箱可清理。若将来需要，新建 `sandbox/__init__.py`
+导出 `define_sandbox(...)`（0.6.1 恒为每 thread 一沙箱，`scope` 由平台托管），
+并在 README 此处同步说明。
 
 ## 外部 MCP 服务器（connectors/mcp.py）
 
@@ -132,32 +132,45 @@ threads clone that image without re-running the script.
 - **只支持远程 HTTP/SSE**：MDA 明确拒绝 stdio 传输（"expose the server over
   HTTP or write a normal authored tool instead"）—— `uvx/npx` 起的本地
   stdio 型 MCP 必须先以 HTTP 方式暴露，否则接不上。
-- **配置在 `.env`**（`HAVEN_MCP_SERVERS`，JSON；连接器模块由 CLI 在编译期
-  真实 import，所以能读环境变量）。留空 = 完全关闭，模型看不到任何外部工具：
+- **配置在 `config/mcp.json`**（扁平 JSON：`{服务器名: 配置对象}`；随仓库提交、
+  随构建逐字拷贝进产物）。缺失 / 空 / `{}` = 完全关闭，模型看不到任何外部工具。
+  字符串值支持 `${VAR}` 插值（按**进程环境 → 项目根 `.env`** 依次解析；引用了
+  未设置的变量会在构建/启动时**直接报错**）；密钥只放 `.env`，这里不落明文：
 
-  ```bash
-  HAVEN_MCP_SERVERS={"neo4j":{"transport":"http","url":"http://127.0.0.1:8000/mcp/","include_tools":["read_neo4j_cypher"]}}
+  ```json
+  {
+    "neo4j": {
+      "transport": "http",
+      "url": "${NEO4J_MCP_URL}",
+      "headers": {"Authorization": "Bearer ${NEO4J_MCP_TOKEN}"},
+      "include_tools": ["read_neo4j_cypher"]
+    }
+  }
   ```
 
 - **只读是双保险**：① 每个服务器必须给 `include_tools` 只读白名单，留空的
   服务器整体不启用；② `middleware/mcp_policy.py` 对 MCP 命名空间默认拒绝、
-  每次调用写去标识审计（`event_type="mcp"`，不含参数）、远端失败/超时映射为
-  固定降级文案。最终写权限仍取决于 MCP 服务器自身（如 Neo4j 侧只读开关）。
+  异步路径每次调用写去标识审计（`event_type="mcp"`，不含参数；同步路径不写
+  ——无事件循环）、远端失败/超时映射为固定降级文案。最终写权限仍取决于
+  MCP 服务器自身（如 Neo4j 侧只读开关）。
 - 工具在模型侧的名字是 `{服务器名}__{远端工具名}`（如
   `neo4j__read_neo4j_cypher`）；`instructions.md` §四 有对应使用规则
   （只读、绝不外发健康数据、结果逐字转达）。
-- **部署**：MCP 地址必须从托管运行时可达（公网/内网可路由），凭据用
-  `headers`（随 `.env` 转发为部署密钥）。本地 compose 里的服务名/docker
-  内网地址在部署端不可用。若有意放行写类工具，请同时把该工具名加进
-  `agent.py` 的 `interrupt_on`（人工批准门）。
-- 本地 `neo4j-mcp/docker-compose.yaml` 若要启用需先修正：镜像应为官方
-  `neo4j/mcp-neo4j-cypher`（或 `-memory`），并按官方文档设置传输/端口参数；
-  当前写的 `mcp/neo4j:latest` 与那套环境变量名都不对。
+- **部署**：MCP 地址必须从托管运行时可达（公网/内网可路由）；凭据用
+  `headers`，值放 `.env`（部署时转发为部署密钥），mcp.json 里以 `${VAR}`
+  引用。本地 compose 里的服务名/docker 内网地址在部署端不可用。若有意放行
+  写类工具，请同时把该工具名加进 `agent.py` 的 `interrupt_on`（人工批准门）。
+- 本地 compose 在**仓库根上一级**：`../neo4j-mcp/docker-compose.yaml`。镜像
+  `mcp/neo4j:latest` **是官方镜像**（Docker MCP 目录、Neo4j 官方发布）——无需
+  更换；但环境变量名（当前 `NEO4J_TRANSPORT` / `NEO4J_MCP_SERVER_*`）与官方
+  `mcp/neo4j` 文档（`NEO4J_TRANSPORT_MODE`，弃用别名 `NEO4J_MCP_TRANSPORT`；
+  `NEO4J_MCP_HTTP_HOST` / `NEO4J_MCP_HTTP_PORT`）不符，启用前须按官方文档
+  逐项核对。注意该 compose 含明文密码，仅限本机使用、勿提交/外传。
 
 ### 有服务器后的验证手册（本轮未接真实服务器）
 
 1. 起 MCP 服务器（HTTP 传输），确认 `curl http://<host>:<port>/mcp/` 可达；
-2. `.env` 填 `HAVEN_MCP_SERVERS`（白名单先只放一个只读工具）；
+2. 编辑 `config/mcp.json`（白名单先只放一个只读工具）；
 3. `mda dev --no-browser` 起服务，问一句需要外部资料的问题，确认模型能列出
    并调用 `{server}__{tool}`；
 4. 查库确认审计行出现 `mcp:<tool>:ok`；
@@ -166,10 +179,13 @@ threads clone that image without re-running the script.
 
 ### 实现要点（都是踩过的坑）
 
-- **连接器模块只能依赖标准库**：mda CLI 用它**自己的解释器**导入 `connectors/*`
-  做发现，那个环境没有项目依赖 —— 模块里 `from config import ...` 会让导入失败，
-  而 CLI 对导入失败的连接器是**静默跳过**的（表现为"配了却完全不生效"）。
-  所以配置读取放在 `mcp_config.py`（纯标准库），`config.py` 只做校验消费。
+- **连接器链路上的整条 import 必须纯标准库（包括 `config/__init__.py`，它保持
+  为空）**：`connectors/*` 会在 mda 的各条链路、不同环境里被导入——实测
+  （0.6.1）：`mda build` 不加载连接器（模块顶层报错也构建成功，静默）；
+  `mda dev` 在构建产物运行时加载、失败会打印 traceback。链路一旦引入
+  `pydantic_settings` 这类项目依赖，就会出现"有的命令能跑、有的环境配了却不
+  生效"。所以配置读取放在 `config/mcp.py`（纯标准库），`config/settings.py`
+  只做校验消费。
 - **`connector` 必须是模块级静态可见的赋值**（发现阶段识别的是顶层
   `connector = ...`）；写在 `if` 块里不会被发现。未配置服务器时其值为 `None`，
   `collect_connectors` 会跳过 —— 这是"功能关闭"的合法形态。
@@ -248,7 +264,7 @@ requires a workspace selection.
 
 ### 健健部署注意
 
-- 模型走 DeepSeek：`.env` 需 `DEEPSEEK_API_KEY`；模型名由 `config.py`
+- 模型走 DeepSeek：`.env` 需 `DEEPSEEK_API_KEY`；模型名由 `config/settings.py`
   读取 `.env` 的 `HAVEN_MODEL`（默认 `deepseek:deepseek-v4-flash`，
   切换模型只改 `.env`，不动代码）。
 - 模型/密钥链路（dev 与部署一致）：代码从不读取 `DEEPSEEK_API_KEY`，由
@@ -258,12 +274,12 @@ requires a workspace selection.
   无需额外联调。`DEEPSEEK_API_KEY` 与 `HAVEN_MODEL` 都是**服务器侧**凭证/配置
   （模型调用账单走部署者账户），与终端用户无关 —— 用户经身份认证访问部署的
   agent，不接触也不需要提供这些值。
-- **本人身份**：`config.py` 读取 `.env` 的 `HAVEN_OWNER_ID`（留空 → 默认
+- **本人身份**：`config/settings.py` 读取 `.env` 的 `HAVEN_OWNER_ID`（留空 → 默认
   `owner`）。**本机 `mda dev` 与云端部署必须是同一个值**，否则两边看到的是
   两份"同一个人的数据"。改这个值等于换一个人用，旧数据不会跟过来。
-- **数据库**：`config.py` 读取 `.env` 的 `DATABASE_URL`（`storage/database.py`
+- **数据库**：`config/settings.py` 读取 `.env` 的 `DATABASE_URL`（`storage/database.py`
   引用同一配置）；开发默认
-  `sqlite+aiosqlite:///./data/haven.db`（建表由首笔工具调用懒初始化）。
+  `sqlite+aiosqlite:///./.data/haven.db`（建表由首笔工具调用懒初始化）。
   部署前**必须**在 `.env` 设置托管 PostgreSQL，如
   `DATABASE_URL=postgresql+asyncpg://user:pass@host:5432/haven` ——
   SQLite 仅限本地 dev（`mda dev`），不要带去部署。

@@ -1,6 +1,6 @@
 ---
 name: managed-deep-agents
-description: "INVOKE THIS SKILL when building, testing, or deploying Managed Deep Agents in LangSmith with the mda CLI. Walks a user through their first agent end to end — interviewing them about what they want to build, mapping it onto what MDA can actually do, then scaffolding and deploying it. Covers the file-based project layout; define_deep_agent / defineDeepAgent; instructions, skills, memory, identity, tools, middleware, sandboxes, schedules, channels, and evals; mda init/build/dev/deploy/logs/delete; and Context Hub."
+description: "INVOKE THIS SKILL when building, testing, or deploying Managed Deep Agents in LangSmith with the mda CLI. Walks a user through their first agent end to end — interviewing them about what they want to build, mapping it onto what MDA can actually do, then scaffolding and deploying it. Covers the file-based project layout; define_deep_agent / defineDeepAgent; instructions, skills, memory, identity, tools, middleware, connectors (MCP), sandboxes, schedules, channels, and evals; mda init/build/dev/deploy/logs/delete; and Context Hub."
 ---
 
 # Managed Deep Agents
@@ -60,6 +60,7 @@ The common redirect: if they need custom HTTP routes, their own auth, or non-US 
 | --- | --- | --- |
 | How it should behave, its tone, its rules | Instructions | `instructions.md` |
 | Calls our API / database / internal service | Authored tools | `tools/` |
+| Reaches a remote MCP server (HTTP/SSE) | MCP connector | `connectors/mcp.py` |
 | A procedure it should follow for certain tasks | Skills | `skills/<name>/SKILL.md` |
 | Remembers things across conversations | Durable memory (read the warning) | `memory.py` |
 | Runs on a timer, no user message | Schedules | `schedules/<name>.py` |
@@ -127,7 +128,6 @@ Check requests against this list *before* agreeing to build them. Being straight
 | --- | --- |
 | US LangSmith Cloud only | No self-hosted, no hybrid, no EU region. Needs `langgraph deploy`. |
 | CLI-first, public beta | No public create/update/invoke REST surface. Calling a deployed agent from your own application is not documented during beta — tell the user to contact their LangChain team. |
-| No MCP connectors | The `connectors/mcp.*` + `define_mcp_servers` surface was **removed**. Do not write it. Give the agent authored tools instead. |
 | Slack is the only channel | No Discord, Teams, email, or SMS channel. |
 | Memory is deployment-shared | One `/memories/agent/` tree for **all** callers. There is no per-user memory. |
 | Identity is LangSmith key or Supabase | No OIDC, SAML, or custom JWT issuer. Per-user private threads require Supabase. |
@@ -169,6 +169,7 @@ my-agent/
   identity.py | identity.ts        # Who may call the deployment
   memory.py | memory.ts            # Opt-in durable memory
   channels/<name>.py               # External messaging (Slack)
+  connectors/<name>.py | .ts       # MCP connectors (remote HTTP/SSE; stdio rejected)
   schedules/<name>.py              # Managed cron schedules
   sandbox/__init__.py | index.ts   # Managed sandbox
 
@@ -367,7 +368,6 @@ A sandbox gives the agent an isolated filesystem and shell. `mda init` scaffolds
 from managed_deepagents import define_sandbox
 
 sandbox = define_sandbox(
-    scope="thread",
     idle_ttl_seconds=600,
     default_timeout=600,
 )
@@ -378,15 +378,14 @@ sandbox = define_sandbox(
 import { defineSandbox } from "managed-deepagents";
 
 export const sandbox = defineSandbox({
-  scope: "thread",
   idleTtlSeconds: 600,
   defaultTimeout: 600,
 });
 ```
 
-`scope="thread"` (the default) creates one sandbox per durable thread. `scope="agent"` shares a single filesystem across threads — **only use it for intentionally shared state**, since threads can then read and modify each other's files. Set the creation source with `template_name` *or* `snapshot_id`, never both.
+`scope` is owned by the runtime: reuse is **always one sandbox per thread** (verified against `mda` 0.6.1 — passing `scope="agent"` raises `TypeError`, and the legacy `scope="thread"` is merely tolerated and ignored). Set the bake base with **exactly one** of `snapshot_name`, `snapshot_id`, or `docker_image`; the old name `template_name` is gone.
 
-The agent works through `ls`, `read_file`, `write_file`, `edit_file`, `glob`, `grep`, and `execute`. Use `instructions.md` to say where it should work and what it must not touch. `mda delete` also deletes the managed sandboxes.
+The agent works through `ls`, `read_file`, `write_file`, `edit_file`, `delete`, `glob`, `grep`, and `execute`. Use `instructions.md` to say where it should work and what it must not touch. `mda delete` also deletes the managed sandboxes.
 
 During `mda dev`, if the provider is unavailable the runtime falls back to a local temp directory and prints the path. That fallback is for development only — verify sandbox behavior in a dev deployment.
 
@@ -437,9 +436,11 @@ A channel *receives* messages that start runs. It is not the same as giving the 
 MDA evals are [Harbor](https://www.harborframework.com/docs/tasks) evals. `evals/tasks/` is the canonical dataset; author complete Harbor tasks there. `mda evals` does not introduce a separate format and does not run trials — it packages the agent for Harbor and prints a `harbor run` command.
 
 ```bash
-mda evals init smoke      # optional starter under evals/scaffold/
-mda evals compile .       # copies scaffolds into evals/tasks/, writes the handoff
+mda evals init -i         # initialize the eval workspace (+ coding-agent handoff)
+mda evals compile .       # package the agent for Harbor (internal entrypoint)
 ```
+
+The positional `[TASK_NAME]` of `mda evals init` is deprecated and ignored in `mda` 0.6.1.
 
 `evals/` is not included in the deployed build. Harbor needs Docker for its default environment, and **does not read `.env`** — the generated job config writes `${VAR}` placeholders, so export the variables in the shell that runs Harbor. Verifiers write a numeric reward to `/logs/verifier/reward.txt` or metrics to `/logs/verifier/reward.json`. For deeper eval design, see [[eval-engineering]].
 
@@ -451,16 +452,17 @@ mda evals compile .       # copies scaffolds into evals/tasks/, writes the hando
 | `mda build [path]` | Compile into a managed LangGraph app without deploying. |
 | `mda dev [path]` | Compile and run the local dev server in LangSmith Studio. |
 | `mda deploy [path]` | Compile, sync Context Hub, upload, deploy, reconcile schedules. |
+| `mda channel init slack` | Create a Slack channel definition in the current project. Alias: `channels`. |
 | `mda logs [path]` | Tail Agent Server logs for a deployed agent. |
 | `mda delete [path]` | Delete a deployment and the LangSmith resources it created. Alias: `destroy`. |
 | `mda evals init\|compile` | Scaffold a Harbor task; package the agent for Harbor. Alias: `eval`. |
 
 Key flags:
 
-- `init`: `--model SPEC`, `--instructions TEXT`, `--instructions-file PATH`, `--memory agent|none`, `--gateway`, `--no-sandbox`
+- `init`: `--model SPEC`, `--instructions TEXT`, `--instructions-file PATH`, `--memory agent|none`, `--gateway`, `--no-sandbox`, `-c/--channel slack` (repeatable, alias `--channels`), `-i/--interactive`
 - `build`: `--out OUT` (defaults to `<path>/.mda/build`, emptied before each build)
 - `dev`: `--port`, `--hostname`, `--no-browser`, `--no-reload`
-- `deploy`: `--name`, `--deployment-type dev|prod`, `--workspace-id`, `--no-wait`
+- `deploy`: `--name`, `--deployment-type dev|prod`, `--workspace-id`, `--no-wait`, `--context-strategy overwrite|keep-hub`, `--wait-timeout-seconds` (default 1800)
 - `logs`: `--name`, `--lines`, `--level`, `--follow` / `--no-follow`, `--workspace-id`
 - `delete`: `--name`, `--workspace-id`, `--yes`
 
@@ -510,9 +512,9 @@ Respond to interrupts in Studio during `mda dev`. On a deployed agent, resume th
 - **Model IDs need the provider prefix**: `anthropic:claude-sonnet-4-6`, not a bare model name. Python uses `google_genai:`, TypeScript uses `google-genai:`, and Gateway uses `provider/model`.
 - **Do not set managed fields** (`backend`, `store`, `checkpointer`, `memory`, `skills`, system prompt) in the agent definition.
 - **Memory is opt-in via `memory.py`**, not a constructor argument. `disable_memory` is legacy — declare or delete `memory.py` instead.
-- **MCP connectors do not exist.** `connectors/mcp.*` and `define_mcp_servers` were removed; writing them fails.
+- **MCP connectors exist as of `mda` 0.6.1** — declare `connectors/mcp.py` with `connector = connectors.mcp(mcp_servers={...})` (remote HTTP/SSE only; stdio is rejected). The name `define_mcp_servers` never existed. In 0.8.x (verified on 0.8.5) the factory is deprecated and renamed to `define_mcp(servers=...)` but **not removed** — trust the installed package over this doc.
 - **Restart `mda dev` after adding a managed file.** New `memory.py`, `identity.py`, `schedules/`, or `channels/` declarations are discovered at compile time, not by hot reload.
 - **`--no-wait` skips schedule reconciliation** and exits before `DEPLOYED`.
 - **Schedule declarations must be static literals** — the compiler extracts them without running your code.
 - **`.env` is never archived**, and `.gitignore` must keep it out of version control. Do not write live keys into it on a user's behalf.
-- **The docs run slightly ahead of the released CLI.** Verify against `mda --help` and the installed package before trusting a flag or import. As of `mda` 0.5.0: the sandbox docs show `sandboxes.langsmith(...)`, but that import raises `ImportError` — use `define_sandbox(...)` as shown above; and the documented `mda init --identity` and `mda deploy --configure-slack` flags are not present (`identity.py` is scaffolded by default).
+- **The docs run slightly ahead of the released CLI.** Verify against `mda --help` and the installed package before trusting a flag or import. As of `mda` 0.6.1 (verified against the installed package): `connectors.mcp(...)` and `define_sandbox(...)` import fine; `scope="agent"` raises `TypeError` (sandbox reuse is per-thread); and the documented `mda init --identity` and `mda deploy --configure-slack` flags are not present (`identity.py` is scaffolded by default).

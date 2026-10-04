@@ -3,8 +3,8 @@
 - 只支持**远程 HTTP/SSE**：MDA 明确拒绝 stdio（"expose the server over HTTP
   or write a normal authored tool instead"），本地 `uvx/npx` 型 MCP 必须先以
   HTTP 方式暴露。
-- 服务器清单来自配置（`HAVEN_MCP_SERVERS`，见 `config.py`）而非写死：连接器
-  模块由 CLI 在编译期 import，因此可以读 `.env` / 环境变量。
+- 服务器清单来自 `config/mcp.json`（读取实现 `config/mcp.py`）而非写死：
+  连接器模块会在 mda 的链路里被导入，导入时即可完成读取与校验。
 - **只读**：每个服务器必须给出 `include_tools` 白名单；白名单为空的服务器整体
   跳过 —— 宁可没有工具，也不放开写权限。工具调用侧还有
   `middleware/mcp_policy.py` 的兜底拒绝与审计（双保险）。
@@ -18,11 +18,12 @@ from __future__ import annotations
 
 from managed_deepagents import connectors
 
-from mcp_config import load_mcp_servers
+from config.mcp import load_mcp_servers
 
 #: 只读白名单为空的服务器不启用（配置错误时宁可少给能力）。
-#: 注意：只用标准库读配置 —— 本模块会被 mda CLI 用它自己的解释器导入
-#: （见 `mcp_config.py` 模块头），引入项目依赖会导致整块静默失效。
+#: 注意：只用标准库读配置 —— 本模块会被 mda 各命令在不同环境中导入
+#: （build/dev 行为不一，见 `config/mcp.py` 模块头），引入项目依赖
+#: （**含 `config/__init__.py` 里的任何 import**）会在部分环境失效。
 _servers: dict[str, dict[str, object]] = dict(load_mcp_servers())
 
 # 模块级赋值（不放在 if 里）：mda 的连接器发现可能只认顶层静态可见的

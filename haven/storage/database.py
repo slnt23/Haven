@@ -1,6 +1,6 @@
 """异步数据库层 —— 懒初始化引擎 + 统一会话作用域。
 
-- 配置：`DATABASE_URL` 等环境配置见 `config.py`（单一来源）
+- 配置：`DATABASE_URL` 等环境配置见 `config/settings.py`（单一来源）
   （开发默认 sqlite，部署须为 PostgreSQL，同一 SQLAlchemy URL 互换）。
 - 所有数据库异常统一包装为 `DatabaseUnavailable`，工具层只捕获这一种。
 - 会话在作用域干净退出时自动 commit，异常时自动 rollback。
@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import (
 )
 from sqlalchemy.orm import DeclarativeBase
 
-from config import get_settings
+from config.settings import get_settings
 
 
 _logger = logging.getLogger(__name__)
@@ -43,7 +43,7 @@ _init_done = False
 
 
 def _sqlite_path(url: str) -> Path | None:
-    """sqlite+aiosqlite:///./data/haven.db -> Path('./data/haven.db')；内存库返回 None。"""
+    """sqlite+aiosqlite:///./.data/haven.db -> Path('./.data/haven.db')；内存库返回 None。"""
     if not url.startswith("sqlite"):
         return None
     match = re.match(r"^sqlite(?:\+[a-z]+)?:///?(.*)$", url)

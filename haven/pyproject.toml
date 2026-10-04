@@ -1,6 +1,6 @@
 [project]
 name = "haven"
-version = "0.0.0"
+version = "0.0.1"
 description = "A Managed Deep Agent project."
 requires-python = ">=3.11"
 dependencies = [

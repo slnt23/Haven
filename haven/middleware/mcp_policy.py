@@ -25,7 +25,7 @@ from langchain.agents.middleware import AgentMiddleware
 from langchain.agents.middleware.types import ToolCallRequest
 from langchain_core.messages import ToolMessage
 
-from config import McpServerSettings, get_settings
+from config.settings import McpServerSettings, get_settings
 from safety.degradation import MCP_DEGRADED_RESPONSE, MCP_DENIED_RESPONSE
 from storage.audit import record_audit, subject_key_for
 from storage.database import session_scope

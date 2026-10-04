@@ -1,7 +1,7 @@
 """Who may call this deployment —— 只回答"能不能进"，不回答"进来的是谁"。
 
 **一个部署 = 一个人（单租户，见 .docs/adr/ADR-006）**：这里的认证是唯一的
-准入闸门，而"本人是谁"由配置 `HAVEN_OWNER_ID` 决定（`config.py`），
+准入闸门，而"本人是谁"由配置 `HAVEN_OWNER_ID` 决定（`config/settings.py`），
 见 `storage/database.py:caller_user_id`。
 
 注意 LangSmith-key 模式没有"人"的概念：持有 workspace key 的任何人都能进，
