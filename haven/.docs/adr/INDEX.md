@@ -12,7 +12,7 @@
 | [ADR-008](./ADR-008-用户画像文件USER.md.md)         | 引入 USER.md 作为人类可读的用户画像文件，随对话持续演进               | Proposed | 2026-10-05 |
 
 > ADR-004 / ADR-005 记录 MDA 重写前的旧架构（FastAPI / 自建服务），正文仅作决策溯源，
-> **不适用于当前版本**；现行实现以 [README](../../README.md) 与代码为准。
+> **不适用于当前版本**；现行实现基于 managed-deepagents 0.6.1（`mda dev` / `mda deploy`），技术栈为 Python + LangChain + DeepAgents + SQLAlchemy（SQLite 开发 / PostgreSQL 部署），模型经 langchain-deepseek 直连。
 
 ## 状态约定
 
