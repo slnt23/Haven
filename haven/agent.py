@@ -45,7 +45,7 @@ from tools.vitals import (
 
 agent = define_deep_agent(
     name="haven",
-    model=get_settings().agent_model,
+    model=get_settings().chat_model,
     tools=[
         get_consent_policy,
         consent_status,

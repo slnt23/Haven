@@ -15,10 +15,17 @@ import logging
 from pathlib import Path
 from typing import Literal
 
+from typing import TYPE_CHECKING
+
+from langchain.chat_models import init_chat_model
 from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from config.mcp import load_mcp_servers
+from config.model import load_model_params
+
+if TYPE_CHECKING:
+    from langchain_core.language_models.chat_models import BaseChatModel
 
 _logger = logging.getLogger(__name__)
 
@@ -52,6 +59,23 @@ class McpServerSettings(BaseModel):
     default_tool_timeout: float = DEFAULT_MCP_TOOL_TIMEOUT
 
 
+class AgentModelSettings(BaseModel):
+    """模型推理参数 —— 从 `config/model.yaml` 加载，代码默认值兜底。
+
+    所有参数均可被 `config/model.yaml` 覆盖；缺项/文件缺失则取此处的默认值。
+    与 `.env` 不同：这些是产品语义参数（医疗场景调参），不是部署参数，
+    走 YAML 而非环境变量是为了版本可控、代码评审可追踪。
+    """
+
+    temperature: float = Field(default=0.3, ge=0.0, le=2.0)
+    max_tokens: int = Field(default=4096, ge=1, le=128000)
+    top_p: float = Field(default=0.9, ge=0.0, le=1.0)
+    frequency_penalty: float = Field(default=0.3, ge=-2.0, le=2.0)
+    presence_penalty: float = Field(default=0.1, ge=-2.0, le=2.0)
+    timeout: float = Field(default=60.0, ge=1.0)
+    max_retries: int = Field(default=2, ge=0, le=10)
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=_PROJECT_ROOT / ".env",
@@ -70,6 +94,43 @@ class Settings(BaseSettings):
     #: 详见 ADR-006 与 `storage/database.py:caller_user_id`。
     owner_id: str = Field(default="owner", validation_alias="HAVEN_OWNER_ID")
     log_level: str = "INFO"
+
+    @property
+    def model_params(self) -> AgentModelSettings:
+        """模型推理参数 —— YAML 覆盖默认值，YAML 缺失/缺项则取默认值。
+
+        读取 `config/model.yaml`（与 `config/mcp.json` 同目录）；
+        YAML 中未写的项自动取 `AgentModelSettings` 的 Field(default=...)。
+        解析结果已缓存，调用路径上无 IO 开销。
+        """
+        defaults = AgentModelSettings()
+        try:
+            yaml_values = load_model_params()
+            if yaml_values:
+                return AgentModelSettings(**{**defaults.model_dump(), **yaml_values})
+        except Exception as exc:  # noqa: BLE001 —— 配错了不炸启动
+            _logger.warning("config/model.yaml 解析失败，使用默认值：%s", exc)
+        return defaults
+
+    @property
+    def chat_model(self) -> "BaseChatModel":
+        """基于当前配置构建的聊天模型实例。
+
+        `agent.py` 只需取此属性即可获得完整配置的模型；
+        所有推理参数（temperature、max_tokens 等）已在底层通过
+        `init_chat_model` 注入，调用方无需感知细节。
+        """
+        params = self.model_params
+        return init_chat_model(
+            self.agent_model,
+            temperature=params.temperature,
+            max_tokens=params.max_tokens,
+            top_p=params.top_p,
+            frequency_penalty=params.frequency_penalty,
+            presence_penalty=params.presence_penalty,
+            timeout=params.timeout,
+            max_retries=params.max_retries,
+        )
 
     @property
     def mcp_servers(self) -> dict[str, McpServerSettings]:
