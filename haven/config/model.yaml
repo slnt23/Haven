@@ -1,11 +1,17 @@
-# Haven 模型推理参数
-# 所有参数都在 settings.py 的 AgentModelSettings 中有默认值兜底；
+# Haven 模型配置（模型选择 + 推理参数）
+# 所有参数都在 settings.py 中有默认值兜底；
 # 此文件只需写你想覆盖的项。文件缺失或某项留空 → 取代码默认值。
 
-temperature: 0.3
-max_tokens: 4096
-top_p: 0.9
-frequency_penalty: 0.3
-presence_penalty: 0.1
-timeout: 60.0
-max_retries: 2
+model:
+  # 模型名称（MDA 格式 <provider>:<model>），如 deepseek:deepseek-v4-flash
+  name: deepseek:deepseek-v4-flash
+
+  # —— 推理参数 ——
+  params:
+    temperature: 0.3 # 采样温度（0~2），越高输出越随机、越低越确定
+    max_tokens: 4096 # 单次最大输出 token 数（1~128000）
+    top_p: 0.9 # 核采样概率阈值（0~1），只从累积概率 top_p 的 token 中采样
+    frequency_penalty: 0.3 # 频率惩罚（-2~2），正值抑制已出现 token 的重复
+    presence_penalty: 0.1 # 存在惩罚（-2~2），正值抑制已提及话题的再次出现
+    timeout: 60.0 # 单次模型请求超时（秒），≥1
+    max_retries: 2 # 请求失败重试次数（0~10）

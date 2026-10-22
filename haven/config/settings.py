@@ -22,7 +22,7 @@ from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from config.mcp import load_mcp_servers
-from config.model import load_model_params
+from config.model import load_model_name, load_model_params
 
 if TYPE_CHECKING:
     from langchain_core.language_models.chat_models import BaseChatModel
@@ -35,8 +35,6 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 #: 开发默认 SQLite；部署须为 PostgreSQL（同一 SQLAlchemy URL 互换）。
 DEFAULT_DATABASE_URL = "sqlite+aiosqlite:///./.data/haven.db"
-#: 默认模型（MDA 格式 <provider>:<model>；.env 的 HAVEN_MODEL 可覆盖）。
-DEFAULT_AGENT_MODEL = "deepseek:deepseek-v4-flash"
 #: MCP 工具调用的默认超时（秒）——单次外部调用不许拖住整轮对话。
 DEFAULT_MCP_TOOL_TIMEOUT = 20.0
 
@@ -86,8 +84,9 @@ class Settings(BaseSettings):
     )
 
     database_url: str = DEFAULT_DATABASE_URL
-    # validation_alias：环境变量名用 HAVEN_MODEL（字段名默认映射 AGENT_MODEL）。
-    agent_model: str = Field(default=DEFAULT_AGENT_MODEL, validation_alias="HAVEN_MODEL")
+    #: 模型名称 —— 从 `config/model.yaml` 的 `model.name` 读取；
+    #: YAML 缺失/未写则取代码默认值（DEFAULT_AGENT_MODEL）。
+    agent_model: str = Field(default_factory=load_model_name)
     #: 本部署唯一服务的用户 id —— **一个部署 = 一个人**（单租户）。
     #: 所有健康数据都记在这个 id 名下；它来自配置而非平台注入，所以本机
     #: `mda dev` 与云端部署是同一个人、同一份数据。不是密钥，改它=换个人用。
