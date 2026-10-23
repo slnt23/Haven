@@ -28,31 +28,38 @@ from application.onboarding import (
     next_step,
     validate_step,
 )
+from schemas.tools import OnboardingDraftResult, OnboardingProfileResult, OnboardingSaveResult
 from storage.database import DatabaseUnavailable, session_scope
 from storage.models import DiseaseRecord, HealthProfile, OnboardingDraft
 from tools._helpers import NO_IDENTITY_REPLY, degraded, has_consented, uid_of
 
 
-async def get_health_profile(runtime: ToolRuntime = None) -> str:
+async def get_health_profile(runtime: ToolRuntime = None) -> OnboardingProfileResult:
     """读取当前用户的健康档案与登记的健康问题（须已同意隐私政策）。"""
     uid = uid_of(runtime)
     if uid is None:
-        return NO_IDENTITY_REPLY
+        return OnboardingProfileResult(ok=False, message=NO_IDENTITY_REPLY)
     try:
         async with session_scope() as session:
             if not await has_consented(session, uid):
-                return MSG.consent_required
+                return OnboardingProfileResult(ok=False, message=MSG.consent_required)
             stmt = select(HealthProfile).where(HealthProfile.user_id == uid).limit(1)
             profile = (await session.execute(stmt)).scalars().first()
             if profile is None:
-                return f"您还没有健康档案。输入 {C_PROFILE}，我来帮您创建。"
+                return OnboardingProfileResult(
+                    ok=True,
+                    has_profile=False,
+                    message=f"您还没有健康档案。输入 {C_PROFILE}，我来帮您创建。",
+                )
             diseases = (
                 await session.execute(
                     select(DiseaseRecord).where(DiseaseRecord.user_id == uid)
                 )
             ).scalars().all()
     except DatabaseUnavailable:
-        return degraded()
+        return OnboardingProfileResult(ok=False, message=degraded())
+
+    disease_names = [d.disease_name for d in diseases]
 
     lines = ["您的健康档案："]
     if profile.nickname:
@@ -70,7 +77,17 @@ async def get_health_profile(runtime: ToolRuntime = None) -> str:
             f"· 健康问题：{disease.disease_name}（确诊于 {disease.diagnosed_date.isoformat()}）"
         )
     lines.append(f"如需更新，输入 {C_PROFILE} 重新填写。")
-    return "\n".join(lines)
+    return OnboardingProfileResult(
+        ok=True,
+        has_profile=True,
+        nickname=profile.nickname,
+        gender=profile.gender,
+        birth_date=profile.birth_date.isoformat(),
+        height_cm=profile.height_cm,
+        weight_kg=profile.weight_kg,
+        diseases=disease_names,
+        message="\n".join(lines),
+    )
 
 
 async def save_health_profile(
@@ -82,7 +99,7 @@ async def save_health_profile(
     weight_kg: float | None = None,
     disease_name: str = SUPPORTED_DISEASE,
     diagnosed_date: str | None = None,
-) -> str:
+) -> OnboardingSaveResult:
     """保存（或更新）健康档案。须先获得用户同意的隐私政策，
     且用户已确认建档摘要后调用。0.0.1 仅支持登记高血压。
 
@@ -96,38 +113,38 @@ async def save_health_profile(
     """
     uid = uid_of(runtime)
     if uid is None:
-        return NO_IDENTITY_REPLY
+        return OnboardingSaveResult(ok=False, message=NO_IDENTITY_REPLY)
 
     # ── 确定性校验（与建档草稿共用同一套规则，不依赖 LLM） ──
     # 校验通过即保证：gender/birth/disease 非 None；其余可跳过项可为 None。
     name, error = validate_step("nickname", nickname)
     if error is not None:
-        return error
+        return OnboardingSaveResult(ok=False, message=error)
     gender_value, error = validate_step("gender", gender)
     if error is not None:
-        return error
+        return OnboardingSaveResult(ok=False, message=error)
     birth, error = validate_step("birth_date", birth_date)
     if error is not None:
-        return error
+        return OnboardingSaveResult(ok=False, message=error)
     height, error = validate_step("height_cm", height_cm)
     if error is not None:
-        return error
+        return OnboardingSaveResult(ok=False, message=error)
     weight, error = validate_step("weight_kg", weight_kg)
     if error is not None:
-        return error
+        return OnboardingSaveResult(ok=False, message=error)
     disease, error = validate_step("disease_name", disease_name or SUPPORTED_DISEASE)
     if error is not None:
-        return error
+        return OnboardingSaveResult(ok=False, message=error)
     diagnosed, error = validate_step("diagnosed_date", diagnosed_date)
     if error is not None:
-        return error
+        return OnboardingSaveResult(ok=False, message=error)
     if diagnosed is None:  # 可跳过项：默认今天
         diagnosed = date.today()
 
     try:
         async with session_scope() as session:
             if not await has_consented(session, uid):
-                return MSG.consent_required
+                return OnboardingSaveResult(ok=False, message=MSG.consent_required)
             stmt = select(HealthProfile).where(HealthProfile.user_id == uid).limit(1)
             profile = (await session.execute(stmt)).scalars().first()
             if profile is None:
@@ -167,15 +184,23 @@ async def save_health_profile(
                 delete(OnboardingDraft).where(OnboardingDraft.user_id == uid)
             )
     except DatabaseUnavailable:
-        return degraded()
-    return MSG.onboarding_done(name, gender_value, birth.isoformat(), disease)
+        return OnboardingSaveResult(ok=False, message=degraded())
+    return OnboardingSaveResult(
+        ok=True,
+        nickname=name,
+        gender=gender_value,
+        birth_date=birth.isoformat(),
+        disease_name=disease,
+        saved=True,
+        message=MSG.onboarding_done(name, gender_value, birth.isoformat(), disease),
+    )
 
 
 async def save_onboarding_draft(
     runtime: ToolRuntime = None,
     step: str | None = None,
     value: str | None = None,
-) -> str:
+) -> OnboardingDraftResult:
     """记录建档进度（**内部记账**，模型不应把返回值转达给用户）。
 
     用户每提供一项后由模型调用，使建档成为可跨线程/跨会话续接的对话状态流
@@ -188,21 +213,27 @@ async def save_onboarding_draft(
     """
     uid = uid_of(runtime)
     if uid is None:
-        return NO_IDENTITY_REPLY
+        return OnboardingDraftResult(ok=False, step="", message=NO_IDENTITY_REPLY)
     if step not in STEP_ORDER:
-        return (
-            f"（内部）未知的建档项「{clean_value(step)}」。"
-            f"合法取值：{'、'.join(STEP_ORDER)}。"
+        return OnboardingDraftResult(
+            ok=False,
+            step=step or "",
+            message=(
+                f"（内部）未知的建档项「{clean_value(step)}」。"
+                f"合法取值：{'、'.join(STEP_ORDER)}。"
+            ),
         )
 
     parsed, error = validate_step(step, value)
     if error is not None:
-        return error
+        return OnboardingDraftResult(ok=False, step=step or "", message=error)
 
     try:
         async with session_scope() as session:
             if not await has_consented(session, uid):
-                return MSG.consent_required
+                return OnboardingDraftResult(
+                    ok=False, step=step, message=MSG.consent_required
+                )
             stmt = select(OnboardingDraft).where(OnboardingDraft.user_id == uid).limit(1)
             draft = (await session.execute(stmt)).scalars().first()
             if draft is None:
@@ -214,7 +245,7 @@ async def save_onboarding_draft(
             draft.next_field = next_step(step)
             draft.updated_at = datetime.now(UTC)
     except DatabaseUnavailable:
-        return degraded()
+        return OnboardingDraftResult(ok=False, step=step or "", message=degraded())
 
     upcoming = next_step(step)
     tail = (
@@ -222,6 +253,10 @@ async def save_onboarding_draft(
         if upcoming is not None
         else f"{len(STEP_ORDER)} 项已收集齐，等待用户确认"
     )
-    return (
-        f"（内部记录，不要向用户转达本条）{STEP_LABELS[step]} 进度已保存；{tail}。"
+    return OnboardingDraftResult(
+        ok=True,
+        step=step or "",
+        next_step=upcoming,
+        completed=upcoming is None,
+        message=f"（内部记录，不要向用户转达本条）{STEP_LABELS[step]} 进度已保存；{tail}。",
     )

@@ -14,4 +14,7 @@ model:
     frequency_penalty: 0.3 # 频率惩罚（-2~2），正值抑制已出现 token 的重复
     presence_penalty: 0.1 # 存在惩罚（-2~2），正值抑制已提及话题的再次出现
     timeout: 60.0 # 单次模型请求超时（秒），≥1
-    max_retries: 3 # 请求失败重试次数（0~10）
+    max_retries: 2 # 请求失败重试次数（0~10）
+    max_concurrent_requests: 5 # 最大并发请求数（1~100）
+    requests_per_minute: 60 # 每分钟最大请求数（0=不限，1~10000）
+    rate_limit_check_interval: 0.1 # 限速检查间隔（秒），越小越精确但 CPU 开销越大（0.01~1.0）

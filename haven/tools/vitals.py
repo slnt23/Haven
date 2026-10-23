@@ -20,6 +20,7 @@ from application.validation import ValidationLevel, validate_blood_pressure
 from storage.database import DatabaseUnavailable, session_scope
 from storage.models import PENDING_CONFIRM_TTL, BloodPressure, PendingBpConfirmation
 from safety.disclaimers import DisclaimerType, get_disclaimer
+from schemas.tools import BpConfirmResult, BpPendingResult, BpRecordResult
 from tools._helpers import (
     NO_IDENTITY_REPLY,
     degraded,
@@ -87,33 +88,43 @@ async def record_blood_pressure(
     systolic: int | None = None,
     diastolic: int | None = None,
     measured_at: str | None = None,
-) -> str:
+) -> BpRecordResult:
     """记录一次手动血压测量（如 128/84）。数值须先经过确定性校验；
     二级及以上异常值不会直接保存，转入两阶段确认（见
     `confirm_abnormal_blood_pressure`）。"""
     uid = uid_of(runtime)
     if uid is None:
-        return NO_IDENTITY_REPLY
+        return BpRecordResult(ok=False, message=NO_IDENTITY_REPLY)
     if systolic is None or diastolic is None:
-        return MSG.bp_need_value
+        return BpRecordResult(ok=False, message=MSG.bp_need_value)
 
     measured = parse_measured_at(measured_at)
     if measured is None:
-        return _PARSE_TIME_ERROR
+        return BpRecordResult(ok=False, message=_PARSE_TIME_ERROR)
     if is_future(measured):
-        return _FUTURE_TIME_ERROR
+        return BpRecordResult(ok=False, message=_FUTURE_TIME_ERROR)
 
     validation = validate_blood_pressure(systolic, diastolic)
     if not validation.is_valid:
-        return f"{MSG.bp_invalid}：{'；'.join(validation.errors)}。"
+        return BpRecordResult(
+            ok=False,
+            systolic=systolic,
+            diastolic=diastolic,
+            message=f"{MSG.bp_invalid}：{'；'.join(validation.errors)}。",
+        )
     confirm = check_abnormal(systolic, diastolic)
 
     try:
         async with session_scope() as session:
             if not await has_consented(session, uid):
-                return MSG.consent_required
+                return BpRecordResult(ok=False, message=MSG.consent_required)
             if await _recent_duplicate(session, uid, systolic, diastolic, measured):
-                return f"{systolic}/{diastolic} mmHg 这条在 1 分钟内已记录过，未重复保存。"
+                return BpRecordResult(
+                    ok=False,
+                    systolic=systolic,
+                    diastolic=diastolic,
+                    message=f"{systolic}/{diastolic} mmHg 这条在 1 分钟内已记录过，未重复保存。",
+                )
 
             if confirm.needs_confirmation:
                 # 两阶段：不落正式记录，只写/刷新待确认行（至多一行）。
@@ -154,13 +165,22 @@ async def record_blood_pressure(
                     )
                 )
     except DatabaseUnavailable:
-        return degraded()
+        return BpRecordResult(ok=False, message=degraded())
 
     if confirm.needs_confirmation:
-        return (
+        message = (
             f"{confirm.message}\n"
             f"{MSG.bp_confirm_prompt(systolic, diastolic)}\n"
             f"{_CONFIRM_GUIDANCE}"
+        )
+        return BpRecordResult(
+            ok=True,
+            systolic=systolic,
+            diastolic=diastolic,
+            level=_worst_level(validation.systolic_level, validation.diastolic_level).value,
+            needs_confirmation=True,
+            confirmed=False,
+            message=message,
         )
 
     level_cn = LEVEL_CN[
@@ -169,55 +189,69 @@ async def record_blood_pressure(
     reply = MSG.bp_recorded(systolic, diastolic, level_cn)
     if validation.is_abnormal:
         reply += "\n\n" + get_disclaimer(DisclaimerType.MEDICAL_ADVICE)
-    return reply
+    return BpRecordResult(
+        ok=True,
+        systolic=systolic,
+        diastolic=diastolic,
+        level=level_cn,
+        needs_confirmation=False,
+        confirmed=True,
+        message=reply,
+    )
 
 
 async def get_pending_blood_pressure(
     runtime: ToolRuntime = None,
-) -> str:
+) -> BpPendingResult:
     """查询是否有等待用户确认的异常血压记录（中断后可据此恢复流程）。"""
     uid = uid_of(runtime)
     if uid is None:
-        return NO_IDENTITY_REPLY
+        return BpPendingResult(ok=False, message=NO_IDENTITY_REPLY)
     try:
         async with session_scope() as session:
             pending = await _find_pending(session, uid)
             if pending is None:
-                return _NO_PENDING_REPLY
+                return BpPendingResult(ok=True, has_pending=False, message=_NO_PENDING_REPLY)
             if pending_expired(pending.expires_at):
                 await session.delete(pending)
-                return _NO_PENDING_REPLY
-            return f"{pending.prompt_text}\n{_CONFIRM_GUIDANCE}"
+                return BpPendingResult(ok=True, has_pending=False, message=_NO_PENDING_REPLY)
+            return BpPendingResult(
+                ok=True,
+                has_pending=True,
+                systolic=pending.systolic,
+                diastolic=pending.diastolic,
+                message=f"{pending.prompt_text}\n{_CONFIRM_GUIDANCE}",
+            )
     except DatabaseUnavailable:
-        return degraded()
+        return BpPendingResult(ok=False, message=degraded())
 
 
 async def confirm_abnormal_blood_pressure(
     runtime: ToolRuntime = None,
     systolic: int | None = None,
     diastolic: int | None = None,
-) -> str:
+) -> BpConfirmResult:
     """保存一条用户已明确「确认」的异常血压。仅当待确认行存在、未过期
     （24 小时）且数值完全一致时才正式入库；否则拒绝且不保存任何数据。"""
     uid = uid_of(runtime)
     if uid is None:
-        return NO_IDENTITY_REPLY
+        return BpConfirmResult(ok=False, message=NO_IDENTITY_REPLY)
     if systolic is None or diastolic is None:
-        return _CONFIRM_MISS_REPLY
+        return BpConfirmResult(ok=False, message=_CONFIRM_MISS_REPLY)
 
     validation = validate_blood_pressure(systolic, diastolic)
     try:
         async with session_scope() as session:
             pending = await _find_pending(session, uid)
             if pending is None:
-                return _CONFIRM_MISS_REPLY
+                return BpConfirmResult(ok=False, systolic=systolic, diastolic=diastolic, message=_CONFIRM_MISS_REPLY)
             if pending_expired(pending.expires_at):
                 await session.delete(pending)
-                return _CONFIRM_MISS_REPLY
+                return BpConfirmResult(ok=False, systolic=systolic, diastolic=diastolic, message=_CONFIRM_MISS_REPLY)
             if not (
                 pending.systolic == systolic and pending.diastolic == diastolic
             ):
-                return _CONFIRM_MISS_REPLY
+                return BpConfirmResult(ok=False, systolic=systolic, diastolic=diastolic, message=_CONFIRM_MISS_REPLY)
 
             await session.delete(pending)
             session.add(
@@ -232,10 +266,16 @@ async def confirm_abnormal_blood_pressure(
                 )
             )
     except DatabaseUnavailable:
-        return degraded()
+        return BpConfirmResult(ok=False, message=degraded())
 
     reply = MSG.bp_confirmed(systolic, diastolic)
     if validation.is_severe:
         reply += "\n\n该数值属于严重异常范围。如已确认测量无误，请尽快就医。"
     reply += "\n\n" + get_disclaimer(DisclaimerType.MEDICAL_ADVICE)
-    return reply
+    return BpConfirmResult(
+        ok=True,
+        systolic=systolic,
+        diastolic=diastolic,
+        confirmed=True,
+        message=reply,
+    )
