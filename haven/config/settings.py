@@ -19,6 +19,7 @@ from typing import Literal
 from typing import TYPE_CHECKING
 
 from langchain.chat_models import init_chat_model
+from langchain.rate_limiters import InMemoryRateLimiter
 from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -96,6 +97,22 @@ class Settings(BaseSettings):
         return defaults
 
     @property
+    def rate_limiter(self) -> InMemoryRateLimiter | None:
+        """基于 `model.params` 构建的令牌桶速率限制器。
+
+        `requests_per_minute=0` 时返回 None（不限速）；
+        否则将 rpm 换算为 rps，以 `max_concurrent_requests` 作为最大突发容量。
+        """
+        params = self.model_params
+        if params.requests_per_minute == 0:
+            return None
+        return InMemoryRateLimiter(
+            requests_per_second=params.requests_per_minute / 60.0,
+            check_every_n_seconds=params.rate_limit_check_interval,
+            max_bucket_size=params.max_concurrent_requests,
+        )
+
+    @property
     def chat_model(self) -> "BaseChatModel":
         """基于当前配置构建的聊天模型实例。
 
@@ -113,6 +130,7 @@ class Settings(BaseSettings):
             presence_penalty=params.presence_penalty,
             timeout=params.timeout,
             max_retries=params.max_retries,
+            rate_limiter=self.rate_limiter,
         )
 
     @property
@@ -134,6 +152,7 @@ class Settings(BaseSettings):
             top_p=params.top_p,
             timeout=params.timeout,
             max_retries=params.max_retries,
+            rate_limiter=self.rate_limiter,
         )
 
     @property

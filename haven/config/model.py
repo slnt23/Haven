@@ -71,3 +71,6 @@ class AgentModelSettings(BaseModel):
     presence_penalty: float = Field(default=0.1, ge=-2.0, le=2.0)
     timeout: float = Field(default=60.0, ge=1.0)
     max_retries: int = Field(default=2, ge=0, le=10)
+    max_concurrent_requests: int = Field(default=5, ge=1, le=100)
+    requests_per_minute: int = Field(default=60, ge=0, le=10000)
+    rate_limit_check_interval: float = Field(default=0.1, ge=0.01, le=1.0)
