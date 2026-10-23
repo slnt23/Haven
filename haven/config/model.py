@@ -10,6 +10,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+from pydantic import BaseModel, Field
 import yaml
 
 _MODEL_FILE = Path(__file__).resolve().parent / "model.yaml"
@@ -53,3 +54,20 @@ def load_model_name() -> str:
         if isinstance(name, str) and name.strip():
             return name.strip()
     return DEFAULT_AGENT_MODEL
+
+
+class AgentModelSettings(BaseModel):
+    """模型推理参数 —— 从 `config/model.yaml` 加载，代码默认值兜底。
+
+    所有参数均可被 `config/model.yaml` 覆盖；缺项/文件缺失则取此处的默认值。
+    与 `.env` 不同：这些是产品语义参数（医疗场景调参），不是部署参数，
+    走 YAML 而非环境变量是为了版本可控、代码评审可追踪。
+    """
+
+    temperature: float = Field(default=0.3, ge=0.0, le=2.0)
+    max_tokens: int = Field(default=4096, ge=1, le=128000)
+    top_p: float = Field(default=0.9, ge=0.0, le=1.0)
+    frequency_penalty: float = Field(default=0.3, ge=-2.0, le=2.0)
+    presence_penalty: float = Field(default=0.1, ge=-2.0, le=2.0)
+    timeout: float = Field(default=60.0, ge=1.0)
+    max_retries: int = Field(default=2, ge=0, le=10)

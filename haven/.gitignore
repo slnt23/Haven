@@ -27,4 +27,4 @@ CLAUDE.md
 .venv/
 .trae/
 .idea/
-.vscode/
+# .vscode/

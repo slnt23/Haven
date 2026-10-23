@@ -12,6 +12,7 @@ mda CLI 的裸解释器导入的连接器链路上，必须纯标准库；本模
 """
 
 import logging
+from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
@@ -22,7 +23,7 @@ from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from config.mcp import load_mcp_servers
-from config.model import load_model_name, load_model_params
+from config.model import AgentModelSettings, load_model_name, load_model_params
 
 if TYPE_CHECKING:
     from langchain_core.language_models.chat_models import BaseChatModel
@@ -55,23 +56,6 @@ class McpServerSettings(BaseModel):
     #: 允许暴露给模型的远端工具名（白名单，只读工具）。
     include_tools: list[str] = Field(default_factory=list)
     default_tool_timeout: float = DEFAULT_MCP_TOOL_TIMEOUT
-
-
-class AgentModelSettings(BaseModel):
-    """模型推理参数 —— 从 `config/model.yaml` 加载，代码默认值兜底。
-
-    所有参数均可被 `config/model.yaml` 覆盖；缺项/文件缺失则取此处的默认值。
-    与 `.env` 不同：这些是产品语义参数（医疗场景调参），不是部署参数，
-    走 YAML 而非环境变量是为了版本可控、代码评审可追踪。
-    """
-
-    temperature: float = Field(default=0.3, ge=0.0, le=2.0)
-    max_tokens: int = Field(default=4096, ge=1, le=128000)
-    top_p: float = Field(default=0.9, ge=0.0, le=1.0)
-    frequency_penalty: float = Field(default=0.3, ge=-2.0, le=2.0)
-    presence_penalty: float = Field(default=0.1, ge=-2.0, le=2.0)
-    timeout: float = Field(default=60.0, ge=1.0)
-    max_retries: int = Field(default=2, ge=0, le=10)
 
 
 class Settings(BaseSettings):
@@ -132,6 +116,27 @@ class Settings(BaseSettings):
         )
 
     @property
+    def structured_chat_model(self) -> "BaseChatModel":
+        """构建一个**不带 tools 的纯推理模型**（参数与主模型一致）。
+
+        用于需要结构化输出的独立调用（安全分类、意图识别等），
+        不替代传给 `define_deep_agent` 的主模型 `chat_model`。
+        调用时按需绑定 schema：
+            model = settings.structured_chat_model.with_structured_output(SomeSchema)
+
+        温度固定为 0.0（分类/判断类任务），其他参数复用主模型配置。
+        """
+        params = self.model_params
+        return init_chat_model(
+            self.agent_model,
+            temperature=0.0,
+            max_tokens=params.max_tokens,
+            top_p=params.top_p,
+            timeout=params.timeout,
+            max_retries=params.max_retries,
+        )
+
+    @property
     def mcp_servers(self) -> dict[str, McpServerSettings]:
         """已启用的外部 MCP 服务器（校验后）。
 
@@ -152,11 +157,6 @@ class Settings(BaseSettings):
             return {}
 
 
-_settings: Settings | None = None
-
-
+@lru_cache(maxsize=1)
 def get_settings() -> Settings:
-    global _settings
-    if _settings is None:
-        _settings = Settings()
-    return _settings
+    return Settings()

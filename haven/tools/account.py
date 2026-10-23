@@ -20,6 +20,7 @@ from storage.models import (
     OnboardingDraft,
     PendingBpConfirmation,
 )
+from schemas.tools import DeleteResult
 from tools._helpers import NO_IDENTITY_REPLY, degraded, uid_of
 
 _DELETE_DONE_REPLY = (
@@ -29,12 +30,12 @@ _DELETE_DONE_REPLY = (
 )
 
 
-async def delete_my_data(runtime: ToolRuntime = None) -> str:
+async def delete_my_data(runtime: ToolRuntime = None) -> DeleteResult:
     """删除当前用户的全部健康数据。危险操作 —— 仅在用户明确要求
     （如「删除我的数据」或明确确认删除）后调用，且中断门会再次请求用户批准。"""
     uid = uid_of(runtime)
     if uid is None:
-        return NO_IDENTITY_REPLY
+        return DeleteResult(ok=False, message=NO_IDENTITY_REPLY)
     try:
         async with session_scope() as session:
             for model in (
@@ -53,5 +54,5 @@ async def delete_my_data(runtime: ToolRuntime = None) -> str:
                 event_summary="deletion:executed",
             )
     except DatabaseUnavailable:
-        return degraded()
-    return _DELETE_DONE_REPLY
+        return DeleteResult(ok=False, message=degraded())
+    return DeleteResult(ok=True, deleted=True, message=_DELETE_DONE_REPLY)

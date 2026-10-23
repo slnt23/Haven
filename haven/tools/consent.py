@@ -15,6 +15,7 @@ from storage.audit import record_audit, subject_key_for
 from storage.database import DatabaseUnavailable, session_scope
 from storage.models import ConsentRecord
 from safety.disclaimers import DisclaimerType, get_disclaimer
+from schemas.tools import ConsentPolicyResult, ConsentRecordResult, ConsentStatusResult
 from tools._helpers import NO_IDENTITY_REPLY, degraded, uid_of
 
 POLICY_VERSION = "0.0.1"
@@ -24,39 +25,51 @@ SCOPE = "health_data_collection"
 _AGREE_GUIDANCE = f"\n\n如您同意以上内容，请输入 {C_CONSENT} 以继续。"
 
 
-def get_consent_policy() -> str:
+def get_consent_policy() -> ConsentPolicyResult:
     """展示隐私政策全文。首次使用必须先同意，之后才能建档与记录健康数据。"""
-    return get_disclaimer(DisclaimerType.FIRST_USE) + _AGREE_GUIDANCE
+    return ConsentPolicyResult(
+        policy_version=POLICY_VERSION,
+        message=get_disclaimer(DisclaimerType.FIRST_USE) + _AGREE_GUIDANCE,
+    )
 
 
-async def consent_status(runtime: ToolRuntime = None) -> str:
+async def consent_status(runtime: ToolRuntime = None) -> ConsentStatusResult:
     """查询当前用户的隐私同意状态；未同意时返回政策全文与同意指引。"""
     uid = uid_of(runtime)
     if uid is None:
-        return NO_IDENTITY_REPLY
+        return ConsentStatusResult(ok=False, message=NO_IDENTITY_REPLY)
     try:
         async with session_scope() as session:
             stmt = select(ConsentRecord).where(ConsentRecord.user_id == uid).limit(1)
             result = await session.execute(stmt)
             consented = result.scalars().first() is not None
     except DatabaseUnavailable:
-        return degraded()
+        return ConsentStatusResult(ok=False, message=degraded())
     if consented:
-        return MSG.consent_already
-    return get_disclaimer(DisclaimerType.FIRST_USE) + _AGREE_GUIDANCE
+        return ConsentStatusResult(
+            ok=True, consented=True, policy_version=POLICY_VERSION, message=MSG.consent_already
+        )
+    return ConsentStatusResult(
+        ok=True,
+        consented=False,
+        message=get_disclaimer(DisclaimerType.FIRST_USE) + _AGREE_GUIDANCE,
+    )
 
 
-async def record_consent(runtime: ToolRuntime = None) -> str:
+async def record_consent(runtime: ToolRuntime = None) -> ConsentRecordResult:
     """记录当前用户的隐私同意（政策版本 0.0.1）。仅在用户明确表示同意后调用。"""
     uid = uid_of(runtime)
     if uid is None:
-        return NO_IDENTITY_REPLY
+        return ConsentRecordResult(ok=False, message=NO_IDENTITY_REPLY)
     try:
         async with session_scope() as session:
             stmt = select(ConsentRecord).where(ConsentRecord.user_id == uid).limit(1)
             result = await session.execute(stmt)
             if result.scalars().first() is not None:
-                return MSG.consent_already
+                return ConsentRecordResult(
+                    ok=True, consented=True, policy_version=POLICY_VERSION,
+                    message=MSG.consent_already,
+                )
             session.add(
                 ConsentRecord(
                     user_id=uid,
@@ -71,5 +84,8 @@ async def record_consent(runtime: ToolRuntime = None) -> str:
                 event_summary="consent:granted",
             )
     except DatabaseUnavailable:
-        return degraded()
-    return MSG.consent_granted
+        return ConsentRecordResult(ok=False, message=degraded())
+    return ConsentRecordResult(
+        ok=True, consented=True, policy_version=POLICY_VERSION,
+        message=MSG.consent_granted,
+    )

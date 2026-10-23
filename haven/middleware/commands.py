@@ -149,7 +149,8 @@ class CommandMiddleware(AgentMiddleware):
         if command == C_HELLO:
             return await self._hello(request)
         if command == C_CONSENT:
-            reply = await record_consent(getattr(request, "runtime", None))
+            result = await record_consent(getattr(request, "runtime", None))
+            reply = result.message if hasattr(result, "message") else result
             return self._respond(reply)
         if command == C_CANCEL:
             reply = await self._cancel(request)
