@@ -26,6 +26,6 @@ desktop.ini
 # 自定义
 CLAUDE.md
 .venv/
-.trae/
+# .trae/
 .idea/
 # .vscode/
