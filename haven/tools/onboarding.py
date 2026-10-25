@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime
 
-from langchain.tools import ToolRuntime
+from langchain.tools import tool, ToolRuntime
 from sqlalchemy import delete, select
 
 from application.commands import C_PROFILE
@@ -34,8 +34,13 @@ from storage.models import DiseaseRecord, HealthProfile, OnboardingDraft
 from tools._helpers import NO_IDENTITY_REPLY, degraded, has_consented, uid_of
 
 
+@tool(parse_docstring=True)
 async def get_health_profile(runtime: ToolRuntime = None) -> OnboardingProfileResult:
-    """读取当前用户的健康档案与登记的健康问题（须已同意隐私政策）。"""
+    """读取当前用户的健康档案。
+
+    返回已保存的健康信息（昵称、性别、出生日期、身高、体重）及登记的健康问题。
+    需先同意隐私政策。
+    """
     uid = uid_of(runtime)
     if uid is None:
         return OnboardingProfileResult(ok=False, message=NO_IDENTITY_REPLY)
@@ -90,8 +95,8 @@ async def get_health_profile(runtime: ToolRuntime = None) -> OnboardingProfileRe
     )
 
 
+@tool(parse_docstring=True)
 async def save_health_profile(
-    runtime: ToolRuntime = None,
     nickname: str | None = None,
     gender: str | None = None,
     birth_date: str | None = None,
@@ -99,17 +104,22 @@ async def save_health_profile(
     weight_kg: float | None = None,
     disease_name: str = SUPPORTED_DISEASE,
     diagnosed_date: str | None = None,
+    runtime: ToolRuntime = None,
 ) -> OnboardingSaveResult:
-    """保存（或更新）健康档案。须先获得用户同意的隐私政策，
-    且用户已确认建档摘要后调用。0.0.1 仅支持登记高血压。
+    """保存（或更新）健康档案。
 
-    成功时在**同一事务内**删除该用户的建档草稿 —— 档案已是权威数据，
-    草稿再留着只会让记忆注入报出"未完的建档进度"。
+    须先获得用户同意的隐私政策，且用户已确认建档摘要后调用。
+    0.0.1 仅支持登记高血压。成功时在同一事务内删除建档草稿。
+    整档重写语义：省略可跳过项等于清空它，不做「不传即不改」的隐藏规则。
 
-    **整档重写语义**：省略某个可跳过项（`nickname`/`height_cm`/`weight_kg`/
-    `diagnosed_date`）等于把它清空，与「跳过即不填」一致；不搞"None 表示不改"
-    的隐藏规则 —— 那会让一个字段和其它六个行为不一致。代价由确认前的
-    **复述摘要**兜住（用户能看到「· 称呼：… / 未填」）。
+    Args:
+        nickname: 用户称呼，自由文本（可为空）。
+        gender: 性别，合法取值「男」「女」「其他」。
+        birth_date: 出生日期，格式 YYYY-MM-DD（如 "1990-01-15"）。
+        height_cm: 身高（厘米），范围 40-300，可跳过。
+        weight_kg: 体重（公斤），范围 1-700，可跳过。
+        disease_name: 疾病名称。当前固定为「高血压」。
+        diagnosed_date: 确诊日期，格式 YYYY-MM-DD，可跳过（默认今天）。
     """
     uid = uid_of(runtime)
     if uid is None:
@@ -196,20 +206,22 @@ async def save_health_profile(
     )
 
 
+@tool(parse_docstring=True)
 async def save_onboarding_draft(
-    runtime: ToolRuntime = None,
     step: str | None = None,
     value: str | None = None,
+    runtime: ToolRuntime = None,
 ) -> OnboardingDraftResult:
-    """记录建档进度（**内部记账**，模型不应把返回值转达给用户）。
+    """记录建档进度（内部记账）。
 
-    用户每提供一项后由模型调用，使建档成为可跨线程/跨会话续接的对话状态流
-    （B3）。`step` 是封闭词表（见 `application.onboarding.STEP_ORDER`）——
-    模型不能自由发挥，否则 `next_field` 游标会失效。`value` 留空表示跳过，
-    仅对可跳过项（身高 / 体重 / 确诊时间）合法。
+    工具返回值不向用户转达——仅用于推进跨会话续接的建档状态机（B3）。
+    用户每提供一项后由模型调用，使建档成为可跨线程/跨会话续接的对话状态流。
 
-    写入的是出生日期、身高、体重、确诊时间等健康数据，因此与其它写入路径
-    一样设同意闸门（REQ-005 §4.3：撤回同意后采集入口必须在服务端拒绝写入）。
+    Args:
+        step: 建档字段名，封闭词表。合法取值：nickname, gender, birth_date,
+            height_cm, weight_kg, disease_name, diagnosed_date。
+            模型不能自由发挥，否则 next_field 游标会失效。
+        value: 该字段的用户输入值。留空表示跳过，仅对可跳过项合法。
     """
     uid = uid_of(runtime)
     if uid is None:

@@ -7,7 +7,7 @@
 
 from __future__ import annotations
 
-from langchain.tools import ToolRuntime
+from langchain.tools import tool, ToolRuntime
 from sqlalchemy import delete
 
 from storage.audit import record_audit, subject_key_for
@@ -30,9 +30,14 @@ _DELETE_DONE_REPLY = (
 )
 
 
+@tool(parse_docstring=True)
 async def delete_my_data(runtime: ToolRuntime = None) -> DeleteResult:
-    """删除当前用户的全部健康数据。危险操作 —— 仅在用户明确要求
-    （如「删除我的数据」或明确确认删除）后调用，且中断门会再次请求用户批准。"""
+    """删除当前用户的全部健康数据。
+
+    危险操作 —— 仅在用户明确要求（如「删除我的数据」）且获得
+    中断门再次批准后调用。删除 6 张业务表的全部记录，审计日志
+    仅追加一条去标识的 deletion 事件——删除本身可追溯，健康数据不可恢复。
+    """
     uid = uid_of(runtime)
     if uid is None:
         return DeleteResult(ok=False, message=NO_IDENTITY_REPLY)

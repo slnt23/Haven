@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from langchain.tools import ToolRuntime
+from langchain.tools import tool, ToolRuntime
 from sqlalchemy import select
 
 from application.commands import C_CONSENT
@@ -25,16 +25,25 @@ SCOPE = "health_data_collection"
 _AGREE_GUIDANCE = f"\n\n如您同意以上内容，请输入 {C_CONSENT} 以继续。"
 
 
+@tool
 def get_consent_policy() -> ConsentPolicyResult:
-    """展示隐私政策全文。首次使用必须先同意，之后才能建档与记录健康数据。"""
+    """展示隐私政策全文。
+
+    首次使用必须先同意隐私政策，之后才能建档与记录健康数据。
+    无需前置条件，任何人均可调用。
+    """
     return ConsentPolicyResult(
         policy_version=POLICY_VERSION,
         message=get_disclaimer(DisclaimerType.FIRST_USE) + _AGREE_GUIDANCE,
     )
 
 
+@tool(parse_docstring=True)
 async def consent_status(runtime: ToolRuntime = None) -> ConsentStatusResult:
-    """查询当前用户的隐私同意状态；未同意时返回政策全文与同意指引。"""
+    """查询当前用户的隐私同意状态。
+
+    未同意时返回隐私政策全文与同意指引；已同意时返回确认信息。
+    """
     uid = uid_of(runtime)
     if uid is None:
         return ConsentStatusResult(ok=False, message=NO_IDENTITY_REPLY)
@@ -56,8 +65,12 @@ async def consent_status(runtime: ToolRuntime = None) -> ConsentStatusResult:
     )
 
 
+@tool(parse_docstring=True)
 async def record_consent(runtime: ToolRuntime = None) -> ConsentRecordResult:
-    """记录当前用户的隐私同意（政策版本 0.0.1）。仅在用户明确表示同意后调用。"""
+    """记录当前用户的隐私同意（政策版本 0.0.1）。
+
+    仅在用户明确表示同意后调用。重复调用幂等：已有同意记录时返回确认而不重复写入。
+    """
     uid = uid_of(runtime)
     if uid is None:
         return ConsentRecordResult(ok=False, message=NO_IDENTITY_REPLY)

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from langchain.tools import ToolRuntime
+from langchain.tools import tool, ToolRuntime
 
 from application.messages import MSG
 from application.trends import calculate_seven_day_trend, format_trend_message
@@ -17,9 +17,13 @@ from tools._helpers import (
 )
 
 
+@tool(parse_docstring=True)
 async def get_seven_day_trend(runtime: ToolRuntime = None) -> TrendResult:
-    """查看最近 7 天的血压趋势统计（记录数、均值、最高/最低、达标率、方向）。
-    仅呈现确定性统计，不做诊断。"""
+    """查看最近 7 天的血压趋势统计。
+
+    计算记录数、收缩压/舒张压均值、最高/最低值、达标率与趋势方向。
+    仅呈现确定性统计结果，不做医学诊断或建议。
+    """
     uid = uid_of(runtime)
     if uid is None:
         return TrendResult(ok=False, message=NO_IDENTITY_REPLY)

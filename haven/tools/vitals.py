@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
-from langchain.tools import ToolRuntime
+from langchain.tools import tool, ToolRuntime
 from sqlalchemy import select
 
 from application.commands import C_CANCEL, C_CONFIRM
@@ -83,15 +83,26 @@ async def _recent_duplicate(
     return (await session.execute(stmt)).scalars().first() is not None
 
 
+@tool(parse_docstring=True)
 async def record_blood_pressure(
-    runtime: ToolRuntime = None,
     systolic: int | None = None,
     diastolic: int | None = None,
     measured_at: str | None = None,
+    runtime: ToolRuntime = None,
 ) -> BpRecordResult:
-    """记录一次手动血压测量（如 128/84）。数值须先经过确定性校验；
-    二级及以上异常值不会直接保存，转入两阶段确认（见
-    `confirm_abnormal_blood_pressure`）。"""
+    """记录一次手动血压测量。
+
+    数值先经过确定性血压分级校验（正常/正常高值/1-3级高血压）。
+    二级及以上异常值不会直接保存，转入两阶段确认流程，
+    需用户通过 confirm_abnormal_blood_pressure 确认后才正式入库。
+    正常血压值直接入库。
+
+    Args:
+        systolic: 收缩压（高压），单位 mmHg，范围 60-300。
+        diastolic: 舒张压（低压），单位 mmHg，范围 40-200。
+        measured_at: 测量时间，ISO 8601 格式（如 "2026-09-01T08:00"）。
+            留空则默认当前时间。不能晚于当前时间。
+    """
     uid = uid_of(runtime)
     if uid is None:
         return BpRecordResult(ok=False, message=NO_IDENTITY_REPLY)
@@ -200,10 +211,15 @@ async def record_blood_pressure(
     )
 
 
+@tool(parse_docstring=True)
 async def get_pending_blood_pressure(
     runtime: ToolRuntime = None,
 ) -> BpPendingResult:
-    """查询是否有等待用户确认的异常血压记录（中断后可据此恢复流程）。"""
+    """查询待确认的异常血压记录。
+
+    中断后可通过此工具恢复流程，检查是否有等待用户确认的异常血压。
+    记录 24 小时内有效，过期自动清空。
+    """
     uid = uid_of(runtime)
     if uid is None:
         return BpPendingResult(ok=False, message=NO_IDENTITY_REPLY)
@@ -226,13 +242,22 @@ async def get_pending_blood_pressure(
         return BpPendingResult(ok=False, message=degraded())
 
 
+@tool(parse_docstring=True)
 async def confirm_abnormal_blood_pressure(
-    runtime: ToolRuntime = None,
     systolic: int | None = None,
     diastolic: int | None = None,
+    runtime: ToolRuntime = None,
 ) -> BpConfirmResult:
-    """保存一条用户已明确「确认」的异常血压。仅当待确认行存在、未过期
-    （24 小时）且数值完全一致时才正式入库；否则拒绝且不保存任何数据。"""
+    """确认保存一条异常血压记录。
+
+    仅在用户明确表示「确认」后调用。系统会校验：
+    待确认行存在、未过期（24 小时）且数值完全一致时才正式入库；
+    任一条件不满足则拒绝，不保存任何数据。
+
+    Args:
+        systolic: 收缩压（高压），单位 mmHg。必须与待确认记录完全一致。
+        diastolic: 舒张压（低压），单位 mmHg。必须与待确认记录完全一致。
+    """
     uid = uid_of(runtime)
     if uid is None:
         return BpConfirmResult(ok=False, message=NO_IDENTITY_REPLY)
