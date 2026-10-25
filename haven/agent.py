@@ -13,9 +13,10 @@
 - 中间件顺序：紧急输入扫描在最外层（先于一切 LLM 处理），命令路由、
   输出安全依次在后，记忆注入在安全中间件内侧（它只往 system prompt
   追加内容块，不重写，见 `middleware/memory_context.py` 模块头），
-  同意闸门（`middleware/consent_policy.py`）在工具调用前统一拦截，
-  最后是 MCP 策略（`middleware/mcp_policy.py`，只挂工具调用钩子：
-  外部 MCP 工具白名单放行、默认拒绝、审计、失败降级）。
+  可观测性中间件（`middleware/observability.py`）记录每次工具调用的
+  耗时与结果，同意闸门（`middleware/consent_policy.py`）在工具调用前
+  统一拦截，最后是 MCP 策略（`middleware/mcp_policy.py`，只挂工具调用
+  钩子：外部 MCP 工具白名单放行、默认拒绝、审计、失败降级）。
 - 外部 MCP：声明在 `connectors/mcp.py`（平台原生连接器，仅远程 HTTP/SSE），
   服务器清单来自 `config/mcp.json`；空/缺失 = 完全关闭，模型看不到任何外部工具。
 - 中断门：异常血压确认与数据删除需人工批准后才执行工具
@@ -30,6 +31,7 @@ from middleware.consent_policy import consent_policy_middleware
 from middleware.emergency_input import emergency_input_middleware
 from middleware.mcp_policy import mcp_policy_middleware
 from middleware.memory_context import memory_context_middleware
+from middleware.observability import observability_middleware
 from middleware.output_safety import output_safety_middleware
 from tools.account import delete_my_data
 from tools.consent import consent_status, get_consent_policy, record_consent
@@ -67,6 +69,7 @@ agent = define_deep_agent(
         command_middleware,  # /hello /help /consent /cancel 确定性路由
         output_safety_middleware,
         memory_context_middleware,  # 只追加 system prompt 内容块，放其内侧
+        observability_middleware,  # 工具调用计时 + 审计，包裹下方所有工具层
         consent_policy_middleware,  # 同意闸门：从 permissions.py 查表，未同意则拒绝
         mcp_policy_middleware,  # 工具层钩子：MCP 白名单/审计/降级（只挂工具调用）
     ],

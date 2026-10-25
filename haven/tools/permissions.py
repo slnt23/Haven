@@ -25,20 +25,20 @@ TOOL_PERMISSIONS: dict[str, ToolPermission] = {
     # ── 隐私同意（无闸门，任何人都能看政策/查状态/记录同意） ──
     "get_consent_policy": ToolPermission(audit_write=False),
     "consent_status": ToolPermission(audit_write=False),
-    "record_consent": ToolPermission(),
+    # record_consent 在工具内部自行写审计（event_type="consent"），中间件不重复
+    "record_consent": ToolPermission(audit_write=False),
     # ── 健康建档（需已同意） ──
-    "get_health_profile": ToolPermission(consent_required=True),
+    "get_health_profile": ToolPermission(consent_required=True, audit_write=False),
     "save_health_profile": ToolPermission(consent_required=True),
     "save_onboarding_draft": ToolPermission(consent_required=True),
-    # ── 血压记录（正常记录需同意，待确认/确认无需同意）
-    #     原因：用户可能在未同意状态下回来确认上一次的异常读数 ──
+    # ── 血压记录 ──
     "record_blood_pressure": ToolPermission(consent_required=True),
     "get_pending_blood_pressure": ToolPermission(audit_write=False),
     "confirm_abnormal_blood_pressure": ToolPermission(requires_approval=True),
-    # ── 趋势（需已同意 —— 包含健康数据） ──
+    # ── 趋势（只读） ──
     "get_seven_day_trend": ToolPermission(consent_required=True, audit_write=False),
-    # ── 数据删除（中断门双保险 —— 删除会连同意记录一起清空） ──
-    "delete_my_data": ToolPermission(requires_approval=True),
+    # ── 数据删除（自审计：event_type="deletion"） ──
+    "delete_my_data": ToolPermission(requires_approval=True, audit_write=False),
 }
 
 
