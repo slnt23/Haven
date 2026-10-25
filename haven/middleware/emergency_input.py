@@ -15,8 +15,8 @@ SUSPICIOUS（否定 / 转述 / 假设语境）同样走确定性澄清文案，�
 from __future__ import annotations
 
 from langchain.agents.middleware import AgentMiddleware, ModelRequest, ModelResponse
-from langchain_core.messages import AIMessage
 
+from messages.builder import builder
 from storage.audit import record_audit, subject_key_for
 from storage.database import caller_user_id, session_scope
 from middleware._text import human_text
@@ -64,7 +64,7 @@ class EmergencyInputMiddleware(AgentMiddleware):
         fixed = self._fixed_reply(request)
         if fixed is not None:
             # 不调用 handler：模型不运行、无工具、无追问。
-            return ModelResponse(result=[AIMessage(content=fixed)])
+            return ModelResponse(result=[builder.ai(fixed)])
         return handler(request)
 
     async def awrap_model_call(self, request: ModelRequest, handler):
@@ -72,7 +72,7 @@ class EmergencyInputMiddleware(AgentMiddleware):
         if fixed is not None:
             result = detect_emergency(human_text(request))
             await self._record_audit(request, result.reason or "matched")
-            return ModelResponse(result=[AIMessage(content=fixed)])
+            return ModelResponse(result=[builder.ai(fixed)])
         return await handler(request)
 
 

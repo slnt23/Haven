@@ -26,6 +26,7 @@ from langchain.agents.middleware.types import ToolCallRequest
 from langchain_core.messages import ToolMessage
 
 from config.settings import McpServerSettings, get_settings
+from messages.builder import builder
 from safety.degradation import MCP_DEGRADED_RESPONSE, MCP_DENIED_RESPONSE
 from storage.audit import record_audit, subject_key_for
 from storage.database import session_scope
@@ -72,12 +73,12 @@ class McpPolicyMiddleware(AgentMiddleware):
         return replace(request, runtime=raw) if raw is not None else request
 
     @staticmethod
-    def _refusal(request: ToolCallRequest, text: str) -> ToolMessage:
+    def _refusal(request: ToolCallRequest, text: str):
         call = request.tool_call
-        return ToolMessage(
-            content=text,
+        return builder.tool(
+            text,
             tool_call_id=call["id"],
-            name=call.get("name"),
+            name=call.get("name", ""),
         )
 
     @staticmethod

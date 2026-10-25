@@ -20,7 +20,6 @@
 from __future__ import annotations
 
 from langchain.agents.middleware import AgentMiddleware, ModelRequest, ModelResponse
-from langchain_core.messages import AIMessage
 from sqlalchemy import select
 
 from application.commands import (
@@ -35,9 +34,10 @@ from application.commands import (
     match_command,
 )
 from application.messages import MSG
+from messages.builder import builder
+from middleware._text import human_text
 from storage.database import DatabaseUnavailable, session_scope
 from storage.models import HealthProfile, OnboardingDraft, PendingBpConfirmation
-from middleware._text import human_text
 from tools._helpers import NO_IDENTITY_REPLY, has_consented, uid_of
 from tools.consent import record_consent
 
@@ -57,7 +57,7 @@ class CommandMiddleware(AgentMiddleware):
 
     @staticmethod
     def _respond(text: str) -> ModelResponse:
-        return ModelResponse(result=[AIMessage(content=text)])
+        return ModelResponse(result=[builder.ai(text)])
 
     async def _hello(self, request: ModelRequest) -> ModelResponse:
         """/hello：按「同意了吗 / 建档了吗」三选一，**只读**。

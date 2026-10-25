@@ -13,8 +13,9 @@
 from __future__ import annotations
 
 from langchain.agents.middleware import AgentMiddleware, ModelResponse
-from langchain_core.messages import AIMessage, BaseMessage
+from langchain_core.messages import BaseMessage
 
+from messages.builder import builder
 from safety.degradation import LLM_DEGRADED_RESPONSE
 from safety.output_filter import SAFE_FALLBACK, filter_output
 
@@ -24,7 +25,7 @@ def _rewrite_safe(response: ModelResponse) -> ModelResponse:
     for message in response.result:
         content = getattr(message, "content", None)
         if isinstance(content, str) and content and filter_output(content) != content:
-            messages.append(AIMessage(content=SAFE_FALLBACK))
+            messages.append(builder.ai(SAFE_FALLBACK))
         else:
             messages.append(message)
     return ModelResponse(result=messages, structured_response=response.structured_response)
@@ -39,13 +40,13 @@ class OutputSafetyMiddleware(AgentMiddleware):
         try:
             return _rewrite_safe(handler(request))
         except Exception:  # noqa: BLE001 —— 模型不可用 → 固定降级文案
-            return ModelResponse(result=[AIMessage(content=LLM_DEGRADED_RESPONSE)])
+            return ModelResponse(result=[builder.ai(LLM_DEGRADED_RESPONSE)])
 
     async def awrap_model_call(self, request, handler):
         try:
             return _rewrite_safe(await handler(request))
         except Exception:  # noqa: BLE001
-            return ModelResponse(result=[AIMessage(content=LLM_DEGRADED_RESPONSE)])
+            return ModelResponse(result=[builder.ai(LLM_DEGRADED_RESPONSE)])
 
 
 output_safety_middleware = OutputSafetyMiddleware()

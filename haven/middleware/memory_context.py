@@ -39,6 +39,8 @@ from sqlalchemy import select
 from application.confirmation import pending_expired
 from application.memory import build_bundle, format_memory_block
 from application.trends import calculate_seven_day_trend
+from messages.builder import builder
+from messages.instructions import system_prompt as haven_system_prompt
 from storage.database import caller_user_id, session_scope
 from storage.models import (
     DRAFT_INJECTION_WINDOW,
@@ -68,18 +70,25 @@ def _draft_is_stale(updated_at: datetime, now: datetime) -> bool:
     return moment < now - DRAFT_INJECTION_WINDOW
 
 
-def _append_block(request: ModelRequest, block: str) -> ModelRequest:
-    """把记忆块作为**独立内容块**追加到 system prompt。
+def _inject_blocks(request: ModelRequest, *blocks: str) -> ModelRequest:
+    """把若干文本块作为**独立内容块**追加到 system prompt。
 
-    不重建字符串：`system_message.text` 只返回文本块，重建会压平前面中间件
-    设下的 `cache_control` 标记（MDA 自己在 `_memory_instructions.py` 里对
-    同一个消息也是这么做的）。`override` 每次调用都基于未修改的闭包
-    `system_message` 重建请求，所以注入块不会在线程历史里累积/重复。
+    每次调用都以 ``content_blocks`` 形式追加，不压平已有中间件设下的
+    ``cache_control`` 标记。``request.override`` 基于未修改的闭包
+    ``system_message`` 重建请求，注入块不会在线程历史里累积/重复。
+
+    过渡期：首块来自 ``messages.instructions.system_prompt.build()``，
+    显式替代 MDA 隐性注入的 system prompt（来自 Context Hub 的
+    ``instructions.md`` + ``_memory_instructions.py`` 的
+    ``<managed_memory_policy>``）。MDA 的隐性注入仍在运行，但你显式
+    追加的块包含完整的 instructions + memory policy，模型只看到一份
+    完整的系统提示。
     """
     existing = getattr(request, "system_message", None)
-    blocks: list[Any] = list(getattr(existing, "content_blocks", None) or [])
-    blocks.append({"type": "text", "text": block})
-    return request.override(system_message=SystemMessage(content_blocks=blocks))
+    current: list[Any] = list(getattr(existing, "content_blocks", None) or [])
+    for block in blocks:
+        current.append({"type": "text", "text": block})
+    return request.override(system_message=SystemMessage(content_blocks=current))
 
 
 async def _load_bundle(session, uid: str):
@@ -145,10 +154,16 @@ class MemoryInjectionMiddleware(AgentMiddleware):
 
     async def awrap_model_call(self, request: ModelRequest, handler):
         uid = caller_user_id(getattr(request, "runtime", None))
-        if uid is None:
-            return await handler(request)
 
-        new_request = request
+        # 始终注入显式的 system prompt（含 instructions + memory policy），
+        # 先于记忆块。MDA 的隐性注入仍在运行，但你显式的块包含完整的系统提示。
+        new_request = _inject_blocks(request, haven_system_prompt.build())
+
+        if uid is None:
+            # 非本人调用者：只注入 system prompt，不注入记忆块。
+            # 记忆块里就是本人的健康数据，一个字节都不该给非本人看。
+            return await handler(new_request)
+
         # try 只包住"取数 + 组装"：handler 必须留在外面，否则模型自身的异常
         # 会被这里吞掉，output_safety 的降级文案就永远发不出来了。
         try:
@@ -156,7 +171,7 @@ class MemoryInjectionMiddleware(AgentMiddleware):
         except Exception:  # noqa: BLE001 —— 见模块头第 2 条
             block = None
         if block:
-            new_request = _append_block(request, block)
+            new_request = _inject_blocks(request, haven_system_prompt.build(), block)
         return await handler(new_request)
 
     def wrap_model_call(self, request: ModelRequest, handler):
