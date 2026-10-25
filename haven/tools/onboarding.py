@@ -31,7 +31,7 @@ from application.onboarding import (
 from schemas.tools import OnboardingDraftResult, OnboardingProfileResult, OnboardingSaveResult
 from storage.database import DatabaseUnavailable, session_scope
 from storage.models import DiseaseRecord, HealthProfile, OnboardingDraft
-from tools._helpers import NO_IDENTITY_REPLY, degraded, has_consented, uid_of
+from tools._helpers import NO_IDENTITY_REPLY, degraded, uid_of
 
 
 @tool(parse_docstring=True)
@@ -46,8 +46,6 @@ async def get_health_profile(runtime: ToolRuntime = None) -> OnboardingProfileRe
         return OnboardingProfileResult(ok=False, message=NO_IDENTITY_REPLY)
     try:
         async with session_scope() as session:
-            if not await has_consented(session, uid):
-                return OnboardingProfileResult(ok=False, message=MSG.consent_required)
             stmt = select(HealthProfile).where(HealthProfile.user_id == uid).limit(1)
             profile = (await session.execute(stmt)).scalars().first()
             if profile is None:
@@ -153,8 +151,6 @@ async def save_health_profile(
 
     try:
         async with session_scope() as session:
-            if not await has_consented(session, uid):
-                return OnboardingSaveResult(ok=False, message=MSG.consent_required)
             stmt = select(HealthProfile).where(HealthProfile.user_id == uid).limit(1)
             profile = (await session.execute(stmt)).scalars().first()
             if profile is None:
@@ -242,10 +238,6 @@ async def save_onboarding_draft(
 
     try:
         async with session_scope() as session:
-            if not await has_consented(session, uid):
-                return OnboardingDraftResult(
-                    ok=False, step=step, message=MSG.consent_required
-                )
             stmt = select(OnboardingDraft).where(OnboardingDraft.user_id == uid).limit(1)
             draft = (await session.execute(stmt)).scalars().first()
             if draft is None:

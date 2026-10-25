@@ -13,6 +13,7 @@
 - 中间件顺序：紧急输入扫描在最外层（先于一切 LLM 处理），命令路由、
   输出安全依次在后，记忆注入在安全中间件内侧（它只往 system prompt
   追加内容块，不重写，见 `middleware/memory_context.py` 模块头），
+  同意闸门（`middleware/consent_policy.py`）在工具调用前统一拦截，
   最后是 MCP 策略（`middleware/mcp_policy.py`，只挂工具调用钩子：
   外部 MCP 工具白名单放行、默认拒绝、审计、失败降级）。
 - 外部 MCP：声明在 `connectors/mcp.py`（平台原生连接器，仅远程 HTTP/SSE），
@@ -25,6 +26,7 @@ from managed_deepagents import define_deep_agent
 
 from config.settings import get_settings
 from middleware.commands import command_middleware
+from middleware.consent_policy import consent_policy_middleware
 from middleware.emergency_input import emergency_input_middleware
 from middleware.mcp_policy import mcp_policy_middleware
 from middleware.memory_context import memory_context_middleware
@@ -36,6 +38,7 @@ from tools.onboarding import (
     save_health_profile,
     save_onboarding_draft,
 )
+from tools.permissions import interrupt_on
 from tools.trends import get_seven_day_trend
 from tools.vitals import (
     confirm_abnormal_blood_pressure,
@@ -64,10 +67,8 @@ agent = define_deep_agent(
         command_middleware,  # /hello /help /consent /cancel 确定性路由
         output_safety_middleware,
         memory_context_middleware,  # 只追加 system prompt 内容块，放其内侧
+        consent_policy_middleware,  # 同意闸门：从 permissions.py 查表，未同意则拒绝
         mcp_policy_middleware,  # 工具层钩子：MCP 白名单/审计/降级（只挂工具调用）
     ],
-    interrupt_on={
-        "confirm_abnormal_blood_pressure": True,
-        "delete_my_data": True,
-    },
+    interrupt_on=interrupt_on(),
 )

@@ -24,7 +24,6 @@ from schemas.tools import BpConfirmResult, BpPendingResult, BpRecordResult
 from tools._helpers import (
     NO_IDENTITY_REPLY,
     degraded,
-    has_consented,
     is_future,
     parse_measured_at,
     uid_of,
@@ -127,8 +126,6 @@ async def record_blood_pressure(
 
     try:
         async with session_scope() as session:
-            if not await has_consented(session, uid):
-                return BpRecordResult(ok=False, message=MSG.consent_required)
             if await _recent_duplicate(session, uid, systolic, diastolic, measured):
                 return BpRecordResult(
                     ok=False,

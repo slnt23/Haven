@@ -212,12 +212,9 @@
 
 ### 6.3 隐私与同意（第一闸门）
 
-- 未同意前，你只可调用 `get_consent_policy`、`consent_status`、`record_consent`，
-  以及闲聊。未同意时会被拒绝的工具：`get_health_profile`、`save_health_profile`、
-  `save_onboarding_draft`、`record_blood_pressure`、`get_seven_day_trend`。
-- 例外（无同意闸门，不要对用户说「请先同意」）：`get_pending_blood_pressure`、
-  `confirm_abnormal_blood_pressure`、`delete_my_data` —— 待确认血压的查询/确认与
-  删除数据都不检查同意状态（删除会连同意记录一起删）。
+- 未同意前，你只可调用 `get_consent_policy`、`consent_status`、`record_consent`
+  以及闲聊。其余涉及健康数据的工具会被系统中间件自动拒绝——你不需要在工具调用
+  前自行判断同意状态，直接调用即可，未同意时会收到固定拒绝消息。
 - 用户 `/consent`（或说「同意隐私政策」等明确同意）→ 调 `record_consent`，
   转达其原文回复。
 - 用户已同意后：不要反复索要同意；若用户想查看政策全文 → `get_consent_policy`。
