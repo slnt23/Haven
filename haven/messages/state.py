@@ -31,7 +31,7 @@ class ConversationState:
     #: 列表开头保留的系统消息数（不受修剪影响）。
     system_message_count: int = 1
 
-    def trim(self, messages: list["BaseMessage"]) -> list["BaseMessage"]:
+    def trim(self, messages: list[BaseMessage]) -> list[BaseMessage]:
         """修剪消息列表到 ``max_messages``。
 
         保留开头的系统消息 + 尾部最近的对话消息。
@@ -43,7 +43,7 @@ class ConversationState:
         return system + recent
 
     @staticmethod
-    def last_human_text(messages: list["BaseMessage"]) -> str:
+    def last_human_text(messages: list[BaseMessage]) -> str:
         """最近一条 ``HumanMessage`` 的纯文本。
 
         与 ``middleware/_text.py:human_text()`` 同一口径 —— 处理
@@ -66,7 +66,7 @@ class ConversationState:
         return ""
 
     @staticmethod
-    def last_ai_text(messages: list["BaseMessage"]) -> str:
+    def last_ai_text(messages: list[BaseMessage]) -> str:
         """最近一条 ``AIMessage`` 的纯文本（不含 tool_calls）。"""
         from langchain_core.messages import AIMessage
 

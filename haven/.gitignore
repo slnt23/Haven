@@ -23,6 +23,10 @@ Thumbs.db
 desktop.ini
 
 
+# 开发工具缓存
+.ruff_cache/
+.pyright/
+
 # 自定义
 CLAUDE.md
 .venv/

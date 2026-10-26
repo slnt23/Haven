@@ -10,8 +10,8 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, Field
 import yaml
+from pydantic import BaseModel, Field
 
 _MODEL_FILE = Path(__file__).resolve().parent / "model.yaml"
 #: 默认模型（MDA 格式 <provider>:<model>）

@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime
 
-from langchain.tools import tool, ToolRuntime
+from langchain.tools import ToolRuntime, tool
 from sqlalchemy import delete, select
 
 from application.commands import C_PROFILE

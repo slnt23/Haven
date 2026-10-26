@@ -11,9 +11,9 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import AsyncIterator
 
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
@@ -23,7 +23,6 @@ from sqlalchemy.ext.asyncio import (
 from sqlalchemy.orm import DeclarativeBase
 
 from config.settings import get_settings
-
 
 _logger = logging.getLogger(__name__)
 

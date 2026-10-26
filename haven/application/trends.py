@@ -33,7 +33,7 @@ def _calculate_trend(records: list[Any]) -> TrendSummary:
     diastolic_values = [r.diastolic for r in records]
 
     normal_count = sum(
-        1 for s, d in zip(systolic_values, diastolic_values)
+        1 for s, d in zip(systolic_values, diastolic_values, strict=True)
         if s < 140 and d < 90
     )
 

@@ -1,29 +1,80 @@
 [project]
 name = "haven"
 version = "0.0.1"
-description = "A Managed Deep Agent project."
-requires-python = ">=3.11"
+description = "个人慢病管理智能体 — Haven 健健"
+requires-python = ">=3.14"
 dependencies = [
     "managed-deepagents==0.6.1",
-        # 以下四个版本组合是**端到端验证通过**的（含工具注入参数的校验行为）：
-        # 升到 langchain 1.4.1 / core 1.6.3 / deepagents 0.7.15 后，注入到工具
-        # 的 runtime 参数会重新被 pydantic 校验拦下（报空错误的 "Error invoking
-        # tool"）。改动前请先跑通完整闭环。
+    # 以下四个版本端到端验证通过，升级需重跑完整闭环
     "langchain==1.4.0",
     "langchain-core==1.6.2",
     "langgraph==1.2.11",
     "deepagents==0.7.13",
-    "langchain-deepseek>=1.1.1,<2.0.0",
-        # 上限卡在 <2.1：2.1.x 是 2026-09-24/25 才发布的（0.x→2.1 会移除 2.0 的
-        # 一批弃用项）。2.0.52 已带 cp314 轮子，Python 3.14 不需要升到 2.1；
-        # 想上 2.1 就把上限改成 <3.0.0 并先跑通闭环。
+    "langchain-deepseek>=1.1.1,<2.0.0",  # 上限 <2.1 因 2.1.x 移除弃用项；已有 cp314 轮子
     "sqlalchemy[asyncio]>=2.0.52,<2.1.0",
     "aiosqlite>=0.22.1",
-        # 必须 >=0.31.0：0.30.0 没有 cp314 轮子，Python 3.14 下会退化成源码编译。
-    "asyncpg>=0.31.0",
+    "asyncpg>=0.31.0",                    # ≥0.31.0 才有 cp314 轮子，否则 3.14 退化成源码编译
     "pydantic-settings>=2.15.0",
-        # 外部 MCP 连接器（connectors/mcp.py）。平台构建清单本来就固定注入这两个
-        # 包；在这里显式声明是因为 mda 的连接器*发现*阶段要求项目依赖已安装。
-    "langchain-mcp-adapters>=0.3.2",
-    "mcp>=1.24.0,<2.0.0",
+    "langchain-mcp-adapters>=0.3.2",      # MDA connectors 发现阶段要求
+    "mcp>=1.24.0,<2.0.0",                # 同上
 ]
+
+# 开发工具链 —— 不在生产部署中安装。
+#   安装方式：uv sync --group dev  或  uv pip install -e ".[dev]"
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.11.0",
+    "pyright>=1.1.400",
+]
+
+
+# ============================================================================
+# ruff —— 语法检查 + 格式 + import 排序（三合一）
+#   检查: ruff check .    格式化: ruff format .    修复: ruff check --fix .
+# ============================================================================
+[tool.ruff]
+target-version = "py314"  # 实际运行 Python 3.14
+line-length    = 100      # 屏幕竖排时可并排打开两个文件
+
+[tool.ruff.lint]
+select = [
+    "E",      # pycodestyle errors —— 语法错误
+    "W",      # pycodestyle warnings —— 风格警告
+    "F",      # pyflakes —— 未使用的 import / 变量 / 逻辑错误
+    "I",      # isort —— import 按标准库 → 第三方 → 本地分组排序
+    "UP",     # pyupgrade —— 语法现代化（如 Optional[X] → X | None）
+    "B",      # flake8-bugbear —— 常见错误模式（== None 应该用 is None）
+    "SIM",    # flake8-simplify —— 过于复杂的条件判断可以简化
+]
+ignore = ["E501"]  # 行长交给 formatter 管，linter 不再报告
+
+[tool.ruff.lint.isort]
+known-first-party = ["haven"]  # 项目自身模块作为"第一方"排在第三方之后
+
+[tool.ruff.format]
+quote-style           = "double"  # 统一双引号
+indent-style          = "space"   # 空格缩进
+line-ending           = "lf"      # Unix 换行符
+skip-magic-trailing-comma = false # 多行参数末尾保留尾逗号，方便 diff
+
+
+# ============================================================================
+# pyright —— 静态类型检查    检查: pyright .
+#   typeCheckingMode = "basic": 比 "standard" 宽松，避免第三方 stub 不完整导致噪声误报
+# ============================================================================
+[tool.pyright]
+pythonVersion      = "3.14"
+typeCheckingMode   = "basic"       # 只报确定性的类型错误，不报缺少类型注解
+include            = ["."]         # 检查范围: 项目根目录下所有 .py
+exclude = [
+    ".mda",                        # MDA 编译产物，非项目源码
+    ".venv",                       # 虚拟环境
+    ".data",                       # 本地 SQLite 数据库文件目录
+    "__pycache__",
+    "evals",
+]
+# managed-deepagents 等第三方包无 stub，关闭缺失 stub / import 的警告
+reportMissingTypeStubs    = false
+reportMissingImports      = false
+reportMissingTypeArgument = false  # 不报告第三方包内部的类型参数缺失
+reportUnknownMemberType   = false  # 不报告第三方包内部的未知成员类型

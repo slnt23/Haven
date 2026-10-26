@@ -14,9 +14,7 @@ mda CLI 的裸解释器导入的连接器链路上，必须纯标准库；本模
 import logging
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal
-
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from langchain.chat_models import init_chat_model
 from langchain.rate_limiters import InMemoryRateLimiter
@@ -113,7 +111,7 @@ class Settings(BaseSettings):
         )
 
     @property
-    def chat_model(self) -> "BaseChatModel":
+    def chat_model(self) -> BaseChatModel:
         """基于当前配置构建的聊天模型实例。
 
         `agent.py` 只需取此属性即可获得完整配置的模型；
@@ -134,7 +132,7 @@ class Settings(BaseSettings):
         )
 
     @property
-    def structured_chat_model(self) -> "BaseChatModel":
+    def structured_chat_model(self) -> BaseChatModel:
         """构建一个**不带 tools 的纯推理模型**（参数与主模型一致）。
 
         用于需要结构化输出的独立调用（安全分类、意图识别等），

@@ -7,9 +7,10 @@
 
 from __future__ import annotations
 
-from langchain.tools import tool, ToolRuntime
+from langchain.tools import ToolRuntime, tool
 from sqlalchemy import delete
 
+from schemas.tools import DeleteResult
 from storage.audit import record_audit, subject_key_for
 from storage.database import DatabaseUnavailable, session_scope
 from storage.models import (
@@ -20,7 +21,6 @@ from storage.models import (
     OnboardingDraft,
     PendingBpConfirmation,
 )
-from schemas.tools import DeleteResult
 from tools._helpers import NO_IDENTITY_REPLY, degraded, uid_of
 
 _DELETE_DONE_REPLY = (

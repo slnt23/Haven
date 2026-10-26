@@ -72,12 +72,12 @@ class SystemPrompt:
         "</managed_memory_policy>"
     )
 
-    def add_text(self, text: str, *, source: str = "builtin") -> "SystemPrompt":
+    def add_text(self, text: str, *, source: str = "builtin") -> SystemPrompt:
         """追加一段纯文本。"""
         self.blocks.append(PromptBlock(text=text, source=source))
         return self
 
-    def add_file(self, path: str | Path) -> "SystemPrompt":
+    def add_file(self, path: str | Path) -> SystemPrompt:
         """追加文件内容为一个提示块。路径相对于项目根。"""
         resolved = (_PROJECT_ROOT / path).resolve()
         self.blocks.append(
@@ -94,7 +94,7 @@ class SystemPrompt:
         return SystemMessage(content=self.build())
 
     @classmethod
-    def for_haven(cls) -> "SystemPrompt":
+    def for_haven(cls) -> SystemPrompt:
         """健健的默认系统提示组装。
 
         过渡期在 ``memory_context`` 中间件中作为首个 content block 注入，

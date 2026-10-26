@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from langchain.tools import tool, ToolRuntime
+from langchain.tools import ToolRuntime, tool
 
 from application.trends import calculate_seven_day_trend, format_trend_message
 from schemas.tools import TrendResult

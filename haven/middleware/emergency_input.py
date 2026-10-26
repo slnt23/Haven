@@ -17,8 +17,6 @@ from __future__ import annotations
 from langchain.agents.middleware import AgentMiddleware, ModelRequest, ModelResponse
 
 from messages.builder import builder
-from storage.audit import record_audit, subject_key_for
-from storage.database import caller_user_id, session_scope
 from middleware._text import human_text
 from safety.emergency import (
     EMERGENCY_CLARIFY_TEXT,
@@ -26,6 +24,8 @@ from safety.emergency import (
     EmergencyLevel,
     detect_emergency,
 )
+from storage.audit import record_audit, subject_key_for
+from storage.database import caller_user_id, session_scope
 
 
 class EmergencyInputMiddleware(AgentMiddleware):

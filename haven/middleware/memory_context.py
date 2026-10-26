@@ -39,7 +39,6 @@ from sqlalchemy import select
 from application.confirmation import pending_expired
 from application.memory import build_bundle, format_memory_block
 from application.trends import calculate_seven_day_trend
-from messages.builder import builder
 from messages.instructions import system_prompt as haven_system_prompt
 from storage.database import caller_user_id, session_scope
 from storage.models import (

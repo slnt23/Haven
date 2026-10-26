@@ -49,3 +49,14 @@ AGENTS.md       # 项目说明
 mda dev               → langgraph dev
 mda build             → （不需要）
 mda deploy            → langgraph deploy
+
+
+
+□ 零测试          — pytest、conftest、tests/ 全无
+□ 零语法检查      — ruff、flake8、pylint 全无配置
+□ 零格式检查      — black、isort、ruff format 全无
+□ 零类型检查      — mypy、pyright 全无
+□ 零 pre-commit   — .pre-commit-config.yaml 不存在
+□ 零 CI/CD        — .github/workflows 不存在
+□ 零任务脚本      — Makefile、justfile 不存在
+□ pyproject.toml  — 只有 [project] 依赖声明，无任何 [tool.*] 配置
