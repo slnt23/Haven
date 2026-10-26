@@ -20,11 +20,11 @@ class _Messages:
     __slots__ = ()
 
     # ── 通用 ──
-    empty_input = "请告诉我您的需求，我会尽力帮助您。"
-    error_fallback = "抱歉，我暂时无法处理您的请求，请稍后再试。如有紧急情况，请立即拨打 120。"
+    empty_input = "请告诉我你的需求，我会尽力帮助你。"
+    error_fallback = "抱歉，我暂时无法处理你的请求，请稍后再试。如有紧急情况，请立即拨打 120。"
 
     # ── 建档 ──
-    onboarding_already = f"您的健康档案已存在，可以 {C_PROFILE} 重新建档更新信息。"
+    onboarding_already = f"你的健康档案已存在，可以 {C_PROFILE} 重新建档更新信息。"
     onboarding_interrupted = f"建档流程已中断，请输入 {C_PROFILE} 重新开始。"
     onboarding_cancelled = f"好的，已取消建档。需要时请输入 {C_PROFILE} 重新开始。"
     onboarding_confirm_prompt = (
@@ -33,7 +33,7 @@ class _Messages:
 
     @staticmethod
     def onboarding_start(field_prompt: str) -> str:
-        return f"好的，我来帮您创建健康档案。\n{field_prompt}"
+        return f"好的，我来帮你创建健康档案。\n{field_prompt}"
 
     @staticmethod
     def onboarding_parse_error(field: str, prompt: str) -> str:
@@ -52,14 +52,14 @@ class _Messages:
         )
 
     # ── 隐私同意 ──
-    consent_required = f"您还没有同意隐私政策。为保护您的健康数据，使用记录/建档前请先同意：请输入 {C_CONSENT}。"
-    consent_already = "您已同意过隐私政策，无需重复操作。"
-    consent_granted = f"感谢您的同意！现在您可以开始使用了：请输入 {C_PROFILE} 建档，或直接告诉我血压值记录（如 120/80）。"
+    consent_required = f"你还没有同意隐私政策。为保护你的健康数据，使用记录/建档前请先同意：请输入 {C_CONSENT}。"
+    consent_already = "你已同意过隐私政策，无需重复操作。"
+    consent_granted = f"感谢你的同意！现在你可以开始使用了：请输入 {C_PROFILE} 建档，或直接告诉我血压值记录（如 120/80）。"
 
     # ── 血压记录 ──
     bp_invalid = "血压数值不合法，请重新输入"
     bp_cancelled = "好的，这条没有保存。请重新测量后再告诉我数值。"
-    bp_need_value = "请告诉我您的血压值，例如：120/80"
+    bp_need_value = "请告诉我你的血压值，例如：120/80"
 
     @staticmethod
     def bp_recorded(systolic: int, diastolic: int, level: str) -> str:
@@ -67,18 +67,18 @@ class _Messages:
 
     @staticmethod
     def bp_confirmed(systolic: int, diastolic: int) -> str:
-        return f"已为您记录血压 {systolic}/{diastolic} mmHg。请持续监测。"
+        return f"已为你记录血压 {systolic}/{diastolic} mmHg。请持续监测。"
 
     @staticmethod
     def bp_confirm_prompt(systolic: int, diastolic: int) -> str:
         return (
-            f"我注意到您刚才输入的血压 {systolic}/{diastolic} mmHg 偏高，需要您确认："
-            f"输入 {C_CONFIRM} 将为您记录，输入 {C_CANCEL} 则不记录。"
+            f"我注意到你刚才输入的血压 {systolic}/{diastolic} mmHg 偏高，需要你确认："
+            f"输入 {C_CONFIRM} 将为你记录，输入 {C_CANCEL} 则不记录。"
         )
 
     # ── 打招呼 / 帮助 ──
     greeting = (
-        "您好！我是健健，您的健康管家。我可以帮您：\n"
+        "你好！我是健健，你的私人健康顾问。我可以帮你：\n"
         f"· 健康建档 — {C_PROFILE}\n"
         "· 记录血压 — 告诉我数值，如 120/80\n"
         f"· 查看趋势 — {C_TREND}\n"
@@ -86,7 +86,7 @@ class _Messages:
         f"首次使用请先输入 {C_CONSENT} 同意隐私政策。"
     )
     ask_help = (
-        "我可以帮您：\n"
+        "我可以帮你：\n"
         "· 记录血压 — 直接告诉我血压值，如 120/80\n"
         f"· 查看趋势 — 输入 {C_TREND} 查看七日变化\n"
         f"· 健康建档 — 输入 {C_PROFILE} 创建健康画像\n"
