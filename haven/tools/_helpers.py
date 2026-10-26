@@ -10,8 +10,10 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from typing import Annotated
 
 from langchain.tools import ToolRuntime
+from langchain_core.tools import InjectedToolArg
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -22,6 +24,9 @@ from storage.models import BloodPressure, ConsentRecord
 #: 单租户部署下，走到这里只有一种原因：调用者不是本部署服务的本人。
 #: 真正的原因（期望/实际 user id）在服务端日志里 —— 不回显给调用者。
 NO_IDENTITY_REPLY = "本服务只为指定用户提供服务，当前调用者不在服务范围内。"
+
+# 可空默认值供直接调用；InjectedToolArg 保证模型 schema 不暴露 runtime。
+OptionalToolRuntime = Annotated[ToolRuntime | None, InjectedToolArg]
 
 #: 允许的时钟偏差：设备时钟略快于服务器时不算“未来”。
 _FUTURE_TOLERANCE = timedelta(minutes=5)
@@ -38,9 +43,9 @@ MAX_SEVEN_DAY_RECORDS = 500
 # **之前** —— 注解成 ManagedDeepAgentRuntime 会因「不是该类型实例」校验
 # 失败，工具只报「Error invoking tool …」（错误详情按“注入参数”被过滤，
 # 显示为空）且不落任何数据（langchain-core 1.4/1.5/1.6 均可复现）。
-# 原生 ToolRuntime 注解：同样不出现在模型可见的工具 schema 里、校验可通过；
-# 运行时 `runtime.identity` 仍由 MDA seam 注入的代理提供。
-def uid_of(runtime: ToolRuntime) -> str | None:
+# OptionalToolRuntime 保留原生 ToolRuntime 类型并显式标记注入，
+# 不出现在模型可见的工具 schema 里；MDA seam 的代理仍可用于身份审计。
+def uid_of(runtime: ToolRuntime | None) -> str | None:
     return caller_user_id(runtime)
 
 

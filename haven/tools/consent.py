@@ -16,7 +16,7 @@ from schemas.tools import ConsentPolicyResult, ConsentRecordResult, ConsentStatu
 from storage.audit import record_audit, subject_key_for
 from storage.database import DatabaseUnavailable, session_scope
 from storage.models import ConsentRecord
-from tools._helpers import NO_IDENTITY_REPLY, degraded, uid_of
+from tools._helpers import NO_IDENTITY_REPLY, OptionalToolRuntime, degraded, uid_of
 
 POLICY_VERSION = "0.0.1"
 #: 与 src 的 consent scope 保持一致。
@@ -39,7 +39,7 @@ def get_consent_policy() -> ConsentPolicyResult:
 
 
 @tool(parse_docstring=True)
-async def consent_status(runtime: ToolRuntime = None) -> ConsentStatusResult:
+async def consent_status(runtime: OptionalToolRuntime = None) -> ConsentStatusResult:
     """查询当前用户的隐私同意状态。
 
     未同意时返回隐私政策全文与同意指引；已同意时返回确认信息。
@@ -66,11 +66,16 @@ async def consent_status(runtime: ToolRuntime = None) -> ConsentStatusResult:
 
 
 @tool(parse_docstring=True)
-async def record_consent(runtime: ToolRuntime = None) -> ConsentRecordResult:
+async def record_consent(runtime: OptionalToolRuntime = None) -> ConsentRecordResult:
     """记录当前用户的隐私同意（政策版本 0.0.1）。
 
     仅在用户明确表示同意后调用。重复调用幂等：已有同意记录时返回确认而不重复写入。
     """
+    return await record_consent_action(runtime)
+
+
+async def record_consent_action(runtime: ToolRuntime | None) -> ConsentRecordResult:
+    """供工具和 `/consent` 命令共用的确定性同意逻辑。"""
     uid = uid_of(runtime)
     if uid is None:
         return ConsentRecordResult(ok=False, message=NO_IDENTITY_REPLY)

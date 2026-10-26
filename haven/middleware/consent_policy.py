@@ -25,14 +25,16 @@ from tools.permissions import TOOL_PERMISSIONS
 class ConsentPolicyMiddleware(AgentMiddleware):
     """同意闸门：查权限表 → 校验同意 → 拒绝或放行。"""
 
-    name = "haven_consent_policy"
+    @property
+    def name(self) -> str:
+        return "haven_consent_policy"
 
     @staticmethod
     def _refusal(request: ToolCallRequest, text: str) -> ToolMessage:
         call = request.tool_call
         return builder.tool(
             text,
-            tool_call_id=call["id"],
+            tool_call_id=call.get("id") or "",
             name=call.get("name", ""),
         )
 

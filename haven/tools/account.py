@@ -7,7 +7,7 @@
 
 from __future__ import annotations
 
-from langchain.tools import ToolRuntime, tool
+from langchain.tools import tool
 from sqlalchemy import delete
 
 from schemas.tools import DeleteResult
@@ -21,7 +21,7 @@ from storage.models import (
     OnboardingDraft,
     PendingBpConfirmation,
 )
-from tools._helpers import NO_IDENTITY_REPLY, degraded, uid_of
+from tools._helpers import NO_IDENTITY_REPLY, OptionalToolRuntime, degraded, uid_of
 
 _DELETE_DONE_REPLY = (
     "您的健康档案、血压记录、建档进度与隐私同意记录已全部删除。"
@@ -31,7 +31,7 @@ _DELETE_DONE_REPLY = (
 
 
 @tool(parse_docstring=True)
-async def delete_my_data(runtime: ToolRuntime = None) -> DeleteResult:
+async def delete_my_data(runtime: OptionalToolRuntime = None) -> DeleteResult:
     """删除当前用户的全部健康数据。
 
     危险操作 —— 仅在用户明确要求（如「删除我的数据」）且获得

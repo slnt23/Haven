@@ -98,7 +98,10 @@ async def ensure_initialized() -> None:
 async def session_scope() -> AsyncIterator[AsyncSession]:
     """干净的会话作用域：成功退出自动 commit；任何异常 rollback 并包装。"""
     await ensure_initialized()
-    session = _session_factory()
+    factory = _session_factory
+    if factory is None:
+        raise DatabaseUnavailable("数据库会话工厂未初始化")
+    session = factory()
     try:
         yield session
         await session.commit()

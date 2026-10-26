@@ -39,7 +39,7 @@ from middleware._text import human_text
 from storage.database import DatabaseUnavailable, session_scope
 from storage.models import HealthProfile, OnboardingDraft, PendingBpConfirmation
 from tools._helpers import NO_IDENTITY_REPLY, has_consented, uid_of
-from tools.consent import record_consent
+from tools.consent import record_consent_action
 
 _CANCEL_NONE_REPLY = "好的，已取消当前操作。需要记录或建档时随时告诉我。"
 
@@ -47,7 +47,9 @@ _CANCEL_NONE_REPLY = "好的，已取消当前操作。需要记录或建档时�
 class CommandMiddleware(AgentMiddleware):
     """命令消息的确定性路由（/hello /help /consent /cancel）。"""
 
-    name = "haven_commands"
+    @property
+    def name(self) -> str:
+        return "haven_commands"
 
     @staticmethod
     def _static_reply(command: str) -> str | None:
@@ -149,9 +151,8 @@ class CommandMiddleware(AgentMiddleware):
         if command == C_HELLO:
             return await self._hello(request)
         if command == C_CONSENT:
-            result = await record_consent(getattr(request, "runtime", None))
-            reply = result.message if hasattr(result, "message") else result
-            return self._respond(reply)
+            result = await record_consent_action(getattr(request, "runtime", None))
+            return self._respond(result.message)
         if command == C_CANCEL:
             reply = await self._cancel(request)
             if reply is not None:

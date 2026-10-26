@@ -34,7 +34,9 @@ def _rewrite_safe(response: ModelResponse) -> ModelResponse:
 class OutputSafetyMiddleware(AgentMiddleware):
     """模型输出的确定性安全重写 + 模型故障降级兜底。"""
 
-    name = "haven_output_safety"
+    @property
+    def name(self) -> str:
+        return "haven_output_safety"
 
     def wrap_model_call(self, request, handler):
         try:

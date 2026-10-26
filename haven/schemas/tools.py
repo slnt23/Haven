@@ -135,10 +135,10 @@ class OnboardingSaveResult(BaseModel):
 
     ok: bool = Field(description="操作是否成功")
     nickname: str | None = Field(default=None, description="保存的称呼")
-    gender: str = Field(description="保存的性别")
-    birth_date: str = Field(description="保存的出生日期 ISO 格式")
-    disease_name: str = Field(description="保存的健康问题名称")
-    saved: bool = Field(description="是否成功保存")
+    gender: str | None = Field(default=None, description="保存的性别；失败时为空")
+    birth_date: str | None = Field(default=None, description="保存的出生日期 ISO 格式；失败时为空")
+    disease_name: str | None = Field(default=None, description="保存的健康问题名称；失败时为空")
+    saved: bool = Field(default=False, description="是否成功保存")
     message: str = Field(description="人类可读的确认文本")
 
 
@@ -189,7 +189,7 @@ class ConsentRecordResult(BaseModel):
 
     ok: bool = Field(description="操作是否成功")
     consented: bool = Field(default=False, description="同意是否成功记录（幂等：已有则为 True）")
-    policy_version: str = Field(description="记录的政策版本号")
+    policy_version: str | None = Field(default=None, description="记录的政策版本号；失败时为空")
     message: str = Field(description="人类可读的确认文本")
 
 

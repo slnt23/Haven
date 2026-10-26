@@ -16,7 +16,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 from langchain_core.messages import (
     AIMessage,
@@ -25,6 +25,7 @@ from langchain_core.messages import (
     SystemMessage,
     ToolMessage,
 )
+from langchain_core.messages.content import ContentBlock
 
 
 class MessageBuilder:
@@ -52,7 +53,7 @@ class MessageBuilder:
         这是 MDA 中间件链的标准注入方式 —— 用 ``content_blocks`` 追加块，
         不压平已有中间件设下的缓存标记。
         """
-        return SystemMessage(content_blocks=blocks)
+        return SystemMessage(content_blocks=cast("list[ContentBlock]", blocks))
 
     @staticmethod
     def tool(content: str, *, tool_call_id: str, name: str = "") -> ToolMessage:

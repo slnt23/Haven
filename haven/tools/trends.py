@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from langchain.tools import ToolRuntime, tool
+from langchain.tools import tool
 
 from application.trends import calculate_seven_day_trend, format_trend_message
 from schemas.tools import TrendResult
 from storage.database import DatabaseUnavailable, session_scope
 from tools._helpers import (
     NO_IDENTITY_REPLY,
+    OptionalToolRuntime,
     degraded,
     seven_day_records,
     uid_of,
@@ -16,7 +17,7 @@ from tools._helpers import (
 
 
 @tool(parse_docstring=True)
-async def get_seven_day_trend(runtime: ToolRuntime = None) -> TrendResult:
+async def get_seven_day_trend(runtime: OptionalToolRuntime = None) -> TrendResult:
     """查看最近 7 天的血压趋势统计。
 
     计算记录数、收缩压/舒张压均值、最高/最低值、达标率与趋势方向。

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
-from langchain.tools import ToolRuntime, tool
+from langchain.tools import tool
 from sqlalchemy import select
 
 from application.commands import C_CANCEL, C_CONFIRM
@@ -23,6 +23,7 @@ from storage.database import DatabaseUnavailable, session_scope
 from storage.models import PENDING_CONFIRM_TTL, BloodPressure, PendingBpConfirmation
 from tools._helpers import (
     NO_IDENTITY_REPLY,
+    OptionalToolRuntime,
     degraded,
     is_future,
     parse_measured_at,
@@ -87,7 +88,7 @@ async def record_blood_pressure(
     systolic: int | None = None,
     diastolic: int | None = None,
     measured_at: str | None = None,
-    runtime: ToolRuntime = None,
+    runtime: OptionalToolRuntime = None,
 ) -> BpRecordResult:
     """记录一次手动血压测量。
 
@@ -210,7 +211,7 @@ async def record_blood_pressure(
 
 @tool(parse_docstring=True)
 async def get_pending_blood_pressure(
-    runtime: ToolRuntime = None,
+    runtime: OptionalToolRuntime = None,
 ) -> BpPendingResult:
     """查询待确认的异常血压记录。
 
@@ -243,7 +244,7 @@ async def get_pending_blood_pressure(
 async def confirm_abnormal_blood_pressure(
     systolic: int | None = None,
     diastolic: int | None = None,
-    runtime: ToolRuntime = None,
+    runtime: OptionalToolRuntime = None,
 ) -> BpConfirmResult:
     """确认保存一条异常血压记录。
 

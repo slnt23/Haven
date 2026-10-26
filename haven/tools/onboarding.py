@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime
 
-from langchain.tools import ToolRuntime, tool
+from langchain.tools import tool
 from sqlalchemy import delete, select
 
 from application.commands import C_PROFILE
@@ -31,11 +31,11 @@ from application.onboarding import (
 from schemas.tools import OnboardingDraftResult, OnboardingProfileResult, OnboardingSaveResult
 from storage.database import DatabaseUnavailable, session_scope
 from storage.models import DiseaseRecord, HealthProfile, OnboardingDraft
-from tools._helpers import NO_IDENTITY_REPLY, degraded, uid_of
+from tools._helpers import NO_IDENTITY_REPLY, OptionalToolRuntime, degraded, uid_of
 
 
 @tool(parse_docstring=True)
-async def get_health_profile(runtime: ToolRuntime = None) -> OnboardingProfileResult:
+async def get_health_profile(runtime: OptionalToolRuntime = None) -> OnboardingProfileResult:
     """读取当前用户的健康档案。
 
     返回已保存的健康信息（昵称、性别、出生日期、身高、体重）及登记的健康问题。
@@ -102,7 +102,7 @@ async def save_health_profile(
     weight_kg: float | None = None,
     disease_name: str = SUPPORTED_DISEASE,
     diagnosed_date: str | None = None,
-    runtime: ToolRuntime = None,
+    runtime: OptionalToolRuntime = None,
 ) -> OnboardingSaveResult:
     """保存（或更新）健康档案。
 
@@ -148,6 +148,22 @@ async def save_health_profile(
         return OnboardingSaveResult(ok=False, message=error)
     if diagnosed is None:  # 可跳过项：默认今天
         diagnosed = date.today()
+
+    # validate_step 按字段返回不同类型；写库前显式收窄，异常形状安全退出。
+    if name is not None and not isinstance(name, str):
+        return OnboardingSaveResult(ok=False, message=MSG.error_fallback)
+    if not isinstance(gender_value, str):
+        return OnboardingSaveResult(ok=False, message=MSG.error_fallback)
+    if not isinstance(birth, date):
+        return OnboardingSaveResult(ok=False, message=MSG.error_fallback)
+    if height is not None and not isinstance(height, float):
+        return OnboardingSaveResult(ok=False, message=MSG.error_fallback)
+    if weight is not None and not isinstance(weight, float):
+        return OnboardingSaveResult(ok=False, message=MSG.error_fallback)
+    if not isinstance(disease, str):
+        return OnboardingSaveResult(ok=False, message=MSG.error_fallback)
+    if not isinstance(diagnosed, date):
+        return OnboardingSaveResult(ok=False, message=MSG.error_fallback)
 
     try:
         async with session_scope() as session:
@@ -206,7 +222,7 @@ async def save_health_profile(
 async def save_onboarding_draft(
     step: str | None = None,
     value: str | None = None,
-    runtime: ToolRuntime = None,
+    runtime: OptionalToolRuntime = None,
 ) -> OnboardingDraftResult:
     """记录建档进度（内部记账）。
 

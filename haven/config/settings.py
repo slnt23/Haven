@@ -164,7 +164,7 @@ class Settings(BaseSettings):
         """
         try:
             return {
-                name: McpServerSettings(**raw)
+                name: McpServerSettings.model_validate(raw)
                 for name, raw in load_mcp_servers().items()
             }
         except Exception as exc:  # noqa: BLE001 —— fail-closed

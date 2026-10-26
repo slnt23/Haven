@@ -31,7 +31,9 @@ from storage.database import caller_user_id, session_scope
 class EmergencyInputMiddleware(AgentMiddleware):
     """用户输入紧急词扫描 —— 纯确定性，绝不经 LLM。"""
 
-    name = "haven_emergency_input"
+    @property
+    def name(self) -> str:
+        return "haven_emergency_input"
 
     @staticmethod
     def _fixed_reply(request: ModelRequest) -> str | None:

@@ -29,7 +29,9 @@ _logger = logging.getLogger("haven.observability")
 class ObservabilityMiddleware(AgentMiddleware):
     """工具调用计时 + 审计（写操作）+ tool_call_id 追溯。"""
 
-    name = "haven_observability"
+    @property
+    def name(self) -> str:
+        return "haven_observability"
 
     # ── 同步路径：计时但不写审计（工具均为异步，同步路径保守透传） ──
     def wrap_tool_call(

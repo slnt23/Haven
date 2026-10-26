@@ -36,7 +36,9 @@ from tools._helpers import uid_of
 class McpPolicyMiddleware(AgentMiddleware):
     """MCP 命名空间的默认拒绝 + 审计 + 降级。"""
 
-    name = "haven_mcp_policy"
+    @property
+    def name(self) -> str:
+        return "haven_mcp_policy"
 
     @staticmethod
     def _server_of(
@@ -77,7 +79,7 @@ class McpPolicyMiddleware(AgentMiddleware):
         call = request.tool_call
         return builder.tool(
             text,
-            tool_call_id=call["id"],
+            tool_call_id=call.get("id") or "",
             name=call.get("name", ""),
         )
 

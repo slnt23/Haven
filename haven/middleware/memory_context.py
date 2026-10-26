@@ -149,7 +149,9 @@ class MemoryInjectionMiddleware(AgentMiddleware):
     """该用户数据的确定性摘要 → system prompt（只读，失败静默）。"""
 
     #: 名字必须唯一：deepagents 按 `.name` 合并作者中间件，撞名会顶掉别人的。
-    name = "haven_memory_context"
+    @property
+    def name(self) -> str:
+        return "haven_memory_context"
 
     async def awrap_model_call(self, request: ModelRequest, handler):
         uid = caller_user_id(getattr(request, "runtime", None))
